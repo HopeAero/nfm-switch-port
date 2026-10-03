@@ -46,6 +46,7 @@ struct ContO;
 #include <stdint.h>
 #include <stdbool.h>
 #include "check_points.h"
+#include "java_compat.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -167,17 +168,50 @@ void medium_init(Medium *m);
 void medium_free(Medium *m);
 
 // Perspective projection. All-int in Java; the product can exceed 2^31.
-int32_t medium_xs(Medium *m, int32_t n, int32_t cz);
-int32_t medium_ys(Medium *m, int32_t n, int32_t n2);
+static inline int32_t medium_xs(Medium *m, int32_t n, int32_t cz) {
+  if (cz < m->cz) cz = m->cz;
+  return (cz - m->focus_point) * (m->cx - n) / cz + n;
+}
+static inline int32_t medium_ys(Medium *m, int32_t n, int32_t n2) {
+  if (n2 < m->cz) n2 = m->cz;
+  return (n2 - m->focus_point) * (m->cy - n) / n2 + n;
+}
 
 // Table lookup with fractional-index lerp -- see the JS's comment on why
 // the lerp exists (interpolated-frame heading smoothing). Pass a whole
 // number for the exact bit-identical simulation path.
-float medium_cos(Medium *m, float i);
-float medium_sin(Medium *m, float i);
+static inline float medium_cos(Medium *m, float i) {
+  while (i >= 360.0f) i -= 360.0f;
+  while (i < 0.0f) i += 360.0f;
+  int32_t i0 = (int32_t)i;
+  if ((float)i0 == i) return m->tcos[i0];
+  double a = m->tcos[i0];
+  double b = m->tcos[i0 + 1 == 360 ? 0 : i0 + 1];
+  return (float)(a + (b - a) * ((double)i - (double)i0));
+}
+static inline float medium_sin(Medium *m, float i) {
+  while (i >= 360.0f) i -= 360.0f;
+  while (i < 0.0f) i += 360.0f;
+  int32_t i0 = (int32_t)i;
+  if ((float)i0 == i) return m->tsin[i0];
+  double a = m->tsin[i0];
+  double b = m->tsin[i0 + 1 == 360 ? 0 : i0 + 1];
+  return (float)(a + (b - a) * ((double)i - (double)i0));
+}
 
 // Rotate a point set about (n, n2) by n3 degrees, in place.
-void medium_rot(Medium *m, int32_t *array, int32_t *array2, int32_t n, int32_t n2, int32_t n3, int32_t n4);
+static inline void medium_rot(Medium *m, int32_t *array, int32_t *array2, int32_t n, int32_t n2, int32_t n3, int32_t n4) {
+  if (n3 != 0) {
+    float cos = medium_cos(m, (float)n3);
+    float sin = medium_sin(m, (float)n3);
+    for (int32_t i = 0; i < n4; i++) {
+      int32_t n5 = array[i];
+      int32_t n6 = array2[i];
+      array[i] = n + jtrunc(((float)(n5 - n) * cos) - ((float)(n6 - n2) * sin));
+      array2[i] = n2 + jtrunc(((float)(n5 - n) * sin) + ((float)(n6 - n2) * cos));
+    }
+  }
+}
 
 // The game's own correlated PRNG (distinct from java_compat's nfm_random,
 // which this calls internally as its underlying source). See web/Medium.js

@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <math.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,7 +22,14 @@ extern "C" {
 // is undefined behaviour outside int32 range, so use this instead of a raw
 // cast for any value that can plausibly overflow (car coordinates do, see
 // web/TRANSPILE_SPEC.md §2b).
-int32_t jtrunc(float x);
+// static inline: called per vertex from several translation units, and
+// without LTO an out-of-line call there cost more than the body.
+static inline int32_t jtrunc(float x) {
+  if (isnan(x)) return 0;
+  if (x >= 2147483647.0f) return 2147483647;
+  if (x <= -2147483648.0f) return -2147483648;
+  return (int32_t)x;
+}
 
 // Same, but for the common JS shape `trunc(fr(X) + intA - intB)`: fr(X) is
 // a single float32-rounded value, but the JS then combines it with exact
@@ -29,7 +37,12 @@ int32_t jtrunc(float x);
 // truncating -- not a second float32 rounding. Use this whenever the value
 // being truncated is genuinely double in the JS (no outer fr() wrapping the
 // whole expression), to avoid a double-rounding mismatch against `jtrunc`.
-int32_t jtrunc_d(double x);
+static inline int32_t jtrunc_d(double x) {
+  if (isnan(x)) return 0;
+  if (x >= 2147483647.0) return 2147483647;
+  if (x <= -2147483648.0) return -2147483648;
+  return (int32_t)x;
+}
 
 // Java `Math.round(float)` -> int: floor(x + 0.5), NOT round-half-to-even.
 int32_t jround(float x);

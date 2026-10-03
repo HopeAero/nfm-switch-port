@@ -6,20 +6,6 @@
 #include "java_compat.h"
 #include <math.h>
 
-int32_t jtrunc(float x) {
-  if (isnan(x)) return 0;
-  if (x >= 2147483647.0f) return 2147483647;
-  if (x <= -2147483648.0f) return -2147483648;
-  return (int32_t)x;
-}
-
-int32_t jtrunc_d(double x) {
-  if (isnan(x)) return 0;
-  if (x >= 2147483647.0) return 2147483647;
-  if (x <= -2147483648.0) return -2147483648;
-  return (int32_t)x;
-}
-
 int32_t jround(float x) {
   return (int32_t)floorf(x + 0.5f);
 }

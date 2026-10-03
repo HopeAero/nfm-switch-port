@@ -244,13 +244,21 @@ void cont_o_free(ContO *co);
 // AI opponents far from the player's camera, fixit the first time a
 // damaged car reached a repair pad -- so all five are ported in full
 // rather than re-scoped away. See cont_o.c for each one's translation.
-int32_t cont_o_xs(ContO *co, int32_t n, int32_t n2);
-int32_t cont_o_ys(ContO *co, int32_t n, int32_t n2);
+static inline int32_t cont_o_xs(ContO *co, int32_t n, int32_t n2) {
+  if (n2 < 50) n2 = 50;
+  return (n2 - co->m->focus_point) * (co->m->cx - n) / n2 + n;
+}
+static inline int32_t cont_o_ys(ContO *co, int32_t n, int32_t n2) {
+  if (n2 < 50) n2 = 50;
+  return (n2 - co->m->focus_point) * (co->m->cy - n) / n2 + n;
+}
 
 /** Rotate a point set about (n,n2) by n3 degrees -- identical math to
  * medium_rot/plane_rot (ContO.rot() calls this.m.cos/sin too), so this
  * just delegates rather than reimplementing it. */
-void cont_o_rot(ContO *co, int32_t *array, int32_t *array2, int32_t n, int32_t n2, int32_t n3, int32_t n4);
+static inline void cont_o_rot(ContO *co, int32_t *array, int32_t *array2, int32_t n, int32_t n2, int32_t n3, int32_t n4) {
+  medium_rot(co->m, array, array2, n, n2, n3, n4);
+}
 
 /** Draws one frame's worth of electric-fence bolts for a `fix(`-placed
  * object (co->elec == true). See the doc comment above for why this,

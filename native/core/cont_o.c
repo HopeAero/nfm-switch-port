@@ -212,15 +212,7 @@ void cont_o_init_copy(ContO *dst, ContO *src, int32_t x, int32_t y, int32_t z, i
 
 // --- Runtime draw path -- see cont_o.h for exact scope ---
 
-int32_t cont_o_xs(ContO *co, int32_t n, int32_t n2) {
-  if (n2 < 50) n2 = 50;
-  return (n2 - co->m->focus_point) * (co->m->cx - n) / n2 + n;
-}
 
-int32_t cont_o_ys(ContO *co, int32_t n, int32_t n2) {
-  if (n2 < 50) n2 = 50;
-  return (n2 - co->m->focus_point) * (co->m->cy - n) / n2 + n;
-}
 
 // Ports `lowshadow(graphics2D, n)` (web/ContO.js:1345-1449) -- a flat,
 // fog-faded shadow quad drawn under a car once it's far enough from the
@@ -345,9 +337,6 @@ static void cont_o_lowshadow(ContO *co, struct Graphics2D *g, int32_t n) {
   }
 }
 
-void cont_o_rot(ContO *co, int32_t *array, int32_t *array2, int32_t n, int32_t n2, int32_t n3, int32_t n4) {
-  medium_rot(co->m, array, array2, n, n2, n3, n4);
-}
 
 // Ports `#dust`, wrapped exactly as the JS's own public `dust()` wraps it
 // -- see cont_o.h's doc comment for scope. The `setDrawPhase(true)` guard
@@ -1229,24 +1218,37 @@ void cont_o_d(ContO *co, struct Graphics2D *g) {
         cont_o_dsprk(co, g, true);
       }
 
-      // Counting sort by Plane.av (ties broken by index, descending) --
-      // transliterated straight from the JS's own O(n^2) counting sort,
-      // not reimplemented as a "cleaner" sort: see PORT_SPEC.md, preserve
-      // the game's own algorithms, not just its results.
-      int32_t sort_count[CONT_O_MAX_PLANES] = {0};
+      // Back-to-front face order. The source ranks every face against
+      // every other (O(npl^2), ~8.5k comparisons for a 131-face car, ~8%
+      // of a race frame), and that ranking is exactly a STABLE sort by av,
+      // descending: a face moves behind every face with a greater av, and
+      // of two equal av the lower index draws first (the inner loop always
+      // has n11 < n12, so a tie credits the later index). web/ContO.js made
+      // the same replacement, with a test that draws a real scene both ways
+      // and compares every vertex. This is a stable bottom-up merge sort
+      // computing that identical permutation in O(npl log npl).
       int32_t sort_order[CONT_O_MAX_PLANES];
-      for (int32_t n11 = 0; n11 < co->npl; n11++) {
-        for (int32_t n12 = n11 + 1; n12 < co->npl; n12++) {
-          if (co->p[n11].av != co->p[n12].av) {
-            if (co->p[n11].av < co->p[n12].av) sort_count[n11]++;
-            else sort_count[n12]++;
-          } else if (n11 > n12) {
-            sort_count[n11]++;
-          } else {
-            sort_count[n12]++;
+      int32_t sort_tmp[CONT_O_MAX_PLANES];
+      int32_t sort_av[CONT_O_MAX_PLANES];
+      for (int32_t i = 0; i < co->npl; i++) {
+        sort_order[i] = i;
+        sort_av[i] = co->p[i].av;
+      }
+      {
+        int32_t *src = sort_order, *dst = sort_tmp;
+        for (int32_t width = 1; width < co->npl; width *= 2) {
+          for (int32_t lo = 0; lo < co->npl; lo += 2 * width) {
+            int32_t mid = lo + width < co->npl ? lo + width : co->npl;
+            int32_t hi = lo + 2 * width < co->npl ? lo + 2 * width : co->npl;
+            int32_t a = lo, b = mid, k = lo;
+            // `>=` keeps the left run's face first on equal av: stability.
+            while (a < mid && b < hi) dst[k++] = sort_av[src[a]] >= sort_av[src[b]] ? src[a++] : src[b++];
+            while (a < mid) dst[k++] = src[a++];
+            while (b < hi) dst[k++] = src[b++];
           }
+          int32_t *swap = src; src = dst; dst = swap;
         }
-        sort_order[sort_count[n11]] = n11;
+        if (src != sort_order) memcpy(sort_order, src, sizeof(int32_t) * (size_t)co->npl);
       }
       for (int32_t n17 = 0; n17 < co->npl; n17++) {
         Plane *pl = &co->p[sort_order[n17]];

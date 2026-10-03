@@ -61,10 +61,18 @@ typedef struct {
   // Java relies on the array the constructor is handed being sized that
   // way -- this struct does not defend against a caller getting that wrong,
   // same as the JS doesn't.
-  int32_t n;
+  int32_t n;  // <= PLANE_MAX_N, see below
   int32_t cap; // allocated capacity of ox/oy/oz, i.e. the constructor's n
   int32_t *ox, *oz, *oy;
 } Plane;
+
+// Largest vertex count a face can have: cont_o_init_buf reads a polygon's
+// points into 100-entry arrays (master growth only ever sets n to 12/20),
+// and the shipped models top out at 48. plane_d/plane_s size their
+// per-call scratch arrays with it on the stack -- they used to malloc and
+// free seven (plane_d) and five (plane_s) arrays per face, tens of
+// thousands of heap round trips a frame, ~20% of the race draw's CPU.
+#define PLANE_MAX_N 100
 
 /**
  * ox/oz/oy are copied in (length n); oc is copied in (length 3, and may be
@@ -84,11 +92,13 @@ void plane_loadprojf(Plane *p);
 /** Rotate a point set about (n,n2) by n3 degrees -- identical math to
  * medium_rot (Plane.rot() calls this.m.cos/sin, same as Medium's own rot()
  * does), so this just delegates rather than reimplementing it. */
-void plane_rot(Plane *p, int32_t *array, int32_t *array2, int32_t n, int32_t n2, int32_t n3, int32_t n4);
+static inline void plane_rot(Plane *p, int32_t *array, int32_t *array2, int32_t n, int32_t n2, int32_t n3, int32_t n4) {
+  medium_rot(p->m, array, array2, n, n2, n3, n4);
+}
 
 /** Perspective projection -- identical math to medium_xs/ys, delegates. */
-int32_t plane_xs(Plane *p, int32_t n, int32_t cz);
-int32_t plane_ys(Plane *p, int32_t n, int32_t cz);
+static inline int32_t plane_xs(Plane *p, int32_t n, int32_t cz) { return medium_xs(p->m, n, cz); }
+static inline int32_t plane_ys(Plane *p, int32_t n, int32_t cz) { return medium_ys(p->m, n, cz); }
 
 int32_t plane_spy(Plane *p, int32_t n, int32_t n2);
 

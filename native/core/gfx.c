@@ -82,18 +82,25 @@ static void ensure_capacity(Graphics2D *g, int32_t needed) {
   g->capacity = cap;
 }
 
-static void emit_vert(Graphics2D *g, float x, float y) {
-  ensure_capacity(g, g->count + 1);
-  g->verts[g->count].x = x;
-  g->verts[g->count].y = y;
-  g->verts[g->count].rgba = g->rgba;
-  g->count++;
+// Unchecked: the caller has already reserved room (emit_tri, or a fill
+// that reserves for a whole polygon). Checking capacity per vertex was ~6%
+// of a race frame's CPU.
+static inline void put_vert(Graphics2D *g, float x, float y) {
+  GfxVert *v = &g->verts[g->count++];
+  v->x = x;
+  v->y = y;
+  v->rgba = g->rgba;
+}
+
+static inline void put_tri(Graphics2D *g, float x0, float y0, float x1, float y1, float x2, float y2) {
+  put_vert(g, x0, y0);
+  put_vert(g, x1, y1);
+  put_vert(g, x2, y2);
 }
 
 static void emit_tri(Graphics2D *g, float x0, float y0, float x1, float y1, float x2, float y2) {
-  emit_vert(g, x0, y0);
-  emit_vert(g, x1, y1);
-  emit_vert(g, x2, y2);
+  ensure_capacity(g, g->count + 3);
+  put_tri(g, x0, y0, x1, y1, x2, y2);
 }
 
 /** True if every turn has the same sign -- i.e. the polygon is convex. */
@@ -217,8 +224,9 @@ void gfx_fill_polygon(Graphics2D *g, const int32_t *xs, const int32_t *ys, int32
   g->inputVerts += n;
   if (n < 3) return;
   if (n == 3 || is_convex(xs, ys, n)) {
+    ensure_capacity(g, g->count + 3 * (n - 2));
     for (int32_t i = 1; i + 1 < n; i++) {
-      emit_tri(g, (float)xs[0], (float)ys[0], (float)xs[i], (float)ys[i], (float)xs[i + 1], (float)ys[i + 1]);
+      put_tri(g, (float)xs[0], (float)ys[0], (float)xs[i], (float)ys[i], (float)xs[i + 1], (float)ys[i + 1]);
     }
     return;
   }

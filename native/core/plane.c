@@ -166,12 +166,6 @@ void plane_loadprojf(Plane *p) {
   p->projf = p->projf / 3.0f;
 }
 
-void plane_rot(Plane *p, int32_t *array, int32_t *array2, int32_t n, int32_t n2, int32_t n3, int32_t n4) {
-  medium_rot(p->m, array, array2, n, n2, n3, n4);
-}
-
-int32_t plane_xs(Plane *p, int32_t n, int32_t cz) { return medium_xs(p->m, n, cz); }
-int32_t plane_ys(Plane *p, int32_t n, int32_t cz) { return medium_ys(p->m, n, cz); }
 
 int32_t plane_spy(Plane *p, int32_t n, int32_t n2) {
   int32_t d = n - p->m->cx;
@@ -222,9 +216,10 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
     if (p->av > 1500 && !p->m->crs) p->n = 12;
     else p->n = 20;
   }
-  int32_t *array = malloc(sizeof(int32_t) * (size_t)p->n);
-  int32_t *array2 = malloc(sizeof(int32_t) * (size_t)p->n);
-  int32_t *array3 = malloc(sizeof(int32_t) * (size_t)p->n);
+  if (p->n > PLANE_MAX_N) return; // unreachable for parsed models, see plane.h
+  int32_t array[PLANE_MAX_N];
+  int32_t array2[PLANE_MAX_N];
+  int32_t array3[PLANE_MAX_N];
 
   if (p->embos == 0) {
     for (int32_t i = 0; i < p->n; i++) {
@@ -255,16 +250,14 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
       plane_rot(p, array, array2, n, n3, cxz, p->n);
       plane_rot(p, array, array2, p->m->cx, p->m->cz, p->m->xz, p->n);
       plane_rot(p, array3, array2, p->m->cy, p->m->cz, p->m->zy, p->n);
-      int32_t *array4 = malloc(sizeof(int32_t) * (size_t)p->n);
-      int32_t *array5 = malloc(sizeof(int32_t) * (size_t)p->n);
+      int32_t array4[PLANE_MAX_N];
+      int32_t array5[PLANE_MAX_N];
       for (int32_t l = 0; l < p->n; l++) {
         array4[l] = plane_xs(p, array[l], array2[l]);
         array5[l] = plane_ys(p, array3[l], array2[l]);
       }
       gfx_set_color(g, 230, 230, 230);
       gfx_fill_polygon(g, array4, array5, p->n);
-      free(array4);
-      free(array5);
     }
     float n9 = 1.0f;
     if (p->embos <= 4) n9 = 1.0f + (medium_random(p->m) / 5.0f); // fr(1+fr(rand/5)), single ops chained
@@ -531,8 +524,8 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
   plane_rot(p, array, array2, p->m->cx, p->m->cz, p->m->xz, p->n);
 
   bool b4 = false;
-  int32_t *array24 = malloc(sizeof(int32_t) * (size_t)p->n);
-  int32_t *array25 = malloc(sizeof(int32_t) * (size_t)p->n);
+  int32_t array24[PLANE_MAX_N];
+  int32_t array25[PLANE_MAX_N];
   int32_t n36 = 500;
   for (int32_t a37 = 0; a37 < p->n; a37++) {
     array24[a37] = plane_xs(p, array[a37], array2[a37]);
@@ -566,8 +559,8 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
 
   plane_rot(p, array3, array2, p->m->cy, p->m->cz, p->m->zy, p->n);
   int32_t n45 = 1;
-  int32_t *array26 = malloc(sizeof(int32_t) * (size_t)p->n);
-  int32_t *array27 = malloc(sizeof(int32_t) * (size_t)p->n);
+  int32_t array26[PLANE_MAX_N];
+  int32_t array27[PLANE_MAX_N];
   int32_t n46 = 0, n47 = 0, n48 = 0, n49 = 0, n50 = 0;
   for (int32_t a51 = 0; a51 < p->n; a51++) {
     array26[a51] = plane_xs(p, array[a51], array2[a51]);
@@ -583,12 +576,34 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
   if (p->m->trk == 3 && n50 != 0) n45 = 0;
   if (n50 != 0) b = true;
   if (n45 != 0 && n8 != -1) {
+    // The source takes the largest |difference| over every vertex PAIR,
+    // which for integers is just max - min of the projected extent: O(n)
+    // instead of O(n^2) (~6% of a race frame). The pair loop's abs() of a
+    // wrapped int32 difference only agrees with max - min while the range
+    // fits in 31 bits, so a range that doesn't (never, for on-screen
+    // geometry) falls back to the original loop to stay exact.
     int32_t abs3 = 0, abs4 = 0;
-    for (int32_t a52 = 0; a52 < p->n; a52++) {
-      for (int32_t a53 = a52; a53 < p->n; a53++) {
-        if (a52 != a53) {
-          if (abs(array26[a52] - array26[a53]) > abs3) abs3 = abs(array26[a52] - array26[a53]);
-          if (abs(array27[a52] - array27[a53]) > abs4) abs4 = abs(array27[a52] - array27[a53]);
+    int32_t mnx = p->n > 0 ? array26[0] : 0, mxx = mnx;
+    int32_t mny = p->n > 0 ? array27[0] : 0, mxy = mny;
+    for (int32_t a52 = 1; a52 < p->n; a52++) {
+      if (array26[a52] < mnx) mnx = array26[a52];
+      if (array26[a52] > mxx) mxx = array26[a52];
+      if (array27[a52] < mny) mny = array27[a52];
+      if (array27[a52] > mxy) mxy = array27[a52];
+    }
+    int64_t rangex = (int64_t)mxx - mnx, rangey = (int64_t)mxy - mny;
+    if (p->n < 1) {
+      // no vertex pairs: the source's loop leaves both at 0
+    } else if (rangex <= INT32_MAX && rangey <= INT32_MAX) {
+      abs3 = (int32_t)rangex;
+      abs4 = (int32_t)rangey;
+    } else {
+      for (int32_t a52 = 0; a52 < p->n; a52++) {
+        for (int32_t a53 = a52; a53 < p->n; a53++) {
+          if (a52 != a53) {
+            if (abs(array26[a52] - array26[a53]) > abs3) abs3 = abs(array26[a52] - array26[a53]);
+            if (abs(array27[a52] - array27[a53]) > abs4) abs4 = abs(array27[a52] - array27[a53]);
+          }
         }
       }
     }
@@ -831,21 +846,14 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
       gfx_draw_polygon(g, array26, array27, p->n);
     }
   }
-
-  free(array24);
-  free(array25);
-  free(array26);
-  free(array27);
-  free(array);
-  free(array2);
-  free(array3);
 }
 
 void plane_s(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t n4,
              int32_t n5, int32_t n6, int32_t n7) {
-  int32_t *array = malloc(sizeof(int32_t) * (size_t)p->n);
-  int32_t *array2 = malloc(sizeof(int32_t) * (size_t)p->n);
-  int32_t *array3 = malloc(sizeof(int32_t) * (size_t)p->n);
+  if (p->n > PLANE_MAX_N) return; // unreachable for parsed models, see plane.h
+  int32_t array[PLANE_MAX_N];
+  int32_t array2[PLANE_MAX_N];
+  int32_t array3[PLANE_MAX_N];
   for (int32_t i = 0; i < p->n; i++) {
     array[i] = p->ox[i] + n;
     array3[i] = p->oy[i] + n2;
@@ -926,8 +934,8 @@ void plane_s(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
   }
 
   int32_t n24 = 1;
-  int32_t *array6 = malloc(sizeof(int32_t) * (size_t)p->n);
-  int32_t *array7 = malloc(sizeof(int32_t) * (size_t)p->n);
+  int32_t array6[PLANE_MAX_N];
+  int32_t array7[PLANE_MAX_N];
   if (n7 == 2) {
     r = 87; rg = 85; rb = 57;
   } else {
@@ -965,10 +973,4 @@ void plane_s(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
     gfx_set_color(g, r, rg, rb);
     gfx_fill_polygon(g, array6, array7, p->n);
   }
-
-  free(array6);
-  free(array7);
-  free(array);
-  free(array2);
-  free(array3);
 }

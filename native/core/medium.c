@@ -150,15 +150,7 @@ void medium_free(Medium *m) {
   memset(m, 0, sizeof(*m));
 }
 
-int32_t medium_xs(Medium *m, int32_t n, int32_t cz) {
-  if (cz < m->cz) cz = m->cz;
-  return (cz - m->focus_point) * (m->cx - n) / cz + n;
-}
 
-int32_t medium_ys(Medium *m, int32_t n, int32_t n2) {
-  if (n2 < m->cz) n2 = m->cz;
-  return (n2 - m->focus_point) * (m->cy - n) / n2 + n;
-}
 
 // JS computes `fr(a + (b - a) * (i - i0))` with a/b/i/i0 all JS numbers
 // (i.e. double precision) and rounds to float32 ONCE, at the very end.
@@ -166,38 +158,8 @@ int32_t medium_ys(Medium *m, int32_t n, int32_t n2) {
 // intermediate op instead (double rounding) -- usually identical, not
 // provably always identical, so this deliberately computes in double and
 // casts once, matching the JS instead of trusting the usual case.
-float medium_cos(Medium *m, float i) {
-  while (i >= 360.0f) i -= 360.0f;
-  while (i < 0.0f) i += 360.0f;
-  int32_t i0 = (int32_t)i;
-  if ((float)i0 == i) return m->tcos[i0];
-  double a = m->tcos[i0];
-  double b = m->tcos[i0 + 1 == 360 ? 0 : i0 + 1];
-  return (float)(a + (b - a) * ((double)i - (double)i0));
-}
 
-float medium_sin(Medium *m, float i) {
-  while (i >= 360.0f) i -= 360.0f;
-  while (i < 0.0f) i += 360.0f;
-  int32_t i0 = (int32_t)i;
-  if ((float)i0 == i) return m->tsin[i0];
-  double a = m->tsin[i0];
-  double b = m->tsin[i0 + 1 == 360 ? 0 : i0 + 1];
-  return (float)(a + (b - a) * ((double)i - (double)i0));
-}
 
-void medium_rot(Medium *m, int32_t *array, int32_t *array2, int32_t n, int32_t n2, int32_t n3, int32_t n4) {
-  if (n3 != 0) {
-    float cos = medium_cos(m, (float)n3);
-    float sin = medium_sin(m, (float)n3);
-    for (int32_t i = 0; i < n4; i++) {
-      int32_t n5 = array[i];
-      int32_t n6 = array2[i];
-      array[i] = n + jtrunc(((float)(n5 - n) * cos) - ((float)(n6 - n2) * sin));
-      array2[i] = n2 + jtrunc(((float)(n5 - n) * sin) + ((float)(n6 - n2) * cos));
-    }
-  }
-}
 
 float medium_random(Medium *m) {
   if (m->interpolating && m->rn != 0) {
