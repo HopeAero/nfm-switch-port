@@ -3376,6 +3376,21 @@ int game_run(void) {
   // See the composite at the end of the loop.
   GfxGlRenderTarget *rt_pair[2] = {&scene_rt, &accum_rt};
   int32_t rt_cur = 0;
+  // Racing and the two replays are only DRAWN on a frame that advances
+  // them by a tick; frames in between present the last finished picture
+  // again (see reuse_frame). picture_state is the state whose finished
+  // picture rt_pair[rt_cur ^ 1] holds (-1: none usable); the offsets are
+  // the shake it was presented with.
+  int32_t picture_state = -1;
+  float race_present_dx = 0.0f, race_present_dy = 0.0f;
+  // The replays' own 53ms pacing (Java plays one replay frame per game
+  // loop iteration, i.e. per tick; this port used to play one per display
+  // frame, 3x too fast). The confirm latch keeps a skip pressed on a frame
+  // that doesn't advance from being lost.
+  double replay_acc_ms = 0.0;
+  uint32_t replay_last_ms = 0;
+  int32_t replay_paced_state = -1;
+  bool replay_confirm_latch = false;
   bool running = true;
 #ifdef NFM_SHOW_FPS
   // Frame-phase breakdown for the FPS overlay (microseconds, summed over
@@ -3392,6 +3407,7 @@ int game_run(void) {
     prof_frame_start = platform_ticks_us();
 #endif
     bool held[BTN_COUNT];
+    bool race_ticked = false; // this frame consumed at least one physics tick
     running = platform_poll(held);
 #define KEY_EDGE(b) (held[(b)] && !previous_held[(b)])
 
@@ -4410,6 +4426,7 @@ int game_run(void) {
       // including medium_d()'s own per-pass PRNG bookkeeping, which is the
       // first thing the scene draw does.
       m.interpolating = !ticked_this_frame;
+      race_ticked = ticked_this_frame;
 
       // In-race toggles -- GameSparker.java's keyDown() (:3626-3639) plus
       // Control's own mutem/mutes. All three are edge-triggered here
@@ -4600,7 +4617,49 @@ int game_run(void) {
       }
     }
 
-    if (use_rt) {
+    // Racing redraws only on frames that ran a tick. Nothing on screen
+    // moves between ticks -- the cars, the camera (medium_follow) and the
+    // HUD all advance per tick, and every draw-driven effect already
+    // freezes on such a frame (m.interpolating) -- so a frame without one
+    // would rebuild and submit the identical scene. Worse, it fed that
+    // identical scene through the trail blend again: Java's paint() blends
+    // once per tick, so at 60Hz the trail decayed ~3 blends per tick and
+    // was a fraction of the original's, the damage shake ran out 3x early,
+    // and the HUD's per-draw timers (say/asay banners via tcnt, flicker,
+    // the damage-bar blink) ran 3x fast -- "Checkpoint!" showed for 0.5s
+    // instead of 1.6s. Presenting the last finished picture instead fixes
+    // all of that and skips two thirds of the race's draw work.
+    bool replay_ticked = false;
+    if (render_state == STATE_REPLAY || render_state == STATE_PAUSE_REPLAY) {
+      uint32_t now_ms = platform_ticks_ms();
+      if (replay_paced_state != (int32_t)render_state) {
+        // Entering a replay: its first frame draws straight away.
+        replay_paced_state = (int32_t)render_state;
+        replay_acc_ms = TICK_MS;
+        replay_confirm_latch = false;
+      } else {
+        replay_acc_ms += (double)(now_ms - replay_last_ms);
+      }
+      replay_last_ms = now_ms;
+      if (KEY_EDGE(BTN_CONFIRM)) replay_confirm_latch = true;
+      // One replay frame per loop iteration at most, like the Java's loop;
+      // a long stall must not turn into a burst of catch-up frames.
+      if (replay_acc_ms >= TICK_MS) {
+        replay_ticked = true;
+        replay_acc_ms -= TICK_MS;
+        if (replay_acc_ms > TICK_MS) replay_acc_ms = TICK_MS;
+      }
+    } else {
+      replay_paced_state = -1;
+    }
+    const bool paced_state = render_state == STATE_RACING || render_state == STATE_REPLAY ||
+                             render_state == STATE_PAUSE_REPLAY;
+    const bool advanced = render_state == STATE_RACING ? race_ticked : replay_ticked;
+    const bool reuse_frame = use_rt && paced_state && !advanced &&
+                             picture_state == (int32_t)render_state;
+    if (reuse_frame) {
+      // Nothing to draw; the composite presents the last picture.
+    } else if (use_rt) {
       gfx_gl_render_target_bind(rt_pair[rt_cur]);
       // The target IS logical 800x450 (see gfx_gl_render_target_init());
       // the composite at the end stretches it to the display.
@@ -4615,11 +4674,11 @@ int game_run(void) {
       glViewport(0, 0, disp_w, disp_h);
       if (letterboxed) set_game_projection(65.0, 735.0, 425.0, 25.0);
     }
-    glClear(GL_COLOR_BUFFER_BIT);
+    if (!reuse_frame) glClear(GL_COLOR_BUFFER_BIT);
 
     gfx_begin(&g);
 
-    if (state == STATE_RACING) {
+    if (state == STATE_RACING && !reuse_frame) {
       // Ports GameSparker.js's own draw()'s setDrawPhase(true)/(false)
       // wrapper around its entire #draw body (medium.d + every ContO.d) --
       // its own comment explains why: everything drawn here must consume
@@ -5048,7 +5107,7 @@ int game_run(void) {
         gfx_set_color(&g, 0, 0, 0);
         draw_centered(&g, "Press  [ " KEY_CONTINUE " ]  to continue", width / 2, 350 - 6, 1);
       }
-    } else if (state == STATE_REPLAY) {
+    } else if (state == STATE_REPLAY && !reuse_frame) {
       // REPLAY -- GameSparker.java fase==-3, :1388-1630. Reconstructs each
       // car's frozen pose via record_playh() at replay_tick (0-299) and
       // swings the camera between record.wasted and the local player
@@ -5126,7 +5185,8 @@ int game_run(void) {
       // Madness-logo flash); this port goes straight to STATE_POST_RACE
       // instead -- see the hold-card advance block's own comment on why
       // skipping that purely-cosmetic transition loses no functionality.
-      bool replay_advance_enter = KEY_EDGE(BTN_CONFIRM) || control[0].handb;
+      bool replay_advance_enter = replay_confirm_latch || control[0].handb;
+      replay_confirm_latch = false;
       control[0].handb = false;
       if ((replay_loops == 2 && replay_tick == 299) || replay_advance_enter) {
         state = STATE_POST_RACE;
@@ -5244,7 +5304,7 @@ int game_run(void) {
           }
         }
       }
-    } else if (state == STATE_PAUSE_REPLAY) {
+    } else if (state == STATE_PAUSE_REPLAY && !reuse_frame) {
       // PAUSE REPLAY -- fase -1, GameSparker.java:1258-1344. Unlike the
       // post-race highlight reel (fase -3), this replays the RAW 300-tick
       // ring from its start and does not touch the camera at all: the
@@ -5263,7 +5323,8 @@ int game_run(void) {
 
       // :1314-1319 -- confirm skips to the last frame rather than exiting
       // outright, which is what makes the restore below still run.
-      if (KEY_EDGE(BTN_CONFIRM)) pause_replay_tick = 299;
+      if (replay_confirm_latch) pause_replay_tick = 299;
+      replay_confirm_latch = false;
 
       // :1320-1337 -- fix-zone resurrection, then the frame itself.
       for (int32_t i = 0; i < nplayers; i++) {
@@ -6347,7 +6408,18 @@ int game_run(void) {
         mvect = 100;
       }
     }
-    if (use_rt) {
+    if (reuse_frame) {
+      // The picture last drawn is still the frame to show: present it again,
+      // at the shake offset it was presented with, without re-blending.
+      gfx_gl_render_target_bind(NULL);
+      int32_t disp_w, disp_h;
+      platform_display_size(&disp_w, &disp_h);
+      glViewport(0, 0, disp_w, disp_h);
+      glClear(GL_COLOR_BUFFER_BIT);
+      glDisable(GL_BLEND);
+      gfx_gl_render_target_blit(rt_pair[rt_cur ^ 1], race_present_dx, race_present_dy, 1.0f);
+      glEnable(GL_BLEND);
+    } else if (use_rt) {
       float offset_x = 0.0f, offset_y = 0.0f;
       if (shaka > 0) {
         offset_x = (float)(int32_t)(shaka * 2.0 * nfm_random() - shaka);
@@ -6398,9 +6470,13 @@ int game_run(void) {
       }
       glEnable(GL_BLEND);
       rt_cur ^= 1;
+      picture_state = paced_state ? (int32_t)render_state : -1;
+      race_present_dx = offset_x;
+      race_present_dy = offset_y;
     } else {
       // Drawn straight to the display: nothing to present, and no history.
       accum_valid = false;
+      picture_state = -1;
       if (letterboxed) set_game_projection(0.0, (double)width, (double)height, 0.0);
     }
 
