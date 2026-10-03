@@ -94,6 +94,8 @@ target_link_libraries(nfm_vita PRIVATE
   # this; the ForKernel/ForDriver variants alongside it are kernel-side,
   # not what this usermode app links against).
   SceKernelThreadMgr_stub
+  # scePowerSet*ClockFrequency (platform.c's platform_init).
+  ScePower_stub
   SceSysmodule_stub
   SceCommonDialog_stub
   # sceAppMgrGetBudgetInfo (vgl.o's vglInitWithCustomThreshold, called

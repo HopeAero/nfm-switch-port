@@ -12,6 +12,7 @@
 #include <psp2/ctrl.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
+#include <psp2/power.h>
 #include <stdio.h>
 
 // vglInit()'s argument is the LEGACY POOL size -- vitaGL's own header is
@@ -87,6 +88,17 @@ bool platform_init(int32_t width, int32_t height) {
   // (a pool that could not be allocated, for instance) are not reported
   // through this value at all -- vitaGL logs them internally and carries
   // on -- so there is nothing to usefully branch on.
+  // Clocks. A homebrew app starts at the system's power-saving defaults
+  // (ARM 333MHz, GPU 111MHz); every frame of this port -- the per-face
+  // projection in plane_d, the vitaGL submission, the motion-blur
+  // passes -- was running on those. 444/222/222/166 is the standard
+  // maximum games and ports select, and is safe to request: the system
+  // clamps anything it will not grant. Set before vglInit so the GPU is
+  // already at speed when vitaGL sets itself up.
+  scePowerSetArmClockFrequency(444);
+  scePowerSetBusClockFrequency(222);
+  scePowerSetGpuClockFrequency(222);
+  scePowerSetGpuXbarClockFrequency(166);
   vglInit(VGL_LEGACY_POOL_SIZE);
   // MUST come before any sceCtrlPeekBufferPositive() that reads lx/ly or
   // rx/ry. The pad defaults to SCE_CTRL_MODE_DIGITAL, in which the analog

@@ -1435,6 +1435,17 @@ static void hud_messages_tick(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad 
   }
 }
 
+// The game-space projection: game coordinates (left..right, top..bottom)
+// across whatever viewport is current, y down, no depth. The normal one is
+// (0, 800, 450, 0); a letterboxed menu drawn straight to the display uses
+// (65, 735, 425, 25) so the original's 670x400 interior fills the screen.
+static void set_game_projection(double left, double right, double bottom, double top) {
+  glMatrixMode(GL_PROJECTION);
+  glLoadIdentity();
+  glOrtho(left, right, bottom, top, -1, 1);
+  glMatrixMode(GL_MODELVIEW);
+}
+
 static void draw_hud_img(Graphics2D *g, HudImg img, int32_t x, int32_t y) {
   if (img.tex < 0) return;
   gfx_draw_image(g, img.tex, x, y, img.w, img.h);
@@ -3265,8 +3276,8 @@ int game_run(void) {
   int32_t pause_replay_tick = 0;
   int32_t cantreply_cnt = 0;
   // fleximg: fase -6's one-frame pauseimage() of the frame underneath,
-  // taken from scene_rt at the top of the next frame (before it is
-  // cleared), on the way into the pause menu and again after its replay
+  // taken from the previous frame's render target at the top of the next
+  // frame (before it is reused), on the way into the pause menu and again after its replay
   // (GameSparker.java:1340 goes back through fase -6). `pause_flex_tex`
   // stays -1 without render targets, and the menu then falls back to
   // redrawing the frozen scene.
@@ -3354,12 +3365,17 @@ int game_run(void) {
   double accumulator_ms = 0.0;
 
   int32_t frame = 0;
-  // Whether accum_rt currently holds this scene's recent history. False
-  // while no trail is being drawn, because that path skips writing it --
-  // see the composite below on why the first blended frame after such a
-  // stretch has to seed at full alpha rather than blend against stale
-  // contents.
+  // Whether the OTHER ping-pong target holds the previous frame's finished
+  // picture. False after any frame drawn without a trail (or straight to
+  // the display), so the first trail frame after it takes its scene as is
+  // instead of blending in a stale, unrelated picture.
   bool accum_valid = false;
+  // scene_rt and accum_rt are used as a PING-PONG pair: each frame renders
+  // into rt_pair[rt_cur], folds the previous frame's finished picture
+  // (rt_pair[rt_cur ^ 1]) over it for the trail, presents it, and flips.
+  // See the composite at the end of the loop.
+  GfxGlRenderTarget *rt_pair[2] = {&scene_rt, &accum_rt};
+  int32_t rt_cur = 0;
   bool running = true;
   while (running) {
     bool held[BTN_COUNT];
@@ -4530,16 +4546,35 @@ int game_run(void) {
     // Java's own `offImage` (a normal, fully-opaque render every time);
     // only the FINAL blit onto the window is the part that isn't
     // cleared first.
-    // fase -6 (GameSparker.java:1658-1663): scene_rt still holds the frame
-    // drawn just before the pause, HUD included -- Java's offImage at the
-    // moment pauseimage() reads it.
+    // Where this frame is drawn, decided from the state it STARTS in (a
+    // few transitions happen mid-draw; the composite below must agree with
+    // what was drawn). An offscreen target is only needed where the frame
+    // has to be read back: the motion-blur trail (racing, car select,
+    // stage select and its locked overlay) and the pause snapshot (racing
+    // and the replays it can be taken from). Every other screen draws
+    // straight to the display -- one full-screen pass and one render-
+    // target switch fewer per frame on the Vita.
+    const GameState render_state = state;
+    const bool letterboxed = render_state != STATE_RACING && render_state != STATE_REPLAY &&
+                             render_state != STATE_PAUSED && render_state != STATE_PAUSE_REPLAY &&
+                             render_state != STATE_CANTREPLY;
+    const bool use_rt = motion_blur_ok &&
+                        (render_state == STATE_RACING || render_state == STATE_REPLAY ||
+                         render_state == STATE_PAUSE_REPLAY || render_state == STATE_CAR_SELECT ||
+                         render_state == STATE_STAGE_SELECT || render_state == STATE_STAGE_LOCKED);
+
+    // fase -6 (GameSparker.java:1658-1663): the target the previous frame
+    // was drawn into still holds it, HUD included -- Java's offImage at the
+    // moment pauseimage() reads it (here with that frame's trail already
+    // folded in; under pauseimage()'s own grey smear the difference is
+    // invisible).
     if (pause_snapshot_pending) {
       pause_snapshot_pending = false;
       if (motion_blur_ok) {
         if (!pause_flex_read) pause_flex_read = malloc((size_t)800 * 450 * 4);
         if (!pause_flex_rgba) pause_flex_rgba = malloc((size_t)800 * 450 * 4);
         if (pause_flex_read && pause_flex_rgba) {
-          gfx_gl_render_target_bind(&scene_rt);
+          gfx_gl_render_target_bind(rt_pair[rt_cur ^ 1]);
           glReadPixels(0, 0, 800, 450, GL_RGBA, GL_UNSIGNED_BYTE, pause_flex_read);
           gfx_gl_render_target_bind(NULL);
           pause_image(pause_flex_read, pause_flex_rgba);
@@ -4549,24 +4584,20 @@ int game_run(void) {
       }
     }
 
-    if (motion_blur_ok) {
-      gfx_gl_render_target_bind(&scene_rt);
-      // Targeting the offscreen texture, which IS logical 800x450 (see
-      // gfx_gl_render_target_init() above) -- the later composite blit
-      // (see its own doc comment) is what stretches this to the real
-      // display size, not this viewport.
+    if (use_rt) {
+      gfx_gl_render_target_bind(rt_pair[rt_cur]);
+      // The target IS logical 800x450 (see gfx_gl_render_target_init());
+      // the composite at the end stretches it to the display.
       glViewport(0, 0, width, height);
     } else {
-      // No offscreen target to stretch from later -- render straight to
-      // the real framebuffer, so THIS viewport must already be the
-      // platform's actual display size (see platform_display_size()'s
-      // own doc comment) or the scene would only ever fill an 800x450
-      // sub-rectangle of a larger physical screen (the Vita's 960x544),
-      // same bug the composite blit's own viewport call fixes for the
-      // normal path.
+      // Straight to the display: the viewport is the physical screen
+      // (960x544 on the Vita), and the projection does the stretching the
+      // composite blit would have done -- for a letterboxed menu it maps
+      // just the original's 670x400 interior at (65,25) onto the screen.
       int32_t disp_w, disp_h;
       platform_display_size(&disp_w, &disp_h);
       glViewport(0, 0, disp_w, disp_h);
+      if (letterboxed) set_game_projection(65.0, 735.0, 425.0, 25.0);
     }
     glClear(GL_COLOR_BUFFER_BIT);
 
@@ -6288,113 +6319,70 @@ int game_run(void) {
     // reset must not clobber it back to 100 every frame. `shaka` (the
     // damage-shake jitter) has no such exception -- it's racing-only in
     // the Java too, so resetting it everywhere else is always correct.
-    if (motion_blur_ok) {
-      if (state != STATE_RACING) {
-        shaka = 0;
-        // STATE_STAGE_LOCKED (cantgo) also gets no reset: Java's fase==4
-        // has no mvect assignment either, so it inherits whatever
-        // stage-select (the only state that reaches it) already set.
-        if (state != STATE_CAR_SELECT && state != STATE_STAGE_SELECT && state != STATE_STAGE_LOCKED) {
-          mvect = 100;
-        }
+    if (state != STATE_RACING) {
+      shaka = 0;
+      // STATE_STAGE_LOCKED (cantgo) also gets no reset: Java's fase==4
+      // has no mvect assignment either, so it inherits whatever
+      // stage-select (the only state that reaches it) already set.
+      if (state != STATE_CAR_SELECT && state != STATE_STAGE_SELECT && state != STATE_STAGE_LOCKED) {
+        mvect = 100;
       }
+    }
+    if (use_rt) {
       float offset_x = 0.0f, offset_y = 0.0f;
       if (shaka > 0) {
         offset_x = (float)(int32_t)(shaka * 2.0 * nfm_random() - shaka);
         offset_y = (float)(int32_t)(shaka * 2.0 * nfm_random() - shaka);
         shaka--;
       }
-      // mvect == 100 means alpha 1.0: the new scene replaces the picture
-      // outright and there is no trail to carry. That is the DEFAULT and
-      // what every menu except car select runs at, so it is the common
-      // case, and accumulating through the history texture there costs
-      // two full-screen textured passes (scene -> accum, accum -> screen)
-      // to compute something identical to one. At 960x544 that is half a
-      // million textured pixels per frame of pure waste on a handheld.
-      //
-      // Worth being plain about: the version of this that introduced the
-      // history texture ran the accumulate unconditionally, so it DOUBLED
-      // this path's cost in the no-trail case rather than leaving it
-      // alone. This restores one pass as the floor and spends the second
-      // only when a trail is actually being drawn.
+      // The trail: paint() blits each new frame over the last one at
+      // alpha mvect/100, i.e. history = scene*a + history*(1-a). With the
+      // targets ping-ponged that is the previous frame's finished picture
+      // laid over this frame's scene at (1-a) -- the same value, written
+      // straight into the target that is presented next, instead of
+      // copying the scene into a separate history texture first (one
+      // full-screen pass and one target switch per frame fewer). Alpha
+      // writes are masked off so the history keeps the scene's own alpha
+      // and the blend weight cannot drift frame to frame. mvect == 100,
+      // or the first frame after a stretch without a trail (the other
+      // target is stale), takes the scene as is.
       const bool trail_active = (mvect < 100);
-      if (trail_active) {
-        // Fold this frame's scene into the history texture. Viewport is
-        // the target's own logical size here, not the display's --
-        // accum_rt is 800x450 like scene_rt, and only the final copy
-        // below stretches to the screen. No shake offset at this step:
-        // applying it while accumulating would bake every shake into the
-        // trail and smear it across the following frames instead of
-        // moving the finished picture.
-        //
-        // First blended frame after a no-trail stretch seeds at 1.0
-        // instead of mvect: the history is stale by then (the branch
-        // above does not write it), and blending 20% of a frame from
-        // whenever the trail was last on would show a ghost of an
-        // unrelated scene.
-        gfx_gl_render_target_bind(&accum_rt);
-        glViewport(0, 0, width, height);
-        gfx_gl_render_target_blit(&scene_rt, 0.0f, 0.0f,
-                                   accum_valid ? (float)mvect / 100.0f : 1.0f);
-        accum_valid = true;
-      } else {
-        accum_valid = false;
+      if (trail_active && accum_valid) {
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
+        gfx_gl_render_target_blit(rt_pair[rt_cur ^ 1], 0.0f, 0.0f, 1.0f - (float)mvect / 100.0f);
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
       }
+      accum_valid = trail_active;
 
       gfx_gl_render_target_bind(NULL); // back to the default (window) framebuffer
-      // Use the platform's ACTUAL display resolution here, not the
-      // logical 800x450 `width`/`height` (see platform_display_size()'s
-      // own doc comment) -- this is the one glViewport call that decides
-      // how big the finished frame appears on the real screen. On Linux
-      // the two are identical (the window IS 800x450), but on the Vita
-      // the physical screen is 960x544: viewporting this final blit to
-      // the logical 800x450 left the outer ~14% of the screen on every
-      // side undrawn instead of filling it, exactly the reported
-      // "resolução não fica full screen" bug. gfx_gl_render_target_blit's
-      // quad is still drawn in the fixed logical 0..800/0..450 clip space
-      // (glOrtho never changes), so widening only the viewport stretches
-      // that same quad to fill the real screen with no other code needing
-      // to know the physical resolution at all.
+      // The physical display resolution, not the logical 800x450: on the
+      // Vita the screen is 960x544, and this viewport is what stretches
+      // the finished frame over all of it (the blit's quad stays in the
+      // fixed 0..800/0..450 projection).
       int32_t disp_w, disp_h;
       platform_display_size(&disp_w, &disp_h);
       glViewport(0, 0, disp_w, disp_h);
-      // Cleared, unlike the old composite: this copy is fully opaque, so
-      // it owes nothing to what the last swap left in this buffer -- but
-      // the shake offset can slide the quad far enough to leave a strip
-      // along one edge uncovered, and on the Vita that strip would show
-      // an unrelated older display buffer. Black is what a screen shake
-      // should reveal there anyway.
+      // Cleared: the shake offset can slide the quad far enough to leave a
+      // strip along one edge uncovered, and on the Vita that strip would
+      // show an unrelated older display buffer.
       glClear(GL_COLOR_BUFFER_BIT);
-      // Blending OFF for this one draw: this is a "present the finished
-      // picture" copy, not a composite, and it must not be modulated by
-      // the history texture's own alpha channel. That channel does drift
-      // below 1 -- drawing a semi-transparent quad into an FBO leaves
-      // dst_a = src_a^2 + (1 - src_a), which is less than 1 for any
-      // partial alpha, and the trail carries that forward. With blending
-      // left on, the shortfall let the clear colour above show through
-      // and the whole frame washed out toward grey (worst on stage
-      // select, which lost its warm backdrop entirely).
+      // Blending OFF: this is "present the finished picture", not a
+      // composite, and must not be modulated by the target's alpha.
       glDisable(GL_BLEND);
-      // Straight from the scene when no trail is active -- the history
-      // texture holds nothing newer, and routing through it would only
-      // add the copy the branch above just avoided.
-      // The menus live in the original's 670x400 letterbox at (65,25), so
-      // for them only that rectangle is copied, stretched to the full
-      // screen -- otherwise they come out smaller than the race with a
-      // black frame around them. Racing, the replays, the pause menu and
-      // the can't-replay banner all draw over the full 800x450 race scene
-      // and keep the whole frame.
-      const bool letterboxed = state != STATE_RACING && state != STATE_REPLAY &&
-                               state != STATE_PAUSED && state != STATE_PAUSE_REPLAY &&
-                               state != STATE_CANTREPLY;
-      const GfxGlRenderTarget *present = trail_active ? &accum_rt : &scene_rt;
+      // Menus live in the original's 670x400 letterbox at (65,25), so for
+      // them only that rectangle is copied, stretched to the full screen.
       if (letterboxed) {
-        gfx_gl_render_target_blit_region(present, 65.0f, 25.0f, 670.0f, 400.0f,
+        gfx_gl_render_target_blit_region(rt_pair[rt_cur], 65.0f, 25.0f, 670.0f, 400.0f,
                                          offset_x, offset_y, 1.0f);
       } else {
-        gfx_gl_render_target_blit(present, offset_x, offset_y, 1.0f);
+        gfx_gl_render_target_blit(rt_pair[rt_cur], offset_x, offset_y, 1.0f);
       }
       glEnable(GL_BLEND);
+      rt_cur ^= 1;
+    } else {
+      // Drawn straight to the display: nothing to present, and no history.
+      accum_valid = false;
+      if (letterboxed) set_game_projection(0.0, (double)width, (double)height, 0.0);
     }
 
     if (screenshot_path && frame >= screenshot_frame) {
