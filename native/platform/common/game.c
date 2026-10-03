@@ -230,6 +230,8 @@ typedef enum {
   STATE_PAUSED,          // fase -7 -- pausedgame() (xtGraphics.java:4695), the in-race pause menu
   STATE_PAUSE_REPLAY,    // fase -1 -- on-demand replay of the raw 300-tick ring (GameSparker.java:1258)
   STATE_CANTREPLY,       // fase -8 -- cantreply() (xtGraphics.java:4820), "not enough replay data" banner
+  STATE_BOOT_CLICK,      // fase 111 -- clicknow() (xtGraphics.java:1443) over the loading() screen
+  STATE_BOOT_RAD,        // fase 9 -- rad() (xtGraphics.java:1570), the Radicalplay intro
 } GameState;
 
 // On-screen names for the physical controls, so the help text can say
@@ -252,12 +254,15 @@ typedef enum {
 #define KEY_HANDB    "CROSS"
 #define KEY_ARRACE   "FLICK THE RIGHT STICK UP"
 #define KEY_CONTINUE "CROSS"
+// clicknow()'s prompt; the original asks for a mouse click.
+#define KEY_START_PROMPT "Press CROSS to Start"
 #else
 #define KEY_STEER    "ARROW KEYS"
 #define KEY_STUNT    "ARROW KEYS"
 #define KEY_HANDB    "SPACEBAR"
 #define KEY_ARRACE   "PRESS [ A ]"
 #define KEY_CONTINUE "ENTER"
+#define KEY_START_PROMPT "Click here to Start"
 #endif
 
 // The original's wide SPACEBAR key carries its label across its own face.
@@ -718,6 +723,69 @@ static HudImg load_menu_gif(VfsZip *zip, const char *name) {
     break;
   }
   return r;
+}
+
+// A loose GIF from data/ (the loading screen's sign/hello/loadbar sit
+// beside images.zip rather than inside it, xtGraphics.java:630-632).
+static HudImg load_data_gif(const char *path) {
+  HudImg r = {-1, 0, 0};
+  int32_t len = 0;
+  uint8_t *bytes = vfs_read_bytes(path, &len);
+  if (!bytes) return r;
+  GifImage img;
+  if (gif_decode(bytes, (size_t)len, &img)) {
+    r.tex = gfx_gl_upload_texture(img.rgba, img.width, img.height);
+    r.w = img.width; r.h = img.height;
+    gif_free(&img);
+  }
+  vfs_free_bytes(bytes);
+  return r;
+}
+
+typedef struct { HudImg sign, hello, loadbar; } BootImages;
+
+// xtGraphics.loading() (:1410-1435) without the box's bottom half, which
+// is either the progress readout (boot_loading_frame) or clicknow()'s
+// prompt (the STATE_BOOT_CLICK draw).
+static void draw_boot_backdrop(Graphics2D *g, const BootImages *bi) {
+  gfx_set_color(g, 0, 0, 0);
+  gfx_fill_rect(g, 0, 0, 800, 450);
+  if (bi->sign.tex >= 0) gfx_draw_image(g, bi->sign.tex, 362, 35, bi->sign.w, bi->sign.h);
+  if (bi->hello.tex >= 0) gfx_draw_image(g, bi->hello.tex, 125, 105, bi->hello.w, bi->hello.h);
+  gfx_set_color(g, 198, 214, 255);
+  gfx_fill_round_rect(g, 250, 340, 300, 80, 30, 70);
+  gfx_set_color(g, 128, 167, 255);
+  gfx_draw_round_rect(g, 250, 340, 300, 80, 30, 70);
+}
+
+// One frame of loading() while the game's assets load: the progress bar
+// and "N % loaded | N KB remaining" readout, presented immediately (this
+// runs before the main loop, between the blocking loads). `done_kb` of
+// `total_kb` -- the original counted downloaded KB; here it is the size
+// of the archives read so far.
+static void boot_loading_frame(Graphics2D *g, const BootImages *bi, int32_t done_kb, int32_t total_kb) {
+  int32_t disp_w, disp_h;
+  platform_display_size(&disp_w, &disp_h);
+  glViewport(0, 0, disp_w, disp_h);
+  glClear(GL_COLOR_BUFFER_BIT);
+  gfx_begin(g);
+  draw_boot_backdrop(g, bi);
+  if (bi->loadbar.tex >= 0) gfx_draw_image(g, bi->loadbar.tex, 281, 365, bi->loadbar.w, bi->loadbar.h);
+  gfx_set_color(g, 0, 0, 0);
+  draw_centered(g, "Loading game, please wait.", 400, 358 - 6, 1);
+  gfx_set_color(g, 255, 255, 255);
+  gfx_fill_rect(g, 295, 398, 210, 17);
+  if (total_kb < 1) total_kb = 1;
+  float frac = (float)done_kb / (float)total_kb;
+  if (frac > 1.0f) frac = 1.0f;
+  char line[64];
+  snprintf(line, sizeof(line), "%d %% loaded    |    %d KB remaining",
+           (int32_t)((26.0f + frac * 200.0f) / 226.0f * 100.0f), total_kb - done_kb);
+  gfx_set_color(g, 32, 64, 128);
+  draw_centered(g, line, 400, 410 - 6, 1);
+  gfx_fill_rect(g, 287, 371, 26 + (int32_t)(frac * 200.0f), 10);
+  gfx_submit_gl(g);
+  platform_swap_buffers();
 }
 
 // Loads the per-stage background music track -- Java xtGraphics.java:2989
@@ -2492,6 +2560,56 @@ int game_run(void) {
   // for the JS dev server; run this binary from the repo root), "app0:"
   // on Vita.
   vfs_set_fpath(platform_asset_prefix());
+  // The display comes up FIRST, before any asset loads, so the original's
+  // loading() screen (xtGraphics.java:1410) can show while they do.
+  const int width = 800, height = 450;
+  if (!platform_init(width, height)) {
+    return 1;
+  }
+
+  // Audio device + mixer -- see platform/<name>/audio.h's own doc comment.
+  // A failed open (no audio hardware, e.g. under this sandbox's Xvfb)
+  // degrades to silent play (audio_play returns -1, callers don't need to
+  // check), same fallback philosophy as a missing data/images.zip.
+  Audio audio;
+  audio_init(&audio, 44100);
+
+  // Currently-playing stage music (Java's own `strack` -- see
+  // load_stage_mod's own doc comment). Owned here so it stays alive for
+  // as long as the audio backend's ModPlayState might reference it; freed
+  // and replaced whenever the player enters a race on a different stage
+  // (see the STATE_RACING one-time setup block below), and once more at
+  // exit.
+  ModFile stage_music;
+  memset(&stage_music, 0, sizeof(stage_music));
+  int32_t stage_music_loaded_for = -1; // stage_num the above was loaded for, -1 = none yet
+
+  glDisable(GL_DEPTH_TEST); // no depth buffer, by design -- see gfx.h
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glClearColor(0.05f, 0.05f, 0.08f, 1.0f);
+
+  // Game-space projection: 800x450, y-down, origin top-left -- matches
+  // web/graphics.js's vertex shader mapping (see its VERT_SRC comment).
+  glMatrixMode(GL_PROJECTION);
+  glLoadIdentity();
+  glOrtho(0, width, height, 0, -1, 1);
+  glMatrixMode(GL_MODELVIEW);
+  glLoadIdentity();
+
+  Graphics2D g;
+  gfx_init(&g, width, height);
+
+  // loading() -- sign.gif, hello.gif (the Radicalplay logo) and loadbar.gif
+  // live loose in data/, and the bar fills by the size of what has loaded.
+  BootImages boot_images;
+  boot_images.sign = load_data_gif("data/sign.gif");
+  boot_images.hello = load_data_gif("data/hello.gif");
+  boot_images.loadbar = load_data_gif("data/loadbar.gif");
+  const int32_t boot_kb_models = 105, boot_kb_images = 715, boot_kb_sounds = 331;
+  const int32_t boot_kb_total = boot_kb_models + boot_kb_images + boot_kb_sounds;
+  boot_loading_frame(&g, &boot_images, 0, boot_kb_total);
+
   char *car_text = vfs_read_text("mycars/Simple_Car.rad");
   if (!car_text) {
     fprintf(stderr, "could not read mycars/Simple_Car.rad (run this from the repo root)\n");
@@ -2547,6 +2665,7 @@ int game_run(void) {
     fprintf(stderr, "could not load data/models.zip\n");
     return 1;
   }
+  boot_loading_frame(&g, &boot_images, boot_kb_models, boot_kb_total);
 
   CarDefine cd;
   car_define_init(&cd);
@@ -2563,43 +2682,6 @@ int game_run(void) {
   }
   free(car_text);
 
-  const int width = 800, height = 450;
-  if (!platform_init(width, height)) {
-    return 1;
-  }
-
-  // Audio device + mixer -- see platform/<name>/audio.h's own doc comment.
-  // A failed open (no audio hardware, e.g. under this sandbox's Xvfb)
-  // degrades to silent play (audio_play returns -1, callers don't need to
-  // check), same fallback philosophy as a missing data/images.zip.
-  Audio audio;
-  audio_init(&audio, 44100);
-
-  // Currently-playing stage music (Java's own `strack` -- see
-  // load_stage_mod's own doc comment). Owned here so it stays alive for
-  // as long as the audio backend's ModPlayState might reference it; freed
-  // and replaced whenever the player enters a race on a different stage
-  // (see the STATE_RACING one-time setup block below), and once more at
-  // exit.
-  ModFile stage_music;
-  memset(&stage_music, 0, sizeof(stage_music));
-  int32_t stage_music_loaded_for = -1; // stage_num the above was loaded for, -1 = none yet
-
-  glDisable(GL_DEPTH_TEST); // no depth buffer, by design -- see gfx.h
-  glEnable(GL_BLEND);
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  glClearColor(0.05f, 0.05f, 0.08f, 1.0f);
-
-  // Game-space projection: 800x450, y-down, origin top-left -- matches
-  // web/graphics.js's vertex shader mapping (see its VERT_SRC comment).
-  glMatrixMode(GL_PROJECTION);
-  glLoadIdentity();
-  glOrtho(0, width, height, 0, -1, 1);
-  glMatrixMode(GL_MODELVIEW);
-  glLoadIdentity();
-
-  Graphics2D g;
-  gfx_init(&g, width, height);
 
   // Offscreen target the whole frame renders into, then gets blitted back
   // from at less-than-full alpha -- see gfx_gl_render_target_blit's own
@@ -2720,6 +2802,7 @@ int game_run(void) {
   HudImg menu_trackbg_dodged = {-1, 0, 0};                  // dodgen(track.jpg) -- xtGraphics.java:901 trackbg[1], variant swap
   HudImg menu_pgate = {-1, 0, 0};                           // pgate.gif -- cantgo() padlock glyph (drawn 9x, xtGraphics.java:2001-2003)
   HudImg menu_gameh = {-1, 0, 0};                           // gameh.gif -- levelhigh()'s replay-caption panel (xtGraphics.java:4004-4046)
+  HudImg menu_rpro = {-1, 0, 0};                            // rpro.gif -- rad()'s "A Radicalplay Production" (xtGraphics.java:1618)
   HudImg menu_radicalplay = {-1, 0, 0};                     // radicalplay.gif -- finish()'s stage-27 campaign-completion logo (xtGraphics.java:6876)
   HudImg menu_paused = {-1, 0, 0};                          // paused.gif -- pausedgame()'s own panel at (281,8) (xtGraphics.java:4761)
   CarSmokeWarp car_smoke_warp;                              // cars.gif/smokey.gif -- car-select's smoke-warp entrance, see its own doc comment
@@ -2823,12 +2906,14 @@ int game_run(void) {
       menu_pgate = load_menu_gif(&images_zip, "pgate.gif");
       menu_gameh = load_menu_gif(&images_zip, "gameh.gif");
       menu_radicalplay = load_menu_gif(&images_zip, "radicalplay.gif");
+      menu_rpro = load_menu_gif(&images_zip, "rpro.gif");
       menu_paused = load_menu_gif(&images_zip, "paused.gif");
       vfs_free_zip(&images_zip);
     } else {
       fprintf(stderr, "could not load data/images.zip -- menus will use plain vfont fallback\n");
     }
   }
+  boot_loading_frame(&g, &boot_images, boot_kb_models + boot_kb_images, boot_kb_total);
 
   // Bundle the Instructions screen's art into one value so its page
   // renderer takes a single parameter (see draw_instructions). Built
@@ -2946,6 +3031,7 @@ int game_run(void) {
       fprintf(stderr, "could not load data/sounds.zip -- sound effects disabled\n");
     }
   }
+  boot_loading_frame(&g, &boot_images, boot_kb_total, boot_kb_total);
 
   // Headless verification hook: NFM_SCREENSHOT_PPM=/path/out.ppm dumps the
   // framebuffer after N frames and exits, so this can be checked from a
@@ -2986,7 +3072,18 @@ int game_run(void) {
   else if (screenshot_menu && strcmp(screenshot_menu, "loading") == 0) state = STATE_STAGE_LOADING;
   else if (screenshot_menu && strcmp(screenshot_menu, "locked") == 0) state = STATE_STAGE_LOCKED;
   else if (screenshot_menu && strcmp(screenshot_menu, "holdcard") == 0) state = STATE_RACING;
-  else state = screenshot_path ? STATE_RACING : STATE_MAIN_MENU;
+  else if (screenshot_menu && strcmp(screenshot_menu, "boot") == 0) state = STATE_BOOT_CLICK;
+  else if (screenshot_menu && strcmp(screenshot_menu, "rad") == 0) state = STATE_BOOT_RAD;
+  // A real start goes through the original's boot sequence: loading()
+  // (drawn while the assets loaded, above), then fase 111's clicknow()
+  // prompt and fase 9's Radicalplay intro, then the main menu
+  // (GameSparker.java:263-296).
+  else state = screenshot_path ? STATE_RACING : STATE_BOOT_CLICK;
+  // Boot sequence state: boot_n is GameSparker's n8 (iterations spent in
+  // the current boot fase); radpx/pin are xtGraphics.rad()'s own logo
+  // slide state.
+  int32_t boot_n = 0, boot_radpx = 212, boot_pin = 0;
+  bool boot_aflk = false;
   // NFM_CAR_INDEX/NFM_STAGE_NUM -- diagnostic overrides for the screenshot
   // hook's default car/stage, so a headless run can sweep combinations
   // other than car 0 / stage 1 without needing real menu-navigation input
@@ -3419,7 +3516,14 @@ int game_run(void) {
     running = platform_poll(held);
 #define KEY_EDGE(b) (held[(b)] && !previous_held[(b)])
 
-    if (state == STATE_MAIN_MENU) {
+    if (state == STATE_BOOT_CLICK) {
+      // fase 111 (GameSparker.java:263-279): a click -- here the confirm
+      // button -- ends the prompt; so do 800 iterations (the draw counts).
+      if (KEY_EDGE(BTN_CONFIRM)) {
+        boot_n = 0;
+        state = STATE_BOOT_RAD;
+      }
+    } else if (state == STATE_MAIN_MENU) {
       // 3 selectable options (Play Game / Instructions / Credits) --
       // Multiplayer is deliberately hidden in this single-player-only
       // port (user decision). `mainmenu_opselect` cycles 0..2 with wrap.
@@ -4618,11 +4722,12 @@ int game_run(void) {
     const GameState render_state = state;
     const bool letterboxed = render_state != STATE_RACING && render_state != STATE_REPLAY &&
                              render_state != STATE_PAUSED && render_state != STATE_PAUSE_REPLAY &&
-                             render_state != STATE_CANTREPLY;
+                             render_state != STATE_CANTREPLY && render_state != STATE_BOOT_CLICK;
     const bool use_rt = motion_blur_ok &&
                         (render_state == STATE_RACING || render_state == STATE_REPLAY ||
                          render_state == STATE_PAUSE_REPLAY || render_state == STATE_CAR_SELECT ||
-                         render_state == STATE_STAGE_SELECT || render_state == STATE_STAGE_LOCKED);
+                         render_state == STATE_STAGE_SELECT || render_state == STATE_STAGE_LOCKED ||
+                         render_state == STATE_BOOT_CLICK || render_state == STATE_BOOT_RAD);
 
     // fase -6 (GameSparker.java:1658-1663): the target the previous frame
     // was drawn into still holds it, HUD included -- Java's offImage at the
@@ -4658,7 +4763,10 @@ int game_run(void) {
     // instead of 1.6s. Presenting the last finished picture instead fixes
     // all of that and skips two thirds of the race's draw work.
     const bool is_replay = render_state == STATE_REPLAY || render_state == STATE_PAUSE_REPLAY;
-    const bool is_paced_menu = render_state == STATE_CAR_SELECT || render_state == STATE_STAGE_SELECT;
+    // (The boot prompt and intro too: their counters and blink advance per
+    // draw, and the Java loop draws them at the same menu rate.)
+    const bool is_paced_menu = render_state == STATE_CAR_SELECT || render_state == STATE_STAGE_SELECT ||
+                               render_state == STATE_BOOT_CLICK || render_state == STATE_BOOT_RAD;
     bool paced_ticked = false;
     if (is_replay || is_paced_menu) {
       const double step_ms = is_replay ? TICK_MS : 40.0;
@@ -5442,6 +5550,70 @@ int game_run(void) {
           cantreply_cnt = 0;
           state = STATE_PAUSED;
         }
+      }
+    } else if (state == STATE_BOOT_CLICK && !reuse_frame) {
+      // clicknow() (xtGraphics.java:1443-1455) over the finished loading()
+      // screen: the box redrawn over the bar, the prompt blinking.
+      draw_boot_backdrop(&g, &boot_images);
+      if (boot_aflk) gfx_set_color(&g, 0, 0, 0);
+      else gfx_set_color(&g, 0, 67, 200);
+      draw_centered(&g, KEY_START_PROMPT, 400, 380 - 6, 1);
+      boot_aflk = !boot_aflk;
+      if (++boot_n >= 800) {
+        boot_n = 0;
+        state = STATE_BOOT_RAD;
+      }
+    } else if (state == STATE_BOOT_RAD && !reuse_frame) {
+      // rad(n) (xtGraphics.java:1570-1624), 76 iterations of it (fase 9,
+      // GameSparker.java:280-296): the logo parks, slides off at 40px an
+      // iteration and back in, parks again with a jitter for 7 iterations.
+      if (boot_n == 0) {
+        if (!control[0].mutes && snd_powerup.samples) {
+          audio_play(&audio, snd_powerup.samples, snd_powerup.frame_count, snd_powerup.sample_rate, 1.0f, false);
+        }
+        boot_radpx = 212;
+        boot_pin = 0;
+      }
+      draw_trackbg(&g, &trackbg_state, menu_trackbg_normal, menu_trackbg_dodged, false);
+      gfx_set_color(&g, 0, 0, 0);
+      gfx_fill_rect(&g, 65, 135, 670, 59);
+      if (menu_radicalplay.tex >= 0) {
+        int32_t lx = boot_pin != 0 ? boot_radpx + jtrunc_d(8.0 * nfm_random() - 4.0) : 212;
+        gfx_draw_image(&g, menu_radicalplay.tex, lx, 135, menu_radicalplay.w, menu_radicalplay.h);
+      }
+      if (boot_radpx != 212) {
+        boot_radpx += 40;
+        if (boot_radpx > 735) boot_radpx = -388;
+      } else if (boot_pin != 0) {
+        --boot_pin;
+      }
+      if (boot_n == 40) {
+        boot_radpx = 213;
+        boot_pin = 7;
+      }
+      if (boot_radpx == 212) {
+        gfx_set_color(&g, 112, 120, 143);
+        draw_centered(&g, "Radicalplay.com", 400, 185 + jtrunc(5.0f * medium_random(&m)) - 6, 1);
+      }
+      if (boot_aflk) {
+        gfx_set_color(&g, 112, 120, 143);
+        draw_centered(&g, "And we are never going to find the new unless we get a little crazy...", 400, 215 - 6, 1);
+        boot_aflk = false;
+      } else {
+        gfx_set_color(&g, 150, 150, 150);
+        draw_centered(&g, "And we are never going to find the new unless we get a little crazy...", 400, 217 - 6, 1);
+        boot_aflk = true;
+      }
+      if (menu_rpro.tex >= 0) gfx_draw_image(&g, menu_rpro.tex, 275, 265, menu_rpro.w, menu_rpro.h);
+      gfx_set_color(&g, 0, 0, 0);
+      gfx_fill_rect(&g, 0, 0, 65, 450);
+      gfx_fill_rect(&g, 735, 0, 65, 450);
+      gfx_fill_rect(&g, 65, 0, 670, 25);
+      gfx_fill_rect(&g, 65, 425, 670, 25);
+      if (++boot_n >= 76) {
+        boot_n = 0;
+        control_falseo(&control[0], 0); // :294 u[0].falseo(0)
+        state = STATE_MAIN_MENU;
       }
     } else if (state == STATE_MAIN_MENU) {
       // MAIN MENU (Java fase 10 -- maini()). See draw_main_menu()'s own
