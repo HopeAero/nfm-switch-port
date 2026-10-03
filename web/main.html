@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Need for Madness — WebGL port</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #stage {
+    position: absolute; inset: 0; margin: auto;
+    width: 800px; height: 450px;
+    transform-origin: center center;
+  }
+  /* Backing store is 2x (1600x900) while the CSS box stays 800x450, so the
+     GPU rasterizes at double resolution. Game space is still 800x450 -- the
+     vertex shader divides by u_size, so no coordinate anywhere changes and
+     there is ZERO extra CPU cost. This is the opposite of the CheerpJ 2x
+     patch, which cost ~95% of the frame budget because that was a CPU
+     software rasterizer. */
+  #stage canvas { position: absolute; left: 0; top: 0; width: 800px; height: 450px; }
+  /* The 2D overlay carries drawString/drawImage and must sit on top of the
+     WebGL geometry — the HUD is always foreground. */
+  #overlay { pointer-events: none; }
+  #log {
+    position: fixed; left: 0; bottom: 0; right: 0;
+    font: 12px/1.6 ui-monospace, Menlo, Consolas, monospace;
+    color: #9f9; background: rgba(0,0,0,.65); padding: 2px 8px;
+    white-space: pre; z-index: 10;
+  }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="gl" width="800" height="450"></canvas>
+    <canvas id="overlay" width="800" height="450"></canvas>
+  </div>
+  <div id="log">booting…</div>
+  <!-- Shown only while hosting, until the other player connects. The room
+       code is meant to be read aloud down a phone, which 12px of console text
+       in the corner is not. -->
+  <div id="room" hidden><span>Room code</span><b id="roomcode"></b><em id="roomhint"></em></div>
+<style>
+  #room {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: .6rem;
+    background: #0b0d13; color: #e6e8ee; font: 16px system-ui, sans-serif;
+    text-align: center; padding: 1rem;
+  }
+  #room[hidden] { display: none; }
+  #room span { color: #8a8f9c; letter-spacing: .14em; text-transform: uppercase; font-size: .8rem; }
+  #room b { font: 700 clamp(3rem, 18vw, 7rem)/1 ui-monospace, Menlo, Consolas, monospace;
+            letter-spacing: .12em; color: #6cf; }
+  #room em { color: #8a8f9c; font-style: normal; font-size: .9rem; }
+</style>
+<script type="module" src="./main.js"></script>
+<script type="module">
+  // Scale-to-fit the 800x450 CSS box. This is a GPU-composited transform,
+  // free per frame, and independent of RENDER resolution (main.js sets the
+  // canvas backing store, default 2x). Conflating display size with render
+  // scale is what made the CheerpJ build fill-bound.
+  const stage = document.getElementById('stage');
+  const fit = () => {
+    const s = Math.min(innerWidth / 800, innerHeight / 450);
+    stage.style.transform = `scale(${s})`;
+  };
+  addEventListener('resize', fit);
+  fit();
+</script>
+</body>
+</html>

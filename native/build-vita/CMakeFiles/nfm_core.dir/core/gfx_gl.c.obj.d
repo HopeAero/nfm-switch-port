@@ -1,0 +1,23 @@
+CMakeFiles/nfm_core.dir/core/gfx_gl.c.obj: \
+ /home/matheus/Downloads/nvm-psvita/native/core/gfx_gl.c \
+ /home/matheus/Downloads/nvm-psvita/native/core/gfx_gl.h \
+ /home/matheus/Downloads/nvm-psvita/native/core/gfx.h \
+ /usr/local/vitasdk/lib/gcc/arm-vita-eabi/15.2.0/include/stdint.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/stdint.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/machine/_default_types.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/sys/features.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/_newlib_version.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/bits/posix_opt.h \
+ /usr/local/vitasdk/lib/gcc/arm-vita-eabi/15.2.0/include/limits.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/sys/_intsup.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/sys/_stdint.h \
+ /usr/local/vitasdk/lib/gcc/arm-vita-eabi/15.2.0/include/stdbool.h \
+ /home/matheus/Downloads/nvm-psvita/native/platform/vita/gl_include.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/vitaGL.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/vitashark.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/psp2/shacccg.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/vitasdk/build_utils.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/psp2/types.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/psp2common/types.h \
+ /usr/local/vitasdk/lib/gcc/arm-vita-eabi/15.2.0/include/stddef.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/psp2/gxm.h

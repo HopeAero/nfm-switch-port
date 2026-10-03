@@ -1,0 +1,32 @@
+Controles -- build Linux
+
+DIRIGIR
+  Setas          acelerar / frear / virar
+  Espaco         freio de mao
+  Z / X          olhar para tras (segurar)
+  (WASD nao dirige -- A/S sao teclas de verdade do original, ver abaixo)
+
+EM CORRIDA
+  A              seta guia: pista <-> carros (+ painel de classificacao)
+  S              radar (mapa + VELOCIMETRO -- o velocimetro so aparece
+                 com o radar ligado, como no original)
+  V              trocar camera (3 modos)
+  M / N          mutar musica / efeitos
+  Enter          PAUSAR (continuar / ver replay / instrucoes / sair)
+
+OUTROS
+  Esc            fechar o jogo
+  F10            abandonar a corrida (atalho de dev)
+
+NOTA SOBRE A ARTE DO VITA
+  Este build e o de Linux, entao ele mostra a arte de TECLADO. Os assets
+  de PlayStation em data/vita/ so entram quando o define NFM_TARGET_VITA
+  esta ligado, o que acontece automaticamente em -DNFM_PLATFORM=vita.
+  Se voce quiser conferir a arte nova sem um Vita, compile assim:
+
+    cmake -S native -B build-x -DNFM_PLATFORM=linux
+    # e adicione em native/CMakeLists.txt, apos o target_link_libraries
+    # de nfm_game:
+    #   target_compile_definitions(nfm_game PUBLIC NFM_TARGET_VITA=1)
+
+  Foi assim que verifiquei as capturas que te mandei.

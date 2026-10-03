@@ -1,0 +1,7 @@
+# Hashes of file build rules.
+8d24b789a357b4be2e01ff4defc27548 platform/vita/CMakeFiles/nfm_vita-velf
+b310e817f03104273f85e05262ead532 platform/vita/CMakeFiles/nfm_vita.self-self
+51ab0a61393320f4a15bfc857659d607 platform/vita/CMakeFiles/nfm_vita.vpk-vpk
+01f70aaf079643a4551ec5ed06a3610c platform/vita/nfm_vita.self.out
+250b88c7ee588a2dc41a9f6d49abf201 platform/vita/nfm_vita.vpk.out
+9c47fd074b3d74770b44b2992db3a66f platform/vita/nfm_vita.vpk_param.sfo

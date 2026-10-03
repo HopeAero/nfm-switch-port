@@ -1,0 +1,10 @@
+/home/matheus/Downloads/nvm-psvita/native/build-vita/CMakeFiles/nfm_core.dir
+/home/matheus/Downloads/nvm-psvita/native/build-vita/CMakeFiles/nfm_game.dir
+/home/matheus/Downloads/nvm-psvita/native/build-vita/CMakeFiles/edit_cache.dir
+/home/matheus/Downloads/nvm-psvita/native/build-vita/CMakeFiles/rebuild_cache.dir
+/home/matheus/Downloads/nvm-psvita/native/build-vita/platform/vita/CMakeFiles/nfm_vita.dir
+/home/matheus/Downloads/nvm-psvita/native/build-vita/platform/vita/CMakeFiles/nfm_vita-velf.dir
+/home/matheus/Downloads/nvm-psvita/native/build-vita/platform/vita/CMakeFiles/nfm_vita.self-self.dir
+/home/matheus/Downloads/nvm-psvita/native/build-vita/platform/vita/CMakeFiles/nfm_vita.vpk-vpk.dir
+/home/matheus/Downloads/nvm-psvita/native/build-vita/platform/vita/CMakeFiles/edit_cache.dir
+/home/matheus/Downloads/nvm-psvita/native/build-vita/platform/vita/CMakeFiles/rebuild_cache.dir

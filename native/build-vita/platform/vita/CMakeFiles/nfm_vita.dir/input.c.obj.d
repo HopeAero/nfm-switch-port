@@ -1,0 +1,22 @@
+platform/vita/CMakeFiles/nfm_vita.dir/input.c.obj: \
+ /home/matheus/Downloads/nvm-psvita/native/platform/vita/input.c \
+ /home/matheus/Downloads/nvm-psvita/native/platform/common/input.h \
+ /home/matheus/Downloads/nvm-psvita/native/core/control.h \
+ /usr/local/vitasdk/lib/gcc/arm-vita-eabi/15.2.0/include/stdbool.h \
+ /usr/local/vitasdk/lib/gcc/arm-vita-eabi/15.2.0/include/stdint.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/stdint.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/machine/_default_types.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/sys/features.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/_newlib_version.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/bits/posix_opt.h \
+ /usr/local/vitasdk/lib/gcc/arm-vita-eabi/15.2.0/include/limits.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/sys/_intsup.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/sys/_stdint.h \
+ /home/matheus/Downloads/nvm-psvita/native/core/medium.h \
+ /home/matheus/Downloads/nvm-psvita/native/core/check_points.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/psp2/ctrl.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/vitasdk/build_utils.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/psp2common/ctrl.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/psp2common/types.h \
+ /usr/local/vitasdk/lib/gcc/arm-vita-eabi/15.2.0/include/stddef.h \
+ /usr/local/vitasdk/arm-vita-eabi/include/psp2/types.h
