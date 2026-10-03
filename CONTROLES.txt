@@ -18,6 +18,27 @@ OUTROS
   Esc            fechar o jogo
   F10            abandonar a corrida (atalho de dev)
 
+Controles -- PS Vita
+
+DIRIGIR
+  R              acelerar
+  L              frear / re
+  Analogico esq. virar
+  X              freio de mao
+  X + direcional manobras no ar (segure X no ar e use o direcional
+                 digital -- no original e o mesmo combo: freio de mao +
+                 setas). Com X segurado os gatilhos nao aceleram, para
+                 nao dar flip sem querer.
+  Analogico dir. girar a camera (esquerda/direita, segurando)
+
+EM CORRIDA
+  Analog. dir. cima   seta guia: pista <-> carros
+  Analog. dir. baixo  radar
+  Triangulo      trocar camera (3 modos)
+  Quadrado       mutar musica
+  Select         mutar efeitos
+  Start          PAUSAR
+
 NOTA SOBRE A ARTE DO VITA
   Este build e o de Linux, entao ele mostra a arte de TECLADO. Os assets
   de PlayStation em data/vita/ so entram quando o define NFM_TARGET_VITA

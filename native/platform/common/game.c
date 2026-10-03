@@ -243,13 +243,18 @@ typedef enum {
 // confined to help text on the one target where the source's own wording
 // cannot be followed. See native/CMakeLists.txt for where the define
 // comes from.
+// KEY_STUNT is what the stunt combo pairs with the handbrake: the same
+// arrow keys on desktop, but the D-pad on the Vita, where driving itself
+// is triggers + left stick (platform/vita/input.c).
 #ifdef NFM_TARGET_VITA
-#define KEY_STEER    "STICK OR D-PAD"
+#define KEY_STEER    "L/R AND LEFT STICK"
+#define KEY_STUNT    "D-PAD"
 #define KEY_HANDB    "CROSS"
-#define KEY_ARRACE   "FLICK THE RIGHT STICK LEFT"
+#define KEY_ARRACE   "FLICK THE RIGHT STICK UP"
 #define KEY_CONTINUE "CROSS"
 #else
 #define KEY_STEER    "ARROW KEYS"
+#define KEY_STUNT    "ARROW KEYS"
 #define KEY_HANDB    "SPACEBAR"
 #define KEY_ARRACE   "PRESS [ A ]"
 #define KEY_CONTINUE "ENTER"
@@ -2276,7 +2281,7 @@ static void draw_instructions(Graphics2D *g, const InstAssets *ia,
     if (ia->stunts.tex >= 0) gfx_draw_image(g, ia->stunts.tex, 105, 175, ia->stunts.w, ia->stunts.h);
     if (ia->opwr.tex >= 0)   gfx_draw_image(g, ia->opwr.tex, 540, 253, ia->opwr.w, ia->opwr.h);
     vfont_draw_string(g, "TO PERFORM STUNTS. WHEN YOUR CAR IS IN THE AIR:", 125, 310, 1, 1.0f);
-    vfont_draw_string(g, "PRESS COMBO " KEY_HANDB " + " KEY_STEER, 125, 330, 1, 1.0f);
+    vfont_draw_string(g, "PRESS COMBO " KEY_HANDB " + " KEY_STUNT, 125, 330, 1, 1.0f);
     if (ia->space.tex >= 0)  gfx_draw_image(g, ia->space.tex, 185, 355, ia->space.w, ia->space.h);
     if (ia->plus.tex >= 0)   gfx_draw_image(g, ia->plus.tex, 405, 358, ia->plus.w, ia->plus.h);
     if (ia->arrows.tex >= 0) gfx_draw_image(g, ia->arrows.tex, 491, 323, ia->arrows.w, ia->arrows.h);
@@ -2359,7 +2364,7 @@ static void draw_instructions(Graphics2D *g, const InstAssets *ia,
     gfx_fill_rect(g, 70, 175, 660, 1);
     gfx_set_color(g, 0, 0, 0);
     vfont_draw_string(g, "TO PERFORM STUNTS:", 125, 200, 1, 1.0f);
-    vfont_draw_string(g, "IN THE AIR PRESS COMBO " KEY_HANDB " + " KEY_STEER, 125, 220, 1, 1.0f);
+    vfont_draw_string(g, "IN THE AIR PRESS COMBO " KEY_HANDB " + " KEY_STUNT, 125, 220, 1, 1.0f);
     if (ia->space.tex >= 0)  gfx_draw_image(g, ia->space.tex, 185, 245, ia->space.w, ia->space.h);
     if (ia->plus.tex >= 0)   gfx_draw_image(g, ia->plus.tex, 405, 248, ia->plus.w, ia->plus.h);
     if (ia->arrows.tex >= 0) gfx_draw_image(g, ia->arrows.tex, 491, 213, ia->arrows.w, ia->arrows.h);

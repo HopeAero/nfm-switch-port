@@ -190,14 +190,15 @@ bool platform_poll(bool held[BTN_COUNT]) {
   held[BTN_VIEW] = (pad.buttons & SCE_CTRL_TRIANGLE) != 0;
   held[BTN_MUTE_MUSIC] = (pad.buttons & SCE_CTRL_SQUARE) != 0;
   held[BTN_MUTE_SFX] = (pad.buttons & SCE_CTRL_SELECT) != 0;
-  // A (arrace) and S (radar) go on the RIGHT stick, which nothing else
-  // uses. Every face and shoulder button is already spoken for, but a
-  // flick of an otherwise idle stick is a normal handheld idiom for a
-  // toggle and costs nothing else. Same deadzone as the left stick, for
-  // the same reason (see above); game.c edge-detects both, so a held
+  // A (arrace) and S (radar) go on the RIGHT stick's y axis: flick up for
+  // the guidance arrow, down for the radar. Its x axis is the camera
+  // (input.c's lookback), so the toggles take the other axis. Every face
+  // and shoulder button is already spoken for, and a flick of a stick is
+  // a normal handheld idiom for a toggle. Same deadzone as the left stick,
+  // for the same reason (see above); game.c edge-detects both, so a held
   // flick toggles once rather than repeating.
-  held[BTN_ARRACE] = pad.rx < (128 - kStickDeadzone);
-  held[BTN_RADAR] = pad.rx > (128 + kStickDeadzone);
+  held[BTN_ARRACE] = pad.ry < (128 - kStickDeadzone);
+  held[BTN_RADAR] = pad.ry > (128 + kStickDeadzone);
   // Pause on START, where a handheld player looks for it first. That
   // costs this build its old "START returns to LiveArea" gesture (see
   // the return below), which is an acceptable trade now that a real
