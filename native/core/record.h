@@ -120,6 +120,8 @@ typedef struct Record {
 // same as `fix`/`dest`, which stay 0 here and only become -1 via
 // record_reset() -- a real distinction the Java itself makes, preserved).
 void record_init(Record *r);
+// Frees the ContOs a valid-or-zeroed Record owns -- see record.c.
+void record_free(Record *r);
 
 // Ports Record.java's reset(final ContO[] array) (:192-236) -- called
 // once per race start (same moment mad_reseto() runs for each car).

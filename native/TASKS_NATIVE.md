@@ -2773,6 +2773,34 @@ recorded here so it does not get re-investigated:
   can the button. Same category as `loading()`'s own "% loaded | KB
   remaining" readout, already excluded for the same reason.
 
+## Performance / memory
+
+- [x] **`cont_o_init_copy()` over a live ContO leaked the whole old car.**
+      It starts with `memset(dst, 0, ...)`, and the replay ring
+      (`record_rec`, 6 copies per car every ~50 calls), the newcar rebuild
+      on every repair, the replays and `record_init`'s own memset all
+      called it on ContOs that already owned their Planes. ~50KB per car
+      copy, ~55MB per minute of a 7-car race measured on the host; the
+      Linux build's peak RSS went 159MB -> 193MB between frame 1500 and
+      3000 of a headless race before the fix, flat 137MB after. On the
+      Vita that is heap growth and fragmentation for the whole session,
+      plus a burst of ~800 mallocs on every replay keyframe tick. Fixed
+      with `cont_o_recopy()` (free, then copy) at those sites,
+      `record_free()` before each race's `record_init()`, and `co[]`/`rpd`
+      zeroed at declaration so the first free is safe. `init_copy` itself
+      is unchanged, since the stage loader and the tests hand it
+      uninitialised memory.
+- [x] `gfx.c`'s `fill_trapezoid` did two malloc/free pairs per concave
+      polygon (hundreds a frame); stack buffers now, heap only past 28
+      vertices.
+- [ ] NOT verified on hardware: whether the reported drop near the repair
+      ring is fully explained. On the host the ring itself costs ~0.03ms of
+      CPU and ~0.08 screens of extra fill, i.e. nothing. Remaining
+      suspects on the Vita: the always-on motion-blur trail in a race
+      (two extra full-screen passes, `mvect` is always < 100 in view 0),
+      and the audio thread holding `al->lock` for a whole grain's mix +
+      MOD render, which blocks every `audio_play` from the main thread.
+
 ## Open questions for the user, not yet decided
 - ~~Control scheme~~ — resolved: `platform/linux/input.c` uses
   `web/main.js`'s own keyboard binding (see above). `platform/vita/

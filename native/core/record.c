@@ -12,6 +12,19 @@
 #include <math.h>
 #include <stdlib.h>
 
+// Frees every ContO the Record owns (car[][], starcar[], ocar[]). The
+// Record must be valid or all-zero. record_init() deliberately does NOT
+// do this itself -- it is the constructor and may be handed uninitialised
+// memory -- so a caller reusing a Record across races calls this first.
+void record_free(Record *r) {
+  for (int32_t j = 0; j < 6; j++)
+    for (int32_t k = 0; k < 8; k++) cont_o_free(&r->car[j][k]);
+  for (int32_t i = 0; i < 8; i++) {
+    cont_o_free(&r->starcar[i]);
+    cont_o_free(&r->ocar[i]);
+  }
+}
+
 void record_init(Record *r) {
   memset(r, 0, sizeof(*r));
   // Record.java:104,152-153 -- the constructor's own non-zero defaults.
@@ -33,14 +46,14 @@ void record_reset(Record *r, ContO *cars[8]) {
   r->closefinish = 0;
   r->powered = 0;
   for (int32_t i = 0; i < 8; i++) {
-    if (r->prepit) cont_o_init_copy(&r->starcar[i], cars[i], 0, 0, 0, 0);
+    if (r->prepit) cont_o_recopy(&r->starcar[i], cars[i], 0, 0, 0, 0);
     r->fix[i] = -1;
     r->dest[i] = -1;
     r->cntdest[i] = 0;
   }
   for (int32_t j = 0; j < 6; j++) {
     for (int32_t k = 0; k < 8; k++) {
-      cont_o_init_copy(&r->car[j][k], cars[k], 0, 0, 0, 0);
+      cont_o_recopy(&r->car[j][k], cars[k], 0, 0, 0, 0);
       r->squash[j][k] = 0;
     }
   }
@@ -100,10 +113,10 @@ void record_rec(Record *r, ContO *contO, int32_t n, int32_t squash, int32_t last
 
   if (r->cntf == 50) {
     for (int32_t i = 0; i < 5; i++) {
-      cont_o_init_copy(&r->car[i][n], &r->car[i + 1][n], 0, 0, 0, 0);
+      cont_o_recopy(&r->car[i][n], &r->car[i + 1][n], 0, 0, 0, 0);
       r->squash[i][n] = r->squash[i + 1][n];
     }
-    cont_o_init_copy(&r->car[5][n], contO, 0, 0, 0, 0);
+    cont_o_recopy(&r->car[5][n], contO, 0, 0, 0, 0);
     r->squash[5][n] = squash;
     r->cntf = 0;
   } else {
@@ -197,7 +210,7 @@ void record_cotchinow(Record *r, int32_t wasted) {
   if (r->caught < 300) return;
   r->wasted = wasted;
   for (int32_t i = 0; i < 8; i++) {
-    cont_o_init_copy(&r->starcar[i], &r->car[0][i], 0, 0, 0, 0);
+    cont_o_recopy(&r->starcar[i], &r->car[0][i], 0, 0, 0, 0);
     r->hsquash[i] = r->squash[0][i];
     r->hfix[i] = r->fix[i];
     r->hdest[i] = r->dest[i];

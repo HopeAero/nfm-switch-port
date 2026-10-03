@@ -3091,10 +3091,13 @@ int game_run(void) {
   // xtGraphics.java's inishcarselect() (`this.nplayers = 7`) for every
   // single-player campaign/free-play race; slots 1-6 are AI-controlled
   // via control_preform(), see the STATE_RACING tick loop below.
-  ContO co[BOTS_MAX_PLAYERS];
+  // Zeroed, not left uninitialised: every (re)build of a car goes through
+  // cont_o_recopy(), which frees what the slot held before.
+  ContO co[BOTS_MAX_PLAYERS] = {0};
   ContO *stage_objects = NULL;
   int32_t stage_count = 0;
   Record rpd;
+  memset(&rpd, 0, sizeof(rpd)); // record_free() before each race's record_init() needs it valid
   CheckPoints cp;
   XtGraphicsStub xt;
   Control control[BOTS_MAX_PLAYERS];
@@ -3755,6 +3758,7 @@ int game_run(void) {
       }
       sc[0] = car_slot;
 
+      record_free(&rpd); // last race's replay ring -- record_init() just zeroes it
       record_init(&rpd);
       // :3144-3149 -- musicomp()'s own coin flip for which side the
       // countdown face appears on. Java writes `Math.random() >
@@ -3803,7 +3807,7 @@ int game_run(void) {
 
       for (int32_t i = 0; i < nplayers; i++) {
         ContO *base = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : &base_models[sc[i]];
-        cont_o_init_copy(&co[i], base, kXstart[i], 250 - base->grat, kZstart[i], 0);
+        cont_o_recopy(&co[i], base, kXstart[i], 250 - base->grat, kZstart[i], 0);
         // Keyboard/pad input drives slot 0 -- see platform/<name>/input.h
         // for the exact keymap. Polled once per frame in the loop below,
         // after platform_poll() reads this frame's hardware state. Slots
@@ -3857,7 +3861,7 @@ int game_run(void) {
       // regression-tested. Suffix picks record.closefinish (0/1/2) or the
       // "local player caught" crash-reel path.
       if (screenshot_menu && strncmp(screenshot_menu, "replay", 6) == 0) {
-        for (int32_t i = 0; i < nplayers; i++) cont_o_init_copy(&rpd.starcar[i], &co[i], 0, 0, 0, 0);
+        for (int32_t i = 0; i < nplayers; i++) cont_o_recopy(&rpd.starcar[i], &co[i], 0, 0, 0, 0);
         rpd.hcaught = true;
         if (strcmp(screenshot_menu, "replaycrash") == 0) {
           rpd.wasted = 0;
@@ -4594,7 +4598,7 @@ int game_run(void) {
         if (mad[i].newcar) {
           int32_t saved_xz = co[i].xz, saved_xy = co[i].xy, saved_zy = co[i].zy;
           ContO *pristine = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : &base_models[mad[i].cn];
-          cont_o_init_copy(&co[i], pristine, co[i].x, co[i].y, co[i].z, 0);
+          cont_o_recopy(&co[i], pristine, co[i].x, co[i].y, co[i].z, 0);
           co[i].xz = saved_xz;
           co[i].xy = saved_xy;
           co[i].zy = saved_zy;
@@ -4896,7 +4900,7 @@ int game_run(void) {
           m.vxz += 90;
         }
         for (int32_t i = 0; i < nplayers; i++) {
-          cont_o_init_copy(&co[i], &rpd.starcar[i], 0, 0, 0, 0);
+          cont_o_recopy(&co[i], &rpd.starcar[i], 0, 0, 0, 0);
         }
       }
 
@@ -4937,7 +4941,7 @@ int game_run(void) {
         }
         if (co[i].fcnt == 7 || co[i].fcnt == 8) {
           ContO *pristine = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : &base_models[mad[i].cn];
-          cont_o_init_copy(&co[i], pristine, 0, 0, 0, 0);
+          cont_o_recopy(&co[i], pristine, 0, 0, 0, 0);
           rpd.cntdest[i] = 0;
         }
         record_playh(&rpd, &co[i], &mad[i], i, replay_tick, xt.im);
@@ -5077,8 +5081,8 @@ int game_run(void) {
         // :1259-1263 -- stash every car's LIVE pose into ocar[] so the
         // last frame can put it back, then jump them to the ring's start.
         for (int32_t i = 0; i < nplayers; i++) {
-          cont_o_init_copy(&rpd.ocar[i], &co[i], 0, 0, 0, 0);
-          cont_o_init_copy(&co[i], &rpd.car[0][i], 0, 0, 0, 0);
+          cont_o_recopy(&rpd.ocar[i], &co[i], 0, 0, 0, 0);
+          cont_o_recopy(&co[i], &rpd.car[0][i], 0, 0, 0, 0);
         }
       }
       draw_race_scene(&g, &m, all_objs, total_objs, visible_idx, rank, order);
@@ -5095,11 +5099,11 @@ int game_run(void) {
         }
         if (co[i].fcnt == 7 || co[i].fcnt == 8) {
           ContO *pristine = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : &base_models[mad[i].cn];
-          cont_o_init_copy(&co[i], pristine, 0, 0, 0, 0);
+          cont_o_recopy(&co[i], pristine, 0, 0, 0, 0);
           rpd.cntdest[i] = 0;
         }
         if (pause_replay_tick == 299) {
-          cont_o_init_copy(&co[i], &rpd.ocar[i], 0, 0, 0, 0);
+          cont_o_recopy(&co[i], &rpd.ocar[i], 0, 0, 0, 0);
         }
         record_play(&rpd, &co[i], &mad[i], i, pause_replay_tick);
       }

@@ -76,6 +76,11 @@ void cont_o_free(ContO *co) {
   memset(co, 0, sizeof(*co));
 }
 
+void cont_o_recopy(ContO *dst, ContO *src, int32_t x, int32_t y, int32_t z, int32_t a) {
+  cont_o_free(dst);
+  cont_o_init_copy(dst, src, x, y, z, a);
+}
+
 void cont_o_init_copy(ContO *dst, ContO *src, int32_t x, int32_t y, int32_t z, int32_t a) {
   memset(dst, 0, sizeof(*dst));
   dst->m = src->m;

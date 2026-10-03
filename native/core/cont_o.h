@@ -189,6 +189,17 @@ void cont_o_init_buf(ContO *co, const char *text, Medium *m, Trackers *t);
  */
 void cont_o_init_copy(ContO *dst, ContO *src, int32_t x, int32_t y, int32_t z, int32_t a);
 
+/**
+ * cont_o_init_copy() over a ContO that may already own allocations:
+ * frees `dst` first, then copies. init_copy itself starts with a memset,
+ * so calling it on a live ContO drops every Plane and array it held --
+ * which the replay ring (record_rec, every ~6 ticks per car), the
+ * newcar rebuild and the replays all did, leaking ~50KB per car copy
+ * (~55MB per minute of a 7-car race). `dst` must be a valid ContO or
+ * all-zero, never uninitialised memory; `dst != src`.
+ */
+void cont_o_recopy(ContO *dst, ContO *src, int32_t x, int32_t y, int32_t z, int32_t a);
+
 /** Frees every Plane in co->p[0..npl), co->p itself, and any allocated
  * track/shadow/dust/spark arrays. */
 void cont_o_free(ContO *co);

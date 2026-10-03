@@ -136,8 +136,14 @@ static void fill_trapezoid(Graphics2D *g, const int32_t *xs, const int32_t *ys, 
 
   // Worst case: 2 (top/bot) + n (vertices in range) + n*(n-1)/2 (proper
   // pairwise intersections).
+  // Stack buffers cover every polygon the game makes (faces are <= 28
+  // vertices -> 408 events); the heap is only a fallback. This runs for
+  // every concave polygon, hundreds a frame, and two malloc/free pairs
+  // apiece is real time on the Vita's CPU.
   int32_t ev_cap = 2 + n + (n * (n - 1)) / 2;
-  double *ev = malloc(sizeof(double) * (size_t)ev_cap);
+  double ev_stack[512];
+  Span span_stack[64];
+  double *ev = ev_cap <= 512 ? ev_stack : malloc(sizeof(double) * (size_t)ev_cap);
   int32_t ev_n = 0;
   ev[ev_n++] = top;
   ev[ev_n++] = bot;
@@ -170,7 +176,7 @@ static void fill_trapezoid(Graphics2D *g, const int32_t *xs, const int32_t *ys, 
     ev[j + 1] = key;
   }
 
-  Span *span = malloc(sizeof(Span) * (size_t)n); // at most n edges can cross a band
+  Span *span = n <= 64 ? span_stack : malloc(sizeof(Span) * (size_t)n); // at most n edges can cross a band
   for (int32_t e = 0; e + 1 < ev_n; e++) {
     double ya = ev[e], yb = ev[e + 1];
     if (yb - ya < 1e-9) continue;
@@ -203,8 +209,8 @@ static void fill_trapezoid(Graphics2D *g, const int32_t *xs, const int32_t *ys, 
       emit_tri(g, (float)l.lo, (float)ya, (float)r.hi, (float)yb, (float)l.hi, (float)yb);
     }
   }
-  free(span);
-  free(ev);
+  if (span != span_stack) free(span);
+  if (ev != ev_stack) free(ev);
 }
 
 void gfx_fill_polygon(Graphics2D *g, const int32_t *xs, const int32_t *ys, int32_t n) {
