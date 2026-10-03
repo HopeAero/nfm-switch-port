@@ -41,6 +41,10 @@ void platform_shutdown(void);
  * (game.c's fixed-timestep accumulator), so the epoch doesn't matter. */
 uint32_t platform_ticks_ms(void);
 
+/** Monotonic microseconds, for the NFM_SHOW_FPS frame-phase breakdown
+ * (platform_ticks_ms is too coarse to split a 16ms frame). */
+uint64_t platform_ticks_us(void);
+
 /** Best-effort sleep, for the desktop build's own CPU-usage throttle.
  * Implementations that already block on vsync inside
  * platform_swap_buffers() (the Vita target) may make this a no-op. */

@@ -3377,7 +3377,20 @@ int game_run(void) {
   GfxGlRenderTarget *rt_pair[2] = {&scene_rt, &accum_rt};
   int32_t rt_cur = 0;
   bool running = true;
+#ifdef NFM_SHOW_FPS
+  // Frame-phase breakdown for the FPS overlay (microseconds, summed over
+  // the current one-second window): logic = input, menu state and the
+  // physics ticks; build = assembling this frame's geometry on the CPU;
+  // gl = handing it to the GL plus the composite; swap = waiting in
+  // platform_swap_buffers, i.e. for the GPU to finish and for vsync.
+  uint64_t prof_frame_start = 0, prof_render_start = 0, prof_submit_start = 0, prof_swap_start = 0;
+  uint64_t prof_sum[4] = {0, 0, 0, 0};
+  int32_t prof_avg_tenths[4] = {0, 0, 0, 0}; // last window's per-frame mean, 0.1ms units
+#endif
   while (running) {
+#ifdef NFM_SHOW_FPS
+    prof_frame_start = platform_ticks_us();
+#endif
     bool held[BTN_COUNT];
     running = platform_poll(held);
 #define KEY_EDGE(b) (held[(b)] && !previous_held[(b)])
@@ -4554,6 +4567,9 @@ int game_run(void) {
     // and the replays it can be taken from). Every other screen draws
     // straight to the display -- one full-screen pass and one render-
     // target switch fewer per frame on the Vita.
+#ifdef NFM_SHOW_FPS
+    prof_render_start = platform_ticks_us();
+#endif
     const GameState render_state = state;
     const bool letterboxed = render_state != STATE_RACING && render_state != STATE_REPLAY &&
                              render_state != STATE_PAUSED && render_state != STATE_PAUSE_REPLAY &&
@@ -6291,6 +6307,9 @@ int game_run(void) {
       }
     }
 
+#ifdef NFM_SHOW_FPS
+    prof_submit_start = platform_ticks_us();
+#endif
     gfx_submit_gl(&g);
 
     // GameSparker.java's own paint() (decompilation/java-src/
@@ -6424,7 +6443,16 @@ int game_run(void) {
       fps_prev_frame = now;
       if (fps_window_start == 0) fps_window_start = now;
       fps_frames++;
+      uint64_t prof_now = platform_ticks_us();
+      prof_sum[0] += prof_render_start - prof_frame_start;
+      prof_sum[1] += prof_submit_start - prof_render_start;
+      prof_sum[2] += prof_now - prof_submit_start;
+      // prof_sum[3] (swap) is added after platform_swap_buffers below.
       if (now - fps_window_start >= 1000) {
+        for (int32_t k = 0; k < 4; k++) {
+          prof_avg_tenths[k] = (int32_t)(prof_sum[k] / (uint64_t)(100 * fps_frames));
+          prof_sum[k] = 0;
+        }
         fps_value = fps_frames;
         fps_frames = 0;
         fps_window_start = now;
@@ -6445,12 +6473,30 @@ int game_run(void) {
       char fps_buf[32];
       snprintf(fps_buf, sizeof(fps_buf), "%d/%d", fps_value, fps_worst);
       gfx_set_color(&g, 255, 255, 0);
-      bitfont_draw_string(&g, fps_buf, 4, 4);
+      // Bottom-left, clear of the race HUD's top-left lap/position panel.
+      bitfont_draw_string(&g, fps_buf, 4, height - 40);
+      // Second line: where a frame's time went, mean ms over the last
+      // second -- logic:build:gl:swap (see prof_sum's declaration). A high
+      // swap with low everything else means the GPU, not the CPU, is the
+      // limit; a high build means the per-face geometry work is.
+      char prof_buf[64];
+      snprintf(prof_buf, sizeof(prof_buf), "%d.%d:%d.%d:%d.%d:%d.%d",
+               prof_avg_tenths[0] / 10, prof_avg_tenths[0] % 10,
+               prof_avg_tenths[1] / 10, prof_avg_tenths[1] % 10,
+               prof_avg_tenths[2] / 10, prof_avg_tenths[2] % 10,
+               prof_avg_tenths[3] / 10, prof_avg_tenths[3] % 10);
+      bitfont_draw_string(&g, prof_buf, 4, height - 20);
       gfx_submit_gl(&g);
     }
 #endif
 
+#ifdef NFM_SHOW_FPS
+    prof_swap_start = platform_ticks_us();
+#endif
     platform_swap_buffers();
+#ifdef NFM_SHOW_FPS
+    prof_sum[3] += platform_ticks_us() - prof_swap_start;
+#endif
     platform_delay_ms(16);
     frame++;
     // Snapshot this frame's buttons as "previous" for the next frame's

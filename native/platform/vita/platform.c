@@ -126,6 +126,10 @@ uint32_t platform_ticks_ms(void) {
   return (uint32_t)(sceKernelGetProcessTimeWide() / 1000);
 }
 
+uint64_t platform_ticks_us(void) {
+  return (uint64_t)sceKernelGetProcessTimeWide();
+}
+
 void platform_delay_ms(uint32_t ms) {
   // No-op: vglSwapBuffers() below already blocks until the next vblank,
   // same reason SDL_GL_SetSwapInterval(1) makes the desktop backend's own

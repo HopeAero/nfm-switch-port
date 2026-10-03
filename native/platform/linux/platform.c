@@ -48,6 +48,10 @@ uint32_t platform_ticks_ms(void) {
   return SDL_GetTicks();
 }
 
+uint64_t platform_ticks_us(void) {
+  return (uint64_t)((double)SDL_GetPerformanceCounter() * 1e6 / (double)SDL_GetPerformanceFrequency());
+}
+
 void platform_delay_ms(uint32_t ms) {
   SDL_Delay(ms);
 }
