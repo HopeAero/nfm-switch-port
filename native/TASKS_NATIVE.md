@@ -2809,6 +2809,20 @@ recorded here so it does not get re-investigated:
       frame; the final blit now copies just that rectangle, stretched to the
       screen (`gfx_gl_render_target_blit_region`), for every menu state.
       Racing, the replays, pause and cantreply keep the whole frame.
+- [x] **Pause menu brought to 1:1 with pausedgame().** It redrew the
+      frozen 3D scene in colour, sharp and without the HUD, under square
+      highlights. Now: fase -6's `pauseimage()` is transcribed
+      (`pause_image()` -- per-row running-average greyscale smear, the
+      237x188 panel under paused.gif tinted blue), applied to the frame
+      read back from scene_rt at the top of the frame after the pause
+      (HUD included, as Java's offImage), and again after the pause replay
+      (GameSparker.java:1340 returns through fase -6). Highlights and the
+      cantreply plate use new `gfx_fill_round_rect`/`gfx_draw_round_rect`
+      (arc 7x20); cantreply's text gets drawcs mode 1's drop shadow, now
+      implemented in hud_say_draw. `NFM_SCREENSHOT_MENU=paused` dumps it
+      headless. Unverified on the Vita: glReadPixels from an FBO under
+      vitaGL (falls back to the old frozen-scene redraw only when render
+      targets are unavailable altogether, not if the read misbehaves).
 - [ ] NOT verified on hardware: whether the reported drop near the repair
       ring is fully explained. On the host the ring itself costs ~0.03ms of
       CPU and ~0.08 screens of extra fill, i.e. nothing. Remaining

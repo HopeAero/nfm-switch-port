@@ -108,6 +108,13 @@ void gfx_draw_line(Graphics2D *g, int32_t x0, int32_t y0, int32_t x1, int32_t y1
 void gfx_fill_rect(Graphics2D *g, int32_t x, int32_t y, int32_t w, int32_t h);
 void gfx_draw_rect(Graphics2D *g, int32_t x, int32_t y, int32_t w, int32_t h);
 void gfx_fill_oval(Graphics2D *g, int32_t x, int32_t y, int32_t w, int32_t h);
+/** java.awt.Graphics fillRoundRect/drawRoundRect: corners are quarter
+ * ellipses `arc_w` wide and `arc_h` tall (each clamped to the rect). The
+ * outline follows the same path as gfx_draw_rect, i.e. x..x+w. */
+void gfx_fill_round_rect(Graphics2D *g, int32_t x, int32_t y, int32_t w, int32_t h,
+                         int32_t arc_w, int32_t arc_h);
+void gfx_draw_round_rect(Graphics2D *g, int32_t x, int32_t y, int32_t w, int32_t h,
+                         int32_t arc_w, int32_t arc_h);
 void gfx_clear_rect(Graphics2D *g, int32_t x, int32_t y, int32_t w, int32_t h);
 
 /**

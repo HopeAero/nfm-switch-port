@@ -1026,6 +1026,12 @@ static void hud_say_draw(Graphics2D *g, Medium *m, int32_t y, const char *str,
     if (b > 255) b = 255;
     if (b < 0) b = 0;
   }
+  if (mode == 1) {
+    // drawcs's drop shadow (xtGraphics.java drawcs, `n2 == 1`): the same
+    // string in black one pixel down-right, under the coloured copy.
+    gfx_set_color(g, 0, 0, 0);
+    draw_centered(g, str, 401, y + 1, 1);
+  }
   gfx_set_color(g, r, gg, b);
   draw_centered(g, str, 400, y, 1);
 }
@@ -1432,6 +1438,46 @@ static void hud_messages_tick(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad 
 static void draw_hud_img(Graphics2D *g, HudImg img, int32_t x, int32_t y) {
   if (img.tex < 0) return;
   gfx_draw_image(g, img.tex, x, y, img.w, img.h);
+}
+
+/**
+ * xtGraphics.pauseimage() (xtGraphics.java:9765-9806): turns the frame the
+ * race was paused on into the pause menu's backdrop, `fleximg`. Each row is
+ * greyscaled through a running average -- the first pixel of a row is its
+ * own (r+g+b)/3, every later one (r+g+b + prev*30)/33, which smears the
+ * picture sideways -- and the 237x188 panel under paused.gif at (281,8) is
+ * tinted blue from that same grey. Transcribed loop for loop, including
+ * the `i > 800*(8+n2)+281` test that starts each panel row at x=282.
+ *
+ * `rgba_bottom_up` is the 800x450 frame as glReadPixels returns it (row 0
+ * at the bottom); `out` receives top-down RGBA ready to upload.
+ */
+static void pause_image(const uint8_t *rgba_bottom_up, uint8_t *out) {
+  int32_t n = 0, n2 = 0, n3 = 0, n4 = 0;
+  for (int32_t i = 0; i < 360000; i++) {
+    int32_t x = i % 800, y = i / 800;
+    const uint8_t *src = &rgba_bottom_up[((449 - y) * 800 + x) * 4];
+    int32_t n5;
+    if (n4 == 0) {
+      n5 = n3 = (src[0] + src[1] + src[2]) / 3;
+    } else {
+      n5 = n3 = (src[0] + src[1] + src[2] + n3 * 30) / 33;
+    }
+    if (++n4 == 800) n4 = 0;
+    uint8_t *dst = &out[i * 4];
+    if (i > 800 * (8 + n2) + 281 && n2 < 188) {
+      dst[0] = (uint8_t)((n5 + 60) / 3);
+      dst[1] = (uint8_t)((n5 + 135) / 3);
+      dst[2] = (uint8_t)((n5 + 220) / 3);
+      if (++n == 237) {
+        ++n2;
+        n = 0;
+      }
+    } else {
+      dst[0] = dst[1] = dst[2] = (uint8_t)n5;
+    }
+    dst[3] = 255;
+  }
 }
 
 /**
@@ -3218,6 +3264,15 @@ int game_run(void) {
   int32_t pause_opselect = 0;
   int32_t pause_replay_tick = 0;
   int32_t cantreply_cnt = 0;
+  // fleximg: fase -6's one-frame pauseimage() of the frame underneath,
+  // taken from scene_rt at the top of the next frame (before it is
+  // cleared), on the way into the pause menu and again after its replay
+  // (GameSparker.java:1340 goes back through fase -6). `pause_flex_tex`
+  // stays -1 without render targets, and the menu then falls back to
+  // redrawing the frozen scene.
+  bool pause_snapshot_pending = false;
+  int32_t pause_flex_tex = -1;
+  uint8_t *pause_flex_read = NULL, *pause_flex_rgba = NULL;
 
   // Replay state -- GameSparker.java's own n7/n8/n9/n10/n11 locals (declared
   // once at the top of its outer render loop, :256-260, so they persist
@@ -4365,10 +4420,15 @@ int game_run(void) {
       // cosmetic, so this jumps straight to STATE_PAUSED, the same
       // shortcut this file already takes for the other cosmetic
       // transitions (see the fase -4 logo flash's own comment).
-      if (state == STATE_RACING && !race_holdit && KEY_EDGE(BTN_PAUSE)) {
+      // NFM_SCREENSHOT_MENU=paused: the headless hook can't press START,
+      // so it pauses the race a few frames before the dump instead.
+      bool hook_pause = screenshot_menu && strcmp(screenshot_menu, "paused") == 0 &&
+                        frame == screenshot_frame - 3;
+      if (state == STATE_RACING && !race_holdit && (KEY_EDGE(BTN_PAUSE) || hook_pause)) {
         audio_set_music_muted(&audio, true);
         stop_all_sfx_loops(&audio, engine_channel, &last_engine_bank, &air_channel, &wasted_channel);
         pause_opselect = 0;
+        pause_snapshot_pending = true;
         state = STATE_PAUSED;
       }
 
@@ -4470,6 +4530,25 @@ int game_run(void) {
     // Java's own `offImage` (a normal, fully-opaque render every time);
     // only the FINAL blit onto the window is the part that isn't
     // cleared first.
+    // fase -6 (GameSparker.java:1658-1663): scene_rt still holds the frame
+    // drawn just before the pause, HUD included -- Java's offImage at the
+    // moment pauseimage() reads it.
+    if (pause_snapshot_pending) {
+      pause_snapshot_pending = false;
+      if (motion_blur_ok) {
+        if (!pause_flex_read) pause_flex_read = malloc((size_t)800 * 450 * 4);
+        if (!pause_flex_rgba) pause_flex_rgba = malloc((size_t)800 * 450 * 4);
+        if (pause_flex_read && pause_flex_rgba) {
+          gfx_gl_render_target_bind(&scene_rt);
+          glReadPixels(0, 0, 800, 450, GL_RGBA, GL_UNSIGNED_BYTE, pause_flex_read);
+          gfx_gl_render_target_bind(NULL);
+          pause_image(pause_flex_read, pause_flex_rgba);
+          if (pause_flex_tex < 0) pause_flex_tex = gfx_gl_upload_texture(pause_flex_rgba, 800, 450);
+          else gfx_gl_update_texture(pause_flex_tex, pause_flex_rgba, 800, 450);
+        }
+      }
+    }
+
     if (motion_blur_ok) {
       gfx_gl_render_target_bind(&scene_rt);
       // Targeting the offscreen texture, which IS logical 800x450 (see
@@ -5161,6 +5240,7 @@ int game_run(void) {
       pause_replay_tick++;
       if (pause_replay_tick == 300) {
         pause_replay_tick = 0;
+        pause_snapshot_pending = true; // :1340 -- back through fase -6
         state = STATE_PAUSED;
       } else {
         if (xt.aflk) {
@@ -5175,16 +5255,18 @@ int game_run(void) {
       // PAUSE MENU -- fase -7, pausedgame() (xtGraphics.java:4695-4807),
       // and the fase -8 banner that sits on top of it.
       //
-      // Java paints `fleximg` here -- a blurred copy of the frame the race
-      // was paused on. This port has no blur pipeline, so it redraws the
-      // frozen scene instead: same content, just sharp. The physics loop
-      // does not run in this state, so the cars stand still.
-      draw_race_scene(&g, &m, all_objs, total_objs, visible_idx, rank, order);
+      // :4696-4698 -- `fleximg`, pauseimage()'s grey, smeared copy of the
+      // frame the race was paused on, with the blue panel already tinted
+      // in (see pause_image()). Without render targets there is no frame
+      // to read back; redraw the frozen scene instead.
+      if (pause_flex_tex >= 0) {
+        gfx_draw_image(&g, pause_flex_tex, 0, 0, 800, 450);
+      } else {
+        draw_race_scene(&g, &m, all_objs, total_objs, visible_idx, rank, order);
+      }
 
-      // :4717-4760 -- the highlight behind the selected row. Java uses
-      // fillRoundRect/drawRoundRect(...,7,20); no rounded-rect primitive
-      // here, same square-cornered approximation the hold card and the
-      // radar plate already make. `shaded` picks the outline colour, but
+      // :4717-4760 -- the highlight behind the selected row,
+      // fillRoundRect/drawRoundRect(...,7,20). `shaded` picks the outline colour, but
       // it is only ever set inside ctachm(), the MOUSE handler (:7395+),
       // so with no mouse it stays at its :417 false and the outline is
       // always (0,89,223).
@@ -5196,9 +5278,9 @@ int game_run(void) {
         int32_t ry = kPauseRow[pause_opselect][1];
         int32_t rw = kPauseRow[pause_opselect][2];
         gfx_set_color(&g, 64, 143, 223);
-        gfx_fill_rect(&g, rx, ry, rw, 22);
+        gfx_fill_round_rect(&g, rx, ry, rw, 22, 7, 20);
         gfx_set_color(&g, 0, 89, 223);
-        gfx_draw_rect(&g, rx, ry, rw, 22);
+        gfx_draw_round_rect(&g, rx, ry, rw, 22, 7, 20);
       }
       // :4761 -- the panel art itself, drawn OVER the highlight so its
       // labels read on top of the selected row's fill.
@@ -5206,16 +5288,14 @@ int game_run(void) {
 
       if (state == STATE_CANTREPLY) {
         // cantreply() -- :4820-4826, plus fase -8's own 150-frame
-        // auto-dismiss (:1679). drawcs mode 1 (the drop-shadow copy) is
-        // one of the modes hud_say_draw does not implement, so this uses
-        // mode 0; the text is white on a solid blue plate either way.
+        // auto-dismiss (:1679).
         gfx_set_color(&g, 64, 143, 223);
-        gfx_fill_rect(&g, 200, 73, 400, 23);
+        gfx_fill_round_rect(&g, 200, 73, 400, 23, 7, 20);
         gfx_set_color(&g, 0, 89, 223);
-        gfx_draw_rect(&g, 200, 73, 400, 23);
+        gfx_draw_round_rect(&g, 200, 73, 400, 23, 7, 20);
         hud_say_draw(&g, &m, 89,
                      "Sorry not enough replay data to play available, please try again later.",
-                     255, 255, 255, 0);
+                     255, 255, 255, 1);
         cantreply_cnt++;
         if (cantreply_cnt >= 150) {
           cantreply_cnt = 0;
@@ -6440,6 +6520,8 @@ int game_run(void) {
   audio_stop_music(&audio); // stop referencing stage_music before freeing it
   mod_free(&stage_music);
   car_smoke_warp_free(&car_smoke_warp);
+  free(pause_flex_read);
+  free(pause_flex_rgba);
   audio_shutdown(&audio);
   platform_shutdown();
   return 0;

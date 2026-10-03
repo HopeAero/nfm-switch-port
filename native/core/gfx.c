@@ -273,6 +273,52 @@ void gfx_fill_oval(Graphics2D *g, int32_t x, int32_t y, int32_t w, int32_t h) {
   }
 }
 
+// Points around a round rect, clockwise from the top-left corner's top end:
+// four quarter-ellipse arcs of ROUND_STEPS segments each.
+#define ROUND_STEPS 6
+static int32_t round_rect_path(double x, double y, double w, double h, double arc_w, double arc_h,
+                               double *px, double *py) {
+  double rx = arc_w / 2.0, ry = arc_h / 2.0;
+  if (rx > w / 2.0) rx = w / 2.0;
+  if (ry > h / 2.0) ry = h / 2.0;
+  // Corner ellipse centres, in path order: top-right, bottom-right,
+  // bottom-left, top-left; each arc starts at angle -90 + 90*k degrees.
+  const double cx[4] = {x + w - rx, x + w - rx, x + rx, x + rx};
+  const double cy[4] = {y + ry, y + h - ry, y + h - ry, y + ry};
+  int32_t n = 0;
+  for (int32_t k = 0; k < 4; k++) {
+    for (int32_t s = 0; s <= ROUND_STEPS; s++) {
+      double a = (-90.0 + 90.0 * k + 90.0 * s / ROUND_STEPS) * M_PI / 180.0;
+      px[n] = cx[k] + cos(a) * rx;
+      py[n] = cy[k] + sin(a) * ry;
+      n++;
+    }
+  }
+  return n;
+}
+
+void gfx_fill_round_rect(Graphics2D *g, int32_t x, int32_t y, int32_t w, int32_t h,
+                         int32_t arc_w, int32_t arc_h) {
+  double px[4 * (ROUND_STEPS + 1)], py[4 * (ROUND_STEPS + 1)];
+  int32_t n = round_rect_path(x, y, w, h, arc_w, arc_h, px, py);
+  // Convex, so a fan from the centre; emitted in place like every fill.
+  float cx = (float)(x + w / 2.0), cy = (float)(y + h / 2.0);
+  for (int32_t i = 0; i < n; i++) {
+    int32_t j = (i + 1) % n;
+    emit_tri(g, cx, cy, (float)px[i], (float)py[i], (float)px[j], (float)py[j]);
+  }
+}
+
+void gfx_draw_round_rect(Graphics2D *g, int32_t x, int32_t y, int32_t w, int32_t h,
+                         int32_t arc_w, int32_t arc_h) {
+  double px[4 * (ROUND_STEPS + 1)], py[4 * (ROUND_STEPS + 1)];
+  int32_t n = round_rect_path(x, y, w, h, arc_w, arc_h, px, py);
+  for (int32_t i = 0; i < n; i++) {
+    int32_t j = (i + 1) % n;
+    segment(g, px[i], py[i], px[j], py[j]);
+  }
+}
+
 // Ports web/graphics.js's clearRect verbatim, INCLUDING its quirk: it sets
 // r/g/b/a to black-opaque and restores them afterward, but never calls
 // _pack() (setColor/setComposite's job) in between -- so the packed `rgba`
