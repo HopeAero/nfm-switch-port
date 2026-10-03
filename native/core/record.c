@@ -112,9 +112,34 @@ void record_rec(Record *r, ContO *contO, int32_t n, int32_t squash, int32_t last
   if (n == im) r->caught++;
 
   if (r->cntf == 50) {
-    for (int32_t i = 0; i < 5; i++) {
-      cont_o_recopy(&r->car[i][n], &r->car[i + 1][n], 0, 0, 0, 0);
-      r->squash[i][n] = r->squash[i + 1][n];
+    // The keyframe ring shifts down one slot. The source rebuilds slots
+    // 0-4 as fresh ContO copies of slots 1-5, but a copy of a copy is the
+    // same ContO as the copy (cont_o_init_copy reads only fields it also
+    // writes unchanged), and ring slots are never modified after they are
+    // made -- they are only ever copied FROM. So the slots are MOVED down
+    // (ownership of their Planes with them) and only the new keyframe is
+    // copied: one deep copy instead of six, which was a ~2.8M-instruction
+    // spike every ~7 ticks. The exception is a gr == -15 face, whose mesh
+    // ContO's constructor re-randomises from the SIMULATION random stream
+    // on every copy: skipping those copies would shift every later sim
+    // random, so a car with one keeps the original six copies. No shipped
+    // car has one (only off-road track pieces do).
+    bool rerandomised = false;
+    for (int32_t k = 0; k < r->car[1][n].npl && !rerandomised; k++) {
+      if (r->car[1][n].p[k].gr == -15) rerandomised = true;
+    }
+    if (rerandomised) {
+      for (int32_t i = 0; i < 5; i++) {
+        cont_o_recopy(&r->car[i][n], &r->car[i + 1][n], 0, 0, 0, 0);
+        r->squash[i][n] = r->squash[i + 1][n];
+      }
+    } else {
+      cont_o_free(&r->car[0][n]);
+      for (int32_t i = 0; i < 5; i++) {
+        r->car[i][n] = r->car[i + 1][n];
+        r->squash[i][n] = r->squash[i + 1][n];
+      }
+      memset(&r->car[5][n], 0, sizeof(r->car[5][n]));
     }
     cont_o_recopy(&r->car[5][n], contO, 0, 0, 0, 0);
     r->squash[5][n] = squash;
