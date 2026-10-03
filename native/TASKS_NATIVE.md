@@ -2823,6 +2823,34 @@ recorded here so it does not get re-investigated:
       headless. Unverified on the Vita: glReadPixels from an FBO under
       vitaGL (falls back to the old frozen-scene redraw only when render
       targets are unavailable altogether, not if the read misbehaves).
+- [x] **Rendering performance pass (Vita frame rate in race, car select,
+      stage select).** Measured on the host with a core-only model of one
+      race frame (medium_d + 7 cars + stage, no GL) under callgrind, every
+      change checked bit-identical by hashing the whole vertex buffer over
+      300 frames on six stages with dents/chips/sparks/dust/repair:
+      - plane_d/plane_s malloc'd 7 + 5 scratch arrays per face (~20% of
+        the frame) -> stack arrays (PLANE_MAX_N = the parser's 100).
+      - cont_o_d's O(npl^2) face ranking -> stable merge sort (same
+        permutation, same replacement as web/ContO.js).
+      - per-vertex helpers (jtrunc, medium_xs/ys/sin/cos/rot, wrappers)
+        static inline; gfx reserves per polygon, not per vertex; plane_d's
+        pairwise max |dx|/|dy| is max - min with the pair loop as fallback.
+      Race draw: 13.25M -> 8.68M instructions/frame.
+      - record_rec moved the keyframe ring instead of 5 deep copies (a
+        ~2.8M-instruction spike every ~7 ticks); cars with a gr == -15 face
+        keep the copies, since those re-randomise from the sim stream.
+      - Motion blur via a ping-pong pair: 2 passes instead of 3; screens
+        with no read-back draw straight to the display (1 pass).
+      - Racing and both replays draw once per tick (53ms), car/stage select
+        once per ~40ms (the Java loop's menu rate), presenting the last
+        picture in between. Besides ~3x/2.4x less work this fixes fidelity:
+        the trail blended per display frame (a fraction of the original's),
+        the HUD's per-draw timers ran 3x fast ('Checkpoint!' 0.5s instead
+        of 1.6s), the replays played 3x fast, the menus animated 2.4x fast.
+      - Vita clocks raised to 444/222/222/166 MHz (were the system defaults).
+      - NFM_SHOW_FPS adds a logic:build:gl:swap ms breakdown line.
+      NOT measured on hardware yet -- read the breakdown line on a Vita
+      next: a high `swap` with low `build` means the GPU is the limit.
 - [ ] NOT verified on hardware: whether the reported drop near the repair
       ring is fully explained. On the host the ring itself costs ~0.03ms of
       CPU and ~0.08 screens of extra fill, i.e. nothing. Remaining
