@@ -2959,6 +2959,10 @@ int game_run(void) {
   const char *screenshot_path = getenv("NFM_SCREENSHOT_PPM");
   const char *screenshot_frame_env = getenv("NFM_SCREENSHOT_FRAME");
   int32_t screenshot_frame = screenshot_frame_env ? atoi(screenshot_frame_env) : 0;
+  // NFM_SCREENSHOT_MENU=pausereplay picks Instant Replay at this frame
+  // (default: 60 frames before the dump), so a run can dump any point of it.
+  const char *hook_replay_env = getenv("NFM_HOOK_REPLAY_FRAME");
+  int32_t hook_replay_frame = hook_replay_env ? atoi(hook_replay_env) : screenshot_frame - 60;
 
   // --- Menu state (main -> gamemode -> car -> stage -> race) ---
   // See native/docs/MENU_FLOW.md §2 for the full Java fase-transition
@@ -3601,6 +3605,10 @@ int game_run(void) {
       // overlay's own visibility uses below.
       if (KEY_EDGE(BTN_CONFIRM) && car_flipo < 10) {
         if (car_index == CUSTOM_CAR_INDEX || game_progress_can_pick_car(&progress, (GameMode)gmode, car_index)) {
+          // :6466 -- leaving car select clears the preview camera's `crs`
+          // (draw_car_preview sets it). See the race setup for why it
+          // matters.
+          m.crs = false;
           // :6490-6496 -- remember this campaign's chosen car. `scm[]` is
           // the SAME field the bonus-car unlock writes (:6701-6775): it
           // means "the car this campaign should default to", set either
@@ -3723,7 +3731,12 @@ int game_run(void) {
         pause_opselect++;
         if (pause_opselect == 4) pause_opselect = 0;
       }
-      if (KEY_EDGE(BTN_CONFIRM)) {
+      // NFM_SCREENSHOT_MENU=pausereplay: headless stand-in for picking
+      // Instant Replay (see the matching pause trigger in the race block).
+      bool hook_replay = screenshot_menu && strcmp(screenshot_menu, "pausereplay") == 0 &&
+                         frame == hook_replay_frame;
+      if (hook_replay) pause_opselect = 1;
+      if (KEY_EDGE(BTN_CONFIRM) || hook_replay) {
         if (pause_opselect == 0) {
           // :4763-4768 -- resume. Java restarts the music track it stopped
           // on the way in; this port pauses/resumes the same stream via
@@ -3910,6 +3923,14 @@ int game_run(void) {
       }
       sc[0] = car_slot;
 
+      // xtGraphics.java:3116 -- `crs` off before the race starts. It is the
+      // flag the car-select preview and the finish screen's unlocked-car
+      // card turn on for their own fixed camera, and nothing in the race
+      // ever cleared it: with it on, cont_o_d takes its `m.crs` branch and
+      // every car shadow is projected flat onto m.ground, under ramps and
+      // all, instead of onto the track piece the car is on (and plane_d's
+      // distant-face simplification is disabled).
+      m.crs = false;
       record_free(&rpd); // last race's replay ring -- record_init() just zeroes it
       record_init(&rpd);
       // :3144-3149 -- musicomp()'s own coin flip for which side the
@@ -4049,6 +4070,8 @@ int game_run(void) {
 
     if (state == STATE_RACING) {
       input_poll(&control[0]);
+      // Headless replay hook: hold the throttle so there is motion to replay.
+      if (screenshot_menu && strcmp(screenshot_menu, "pausereplay") == 0) control[0].up = true;
 
       uint32_t now_ms = platform_ticks_ms();
       accumulator_ms += (double)(now_ms - last_ticks_ms);
@@ -4472,8 +4495,9 @@ int game_run(void) {
       // transitions (see the fase -4 logo flash's own comment).
       // NFM_SCREENSHOT_MENU=paused: the headless hook can't press START,
       // so it pauses the race a few frames before the dump instead.
-      bool hook_pause = screenshot_menu && strcmp(screenshot_menu, "paused") == 0 &&
-                        frame == screenshot_frame - 3;
+      bool hook_pause = screenshot_menu &&
+                        ((strcmp(screenshot_menu, "paused") == 0 && frame == screenshot_frame - 3) ||
+                         (strcmp(screenshot_menu, "pausereplay") == 0 && frame == hook_replay_frame - 3));
       if (state == STATE_RACING && !race_holdit && (KEY_EDGE(BTN_PAUSE) || hook_pause)) {
         audio_set_music_muted(&audio, true);
         stop_all_sfx_loops(&audio, engine_channel, &last_engine_bank, &air_channel, &wasted_channel);
@@ -5311,12 +5335,10 @@ int game_run(void) {
         }
       }
     } else if (state == STATE_PAUSE_REPLAY && !reuse_frame) {
-      // PAUSE REPLAY -- fase -1, GameSparker.java:1258-1344. Unlike the
+      // PAUSE REPLAY -- fase -1, GameSparker.java:1258-1345. Unlike the
       // post-race highlight reel (fase -3), this replays the RAW 300-tick
-      // ring from its start and does not touch the camera at all: the
-      // source's whole block contains one medium call, medium.d(), so the
-      // view stays frozen exactly where it was when the player paused.
-      // Faithful, even though it means the replay can play out off-screen.
+      // ring from its start, with the camera orbiting the player's car
+      // (medium.around(array2[0], false) at :1345, after the frame).
       if (pause_replay_tick == 0) {
         // :1259-1263 -- stash every car's LIVE pose into ocar[] so the
         // last frame can put it back, then jump them to the ring's start.
@@ -5365,6 +5387,11 @@ int game_run(void) {
           xt.aflk = true;
         }
       }
+      // :1345 -- the camera orbits the player's car every replay frame. This
+      // was missing, so the view stayed frozen where the race was paused
+      // and the replayed cars drove straight out of shot -- the replay
+      // looked like it did nothing.
+      medium_around(&m, &co[0], false);
     } else if (state == STATE_PAUSED || state == STATE_CANTREPLY) {
       // PAUSE MENU -- fase -7, pausedgame() (xtGraphics.java:4695-4807),
       // and the fase -8 banner that sits on top of it.
