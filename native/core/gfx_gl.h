@@ -46,6 +46,11 @@ int32_t gfx_gl_upload_texture(const uint8_t *rgba, int32_t width, int32_t height
  */
 void gfx_gl_update_texture(int32_t texture, const uint8_t *rgba, int32_t width, int32_t height);
 
+/** gfx_gl_update_texture() for rows [y, y + rows) only. `rgba` is the WHOLE
+ * image (`width` wide, rows tightly packed); only that band is sent. */
+void gfx_gl_update_texture_rows(int32_t texture, const uint8_t *rgba, int32_t width, int32_t y,
+                                int32_t rows);
+
 // An offscreen color target the whole frame can render into, then be
 // blitted back from -- see gfx_gl_render_target_blit()'s own doc comment
 // for what this exists to support. `fbo`/`tex` are GL object names (GLuint
@@ -92,6 +97,20 @@ void gfx_gl_render_target_bind(const GfxGlRenderTarget *rt);
  * See platform/common/game.c's own call site for the mvect/shaka state
  * this reads. */
 void gfx_gl_render_target_blit(const GfxGlRenderTarget *rt, float offset_x, float offset_y, float alpha);
+
+/**
+ * Like gfx_gl_render_target_blit(), but samples only the game-space
+ * rectangle (`src_x`,`src_y`,`src_w`,`src_h`) of `rt` and stretches it over
+ * the whole `rt->width`x`rt->height` quad. Used for the menus, which the
+ * original draws inside a 670x400 letterbox in the middle of the 800x450
+ * frame (xtGraphics' applet-sized screens): copying the whole target left
+ * them visibly smaller than the race with a black frame around them.
+ * Filters LINEAR for this draw, since the source is resampled by a
+ * non-integer factor; the target keeps NEAREST for every other use.
+ */
+void gfx_gl_render_target_blit_region(const GfxGlRenderTarget *rt, float src_x, float src_y,
+                                      float src_w, float src_h, float offset_x, float offset_y,
+                                      float alpha);
 
 #ifdef __cplusplus
 }

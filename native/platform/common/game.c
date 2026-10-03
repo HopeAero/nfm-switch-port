@@ -391,17 +391,31 @@ static void apply_dodgen_in_place(uint8_t *rgba, int32_t width, int32_t height) 
 // briefly warps/swirls into place through a smoke-shaped mask before
 // settling, rather than appearing instantly.
 //
-// carsbg_rgba/smokey_rgba are loaded once at startup and never mutated
-// again (smokey_rgba gets its one-time hue/saturation retint here,
+// carsbg_rgba and the smoke-mask table are built once at startup and never
+// mutated again (the mask gets its one-time hue/saturation retint first,
 // matching smokeypix()); flexpix is the actual per-frame working buffer,
 // re-seeded from the clean carsbg_rgba each time the screen is entered
 // (car_smoke_warp_enter) and then progressively warped in place by
 // car_smoke_warp_step, exactly like Java's own `this.flexpix` field.
+// One non-background pixel of the tinted smoke mask, with the per-channel
+// factors drawSmokeCarsbg() recomputes from the mask every frame computed
+// once instead: n = (255-mask)/255, om = 1-n, mm = mask*om -- the very
+// same float operations, so every frame's output is bit-identical to the
+// per-frame version (checked over a whole animation on the host). Only
+// ~23k of the mask's 94k pixels are smoke; the rest were skipped by a
+// per-pixel compare every frame.
 typedef struct {
-  uint8_t *carsbg_rgba; // 670*400*4, clean copy, RE-SEEDS flexpix on enter
-  uint8_t *smokey_rgba; // 466*202*4, pre-tinted mask, decoded+tinted ONCE
-  uint8_t *flexpix;     // 670*400*4, the actual working/warped buffer
-  int32_t flexpix_tex;  // dynamic GL texture, glTexSubImage2D'd every step
+  int16_t i, j;
+  float n[3], om[3], mm[3];
+} SmokeMaskPx;
+
+typedef struct {
+  uint8_t *carsbg_rgba;   // 670*400*4, clean copy, RE-SEEDS flexpix on enter
+  SmokeMaskPx *mask_px;   // the tinted smokey.gif's smoke pixels, column-major
+  int32_t mask_count;     //   like the Java loop (see car_smoke_warp_step)
+  uint8_t *flexpix;       // 670*400*4, the actual working/warped buffer
+  int32_t flexpix_tex;    // dynamic GL texture, glTexSubImage2D'd every step
+  bool full_upload;       // flexpix was re-seeded: next upload sends all rows
   int32_t flatr, flyr, flyrdest, flang, flatrstart;
 } CarSmokeWarp;
 
@@ -436,15 +450,12 @@ static void car_smoke_warp_load(VfsZip *images_zip, CarSmokeWarp *w) {
   }
 
   size_t carsbg_bytes = (size_t)670 * 400 * 4;
-  size_t smokey_bytes = (size_t)466 * 202 * 4;
   w->carsbg_rgba = malloc(carsbg_bytes);
-  w->smokey_rgba = malloc(smokey_bytes);
   w->flexpix = malloc(carsbg_bytes);
   memcpy(w->carsbg_rgba, carsbg_img.rgba, carsbg_bytes);
-  memcpy(w->smokey_rgba, smokey_img.rgba, smokey_bytes);
   memcpy(w->flexpix, carsbg_img.rgba, carsbg_bytes);
   gif_free(&carsbg_img);
-  gif_free(&smokey_img);
+  uint8_t *smokey_rgba = smokey_img.rgba; // tinted in place, then tabulated
 
   // smokeypix() (xtGraphics.java:10018-10040): every mask pixel that
   // isn't the same colour as pixel 0 (the sentinel "background" colour --
@@ -453,10 +464,10 @@ static void car_smoke_warp_load(VfsZip *images_zip, CarSmokeWarp *w) {
   // brightness -- turns the raw smokey.gif art into a uniform smoky-
   // orange tint whose ALPHA (via brightness) still traces the original
   // shape.
-  uint8_t bg_r = w->smokey_rgba[0], bg_g = w->smokey_rgba[1], bg_b = w->smokey_rgba[2];
+  uint8_t bg_r = smokey_rgba[0], bg_g = smokey_rgba[1], bg_b = smokey_rgba[2];
   int32_t smokey_pixels = 466 * 202;
   for (int32_t i = 0; i < smokey_pixels; i++) {
-    uint8_t *px = &w->smokey_rgba[i * 4];
+    uint8_t *px = &smokey_rgba[i * 4];
     if (px[0] == bg_r && px[1] == bg_g && px[2] == bg_b) continue;
     float hsb[3];
     rgb_to_hsb(px[0], px[1], px[2], hsb);
@@ -466,12 +477,34 @@ static void car_smoke_warp_load(VfsZip *images_zip, CarSmokeWarp *w) {
     px[2] = (uint8_t)(rgb & 0xff);
   }
 
+  // Tabulate the smoke pixels in the Java loop's own order (i outer, j
+  // inner). The order matters: two mask pixels can land on the same
+  // flexpix pixel in one frame, and the second blends over the first.
+  w->mask_px = malloc(sizeof(SmokeMaskPx) * (size_t)smokey_pixels);
+  w->mask_count = 0;
+  const uint8_t *mask0 = &smokey_rgba[0];
+  for (int32_t i = 0; i < 466; i++) {
+    for (int32_t j = 0; j < 202; j++) {
+      const uint8_t *mask = &smokey_rgba[(i + j * 466) * 4];
+      if (mask[0] == mask0[0] && mask[1] == mask0[1] && mask[2] == mask0[2]) continue;
+      SmokeMaskPx *p = &w->mask_px[w->mask_count++];
+      p->i = (int16_t)i;
+      p->j = (int16_t)j;
+      for (int32_t c = 0; c < 3; c++) {
+        p->n[c] = (255.0f - (float)mask[c]) / 255.0f;
+        p->om[c] = 1.0f - p->n[c];
+        p->mm[c] = (float)mask[c] * p->om[c];
+      }
+    }
+  }
+  gif_free(&smokey_img);
+
   w->flexpix_tex = gfx_gl_upload_texture(w->flexpix, 670, 400);
 }
 
 static void car_smoke_warp_free(CarSmokeWarp *w) {
   free(w->carsbg_rgba);
-  free(w->smokey_rgba);
+  free(w->mask_px);
   free(w->flexpix);
 }
 
@@ -486,6 +519,7 @@ static void car_smoke_warp_free(CarSmokeWarp *w) {
 static void car_smoke_warp_enter(CarSmokeWarp *w, Medium *m) {
   if (!w->flexpix) return;
   memcpy(w->flexpix, w->carsbg_rgba, (size_t)670 * 400 * 4);
+  w->full_upload = true;
   w->flatr = 0;
   w->flyr = jtrunc(medium_random(m) * 160.0f - 80.0f);
   w->flyrdest = jtrunc((float)w->flyr + medium_random(m) * 160.0f - 80.0f);
@@ -517,39 +551,48 @@ static void car_smoke_warp_step(CarSmokeWarp *w, Medium *m, Graphics2D *g) {
     w->flang = 1;
   }
 
-  for (int32_t i = 0; i < 466; i++) {
-    for (int32_t j = 0; j < 202; j++) {
-      const uint8_t *mask = &w->smokey_rgba[(i + j * 466) * 4];
-      const uint8_t *mask0 = &w->smokey_rgba[0];
-      if (mask[0] == mask0[0] && mask[1] == mask0[1] && mask[2] == mask0[2]) continue;
+  // Same arithmetic as the Java's per-pixel loop, over the precomputed
+  // smoke pixels (see SmokeMaskPx). This is the expensive part of car
+  // select's entrance on the Vita: a sqrt and five float divisions per
+  // smoke pixel, every frame for ~33 frames, plus re-uploading the
+  // texture -- the reported frame drop while the smoke swirls in.
+  const float flang = (float)w->flang;
+  const float flatr = (float)w->flatr;
+  const int32_t flyr = w->flyr;
+  int32_t dirty_top = 400, dirty_bottom = -1;
+  for (int32_t k = 0; k < w->mask_count; k++) {
+    const SmokeMaskPx *p = &w->mask_px[k];
+    int32_t i = p->i, j = p->j;
+    float pys = sqrtf((float)((i - 233) * (i - 233) + (j - flyr) * (j - flyr)));
+    int32_t n = jtrunc((float)(i - 233) / pys * flatr);
+    int32_t n2 = jtrunc((float)(j - flyr) / pys * flatr);
+    int32_t px = i + n + 100, py2 = j + n2 + 110;
+    int32_t n3 = px + py2 * 670;
+    if (px >= 670 || px <= 0 || py2 >= 400 || py2 <= 0 || n3 >= 268000 || n3 < 0) continue;
+    if (py2 < dirty_top) dirty_top = py2;
+    if (py2 > dirty_bottom) dirty_bottom = py2;
 
-      float pys = sqrtf((float)((i - 233) * (i - 233) + (j - w->flyr) * (j - w->flyr)));
-      int32_t n = jtrunc((float)(i - 233) / pys * (float)w->flatr);
-      int32_t n2 = jtrunc((float)(j - w->flyr) / pys * (float)w->flatr);
-      int32_t px = i + n + 100, py2 = j + n2 + 110;
-      int32_t n3 = px + py2 * 670;
-      if (px >= 670 || px <= 0 || py2 >= 400 || py2 <= 0 || n3 >= 268000 || n3 < 0) continue;
-
-      uint8_t *dst = &w->flexpix[n3 * 4];
-      float n4 = (255.0f - (float)mask[0]) / 255.0f;
-      float n5 = (255.0f - (float)mask[1]) / 255.0f;
-      float n6 = (255.0f - (float)mask[2]) / 255.0f;
-      int32_t r = jtrunc(((float)dst[0] * (w->flang * n4) + (float)mask[0] * (1.0f - n4)) / (w->flang * n4 + (1.0f - n4)));
-      int32_t gg = jtrunc(((float)dst[1] * (w->flang * n5) + (float)mask[1] * (1.0f - n5)) / (w->flang * n5 + (1.0f - n5)));
-      int32_t b = jtrunc(((float)dst[2] * (w->flang * n6) + (float)mask[2] * (1.0f - n6)) / (w->flang * n6 + (1.0f - n6)));
-      if (r > 255) r = 255;
-      if (r < 0) r = 0;
-      if (gg > 255) gg = 255;
-      if (gg < 0) gg = 0;
-      if (b > 255) b = 255;
-      if (b < 0) b = 0;
-      dst[0] = (uint8_t)r; dst[1] = (uint8_t)gg; dst[2] = (uint8_t)b;
+    uint8_t *dst = &w->flexpix[n3 * 4];
+    for (int32_t c = 0; c < 3; c++) {
+      float kc = flang * p->n[c];
+      int32_t v = jtrunc(((float)dst[c] * kc + p->mm[c]) / (kc + p->om[c]));
+      if (v > 255) v = 255;
+      if (v < 0) v = 0;
+      dst[c] = (uint8_t)v;
     }
   }
 
   w->flang += 2;
   w->flatr += 10 + w->flatrstart * 2;
-  gfx_gl_update_texture(w->flexpix_tex, w->flexpix, 670, 400);
+  // Only the rows this step touched (~58% on average) -- unless flexpix
+  // was just re-seeded, in which case the texture is stale everywhere.
+  if (w->full_upload) {
+    gfx_gl_update_texture(w->flexpix_tex, w->flexpix, 670, 400);
+    w->full_upload = false;
+  } else if (dirty_bottom >= dirty_top) {
+    gfx_gl_update_texture_rows(w->flexpix_tex, w->flexpix, 670, dirty_top,
+                               dirty_bottom - dirty_top + 1);
+  }
   gfx_draw_image(g, w->flexpix_tex, 65, 25, 670, 400);
 }
 
@@ -6255,8 +6298,22 @@ int game_run(void) {
       // Straight from the scene when no trail is active -- the history
       // texture holds nothing newer, and routing through it would only
       // add the copy the branch above just avoided.
-      gfx_gl_render_target_blit(trail_active ? &accum_rt : &scene_rt,
-                                 offset_x, offset_y, 1.0f);
+      // The menus live in the original's 670x400 letterbox at (65,25), so
+      // for them only that rectangle is copied, stretched to the full
+      // screen -- otherwise they come out smaller than the race with a
+      // black frame around them. Racing, the replays, the pause menu and
+      // the can't-replay banner all draw over the full 800x450 race scene
+      // and keep the whole frame.
+      const bool letterboxed = state != STATE_RACING && state != STATE_REPLAY &&
+                               state != STATE_PAUSED && state != STATE_PAUSE_REPLAY &&
+                               state != STATE_CANTREPLY;
+      const GfxGlRenderTarget *present = trail_active ? &accum_rt : &scene_rt;
+      if (letterboxed) {
+        gfx_gl_render_target_blit_region(present, 65.0f, 25.0f, 670.0f, 400.0f,
+                                         offset_x, offset_y, 1.0f);
+      } else {
+        gfx_gl_render_target_blit(present, offset_x, offset_y, 1.0f);
+      }
       glEnable(GL_BLEND);
     }
 

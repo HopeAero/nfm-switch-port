@@ -2793,6 +2793,22 @@ recorded here so it does not get re-investigated:
 - [x] `gfx.c`'s `fill_trapezoid` did two malloc/free pairs per concave
       polygon (hundreds a frame); stack buffers now, heap only past 28
       vertices.
+- [x] **Car select's smoke-warp entrance dropped frames on the Vita.**
+      `car_smoke_warp_step` (drawSmokeCarsbg) runs every rendered frame for
+      ~33 frames: a sqrt and five float divisions per smoke pixel plus a
+      full 670x400 RGBA re-upload. The smoke pixels (23,131 of the mask's
+      94,132) and their per-channel factors are now tabulated once at load
+      in the Java loop's own order -- bit-identical output over a whole
+      animation, checked on the host -- and only the rows a step wrote
+      (~58% on average) are re-uploaded. Host: 0.65 -> 0.47 ms per step.
+      NOT measured on hardware. If it still drops there, the next lever is
+      pacing the step at the 53ms tick like the original (it currently runs
+      ~3x as often, and so ~3x as fast, as the Java did).
+- [x] **Menus were smaller than the race and not fullscreen.** They draw
+      in the original's 670x400 letterbox at (65,25) inside the 800x450
+      frame; the final blit now copies just that rectangle, stretched to the
+      screen (`gfx_gl_render_target_blit_region`), for every menu state.
+      Racing, the replays, pause and cantreply keep the whole frame.
 - [ ] NOT verified on hardware: whether the reported drop near the repair
       ring is fully explained. On the host the ring itself costs ~0.03ms of
       CPU and ~0.08 screens of extra fill, i.e. nothing. Remaining

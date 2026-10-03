@@ -99,6 +99,14 @@ void gfx_gl_update_texture(int32_t texture, const uint8_t *rgba, int32_t width, 
   glBindTexture(GL_TEXTURE_2D, 0);
 }
 
+void gfx_gl_update_texture_rows(int32_t texture, const uint8_t *rgba, int32_t width, int32_t y,
+                                int32_t rows) {
+  glBindTexture(GL_TEXTURE_2D, (GLuint)texture);
+  glTexSubImage2D(GL_TEXTURE_2D, 0, 0, y, width, rows, GL_RGBA, GL_UNSIGNED_BYTE,
+                  rgba + (size_t)y * (size_t)width * 4);
+  glBindTexture(GL_TEXTURE_2D, 0);
+}
+
 bool gfx_gl_render_target_init(GfxGlRenderTarget *rt, int32_t width, int32_t height) {
   rt->fbo = rt->tex = 0;
   rt->width = width;
@@ -185,5 +193,33 @@ void gfx_gl_render_target_blit(const GfxGlRenderTarget *rt, float offset_x, floa
   glTexCoord2f(1, 0); glVertex2f(x1, y1);
   glTexCoord2f(0, 0); glVertex2f(x0, y1);
   glEnd();
+  glDisable(GL_TEXTURE_2D);
+}
+
+void gfx_gl_render_target_blit_region(const GfxGlRenderTarget *rt, float src_x, float src_y,
+                                      float src_w, float src_h, float offset_x, float offset_y,
+                                      float alpha) {
+  glEnable(GL_TEXTURE_2D);
+  glBindTexture(GL_TEXTURE_2D, (GLuint)rt->tex);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glColor4f(1.0f, 1.0f, 1.0f, alpha);
+  float x0 = offset_x, y0 = offset_y;
+  float x1 = offset_x + (float)rt->width, y1 = offset_y + (float)rt->height;
+  // Same flipped V as gfx_gl_render_target_blit (texture row 0 is the
+  // scene's BOTTOM edge), restricted to the source rectangle.
+  float u0 = src_x / (float)rt->width, u1 = (src_x + src_w) / (float)rt->width;
+  float vt = 1.0f - src_y / (float)rt->height;           // scene top
+  float vb = 1.0f - (src_y + src_h) / (float)rt->height; // scene bottom
+  glBegin(GL_TRIANGLES);
+  glTexCoord2f(u0, vt); glVertex2f(x0, y0);
+  glTexCoord2f(u1, vt); glVertex2f(x1, y0);
+  glTexCoord2f(u1, vb); glVertex2f(x1, y1);
+  glTexCoord2f(u0, vt); glVertex2f(x0, y0);
+  glTexCoord2f(u1, vb); glVertex2f(x1, y1);
+  glTexCoord2f(u0, vb); glVertex2f(x0, y1);
+  glEnd();
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   glDisable(GL_TEXTURE_2D);
 }
