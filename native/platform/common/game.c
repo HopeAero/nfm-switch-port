@@ -3383,13 +3383,17 @@ int game_run(void) {
   // the shake it was presented with.
   int32_t picture_state = -1;
   float race_present_dx = 0.0f, race_present_dy = 0.0f;
-  // The replays' own 53ms pacing (Java plays one replay frame per game
-  // loop iteration, i.e. per tick; this port used to play one per display
-  // frame, 3x too fast). The confirm latch keeps a skip pressed on a frame
-  // that doesn't advance from being lost.
-  double replay_acc_ms = 0.0;
-  uint32_t replay_last_ms = 0;
-  int32_t replay_paced_state = -1;
+  // Pacing for the screens that are drawn once per Java game-loop
+  // iteration rather than per display frame: the two replays at the race's
+  // 53ms tick, and car select / stage select at the menus' ~40ms (the Java
+  // loop's own menu rate -- it adapts its sleep until 10 iterations take
+  // 400ms). This port used to draw them every display frame, so they ran
+  // 2.4-3x the original speed and did that much more work. The confirm
+  // latch keeps a replay skip pressed on a frame that doesn't advance from
+  // being lost (the menus read their input before the draw, every frame).
+  double paced_acc_ms = 0.0;
+  uint32_t paced_last_ms = 0;
+  int32_t paced_state_now = -1;
   bool replay_confirm_latch = false;
   bool running = true;
 #ifdef NFM_SHOW_FPS
@@ -4629,32 +4633,34 @@ int game_run(void) {
     // the damage-bar blink) ran 3x fast -- "Checkpoint!" showed for 0.5s
     // instead of 1.6s. Presenting the last finished picture instead fixes
     // all of that and skips two thirds of the race's draw work.
-    bool replay_ticked = false;
-    if (render_state == STATE_REPLAY || render_state == STATE_PAUSE_REPLAY) {
+    const bool is_replay = render_state == STATE_REPLAY || render_state == STATE_PAUSE_REPLAY;
+    const bool is_paced_menu = render_state == STATE_CAR_SELECT || render_state == STATE_STAGE_SELECT;
+    bool paced_ticked = false;
+    if (is_replay || is_paced_menu) {
+      const double step_ms = is_replay ? TICK_MS : 40.0;
       uint32_t now_ms = platform_ticks_ms();
-      if (replay_paced_state != (int32_t)render_state) {
-        // Entering a replay: its first frame draws straight away.
-        replay_paced_state = (int32_t)render_state;
-        replay_acc_ms = TICK_MS;
+      if (paced_state_now != (int32_t)render_state) {
+        // Entering the screen: its first frame draws straight away.
+        paced_state_now = (int32_t)render_state;
+        paced_acc_ms = step_ms;
         replay_confirm_latch = false;
       } else {
-        replay_acc_ms += (double)(now_ms - replay_last_ms);
+        paced_acc_ms += (double)(now_ms - paced_last_ms);
       }
-      replay_last_ms = now_ms;
-      if (KEY_EDGE(BTN_CONFIRM)) replay_confirm_latch = true;
-      // One replay frame per loop iteration at most, like the Java's loop;
-      // a long stall must not turn into a burst of catch-up frames.
-      if (replay_acc_ms >= TICK_MS) {
-        replay_ticked = true;
-        replay_acc_ms -= TICK_MS;
-        if (replay_acc_ms > TICK_MS) replay_acc_ms = TICK_MS;
+      paced_last_ms = now_ms;
+      if (is_replay && KEY_EDGE(BTN_CONFIRM)) replay_confirm_latch = true;
+      // One step per loop iteration at most, like the Java's loop; a long
+      // stall must not turn into a burst of catch-up frames.
+      if (paced_acc_ms >= step_ms) {
+        paced_ticked = true;
+        paced_acc_ms -= step_ms;
+        if (paced_acc_ms > step_ms) paced_acc_ms = step_ms;
       }
     } else {
-      replay_paced_state = -1;
+      paced_state_now = -1;
     }
-    const bool paced_state = render_state == STATE_RACING || render_state == STATE_REPLAY ||
-                             render_state == STATE_PAUSE_REPLAY;
-    const bool advanced = render_state == STATE_RACING ? race_ticked : replay_ticked;
+    const bool paced_state = render_state == STATE_RACING || is_replay || is_paced_menu;
+    const bool advanced = render_state == STATE_RACING ? race_ticked : paced_ticked;
     const bool reuse_frame = use_rt && paced_state && !advanced &&
                              picture_state == (int32_t)render_state;
     if (reuse_frame) {
@@ -5765,7 +5771,7 @@ int game_run(void) {
         // lockstep.
         xt.aflk = !xt.aflk;
       }
-    } else if (state == STATE_CAR_SELECT) {
+    } else if (state == STATE_CAR_SELECT && !reuse_frame) {
       // CAR SELECT (Java fase 7 -- carselect() at xtGraphics.java:5080).
       // See native/docs/MENU_FLOW.md §3.6 for the pixel-exact spec.
       // Layout order: black letterbox borders (65px each side), carsbg
@@ -6098,7 +6104,7 @@ int game_run(void) {
       if (confirm.tex >= 0) {
         gfx_draw_image(&g, confirm.tex, 355, 385, confirm.w, confirm.h);
       }
-    } else if (state == STATE_STAGE_SELECT) {
+    } else if (state == STATE_STAGE_SELECT && !reuse_frame) {
       // STAGE SELECT (Java fase 6's stageselect() UI, xtGraphics.java:2024,
       // COMPOSITED OVER a live 3D preview -- that preview isn't inside
       // stageselect() itself, it's GameSparker.java's own run() loop
@@ -6417,7 +6423,12 @@ int game_run(void) {
       glViewport(0, 0, disp_w, disp_h);
       glClear(GL_COLOR_BUFFER_BIT);
       glDisable(GL_BLEND);
-      gfx_gl_render_target_blit(rt_pair[rt_cur ^ 1], race_present_dx, race_present_dy, 1.0f);
+      if (letterboxed) {
+        gfx_gl_render_target_blit_region(rt_pair[rt_cur ^ 1], 65.0f, 25.0f, 670.0f, 400.0f,
+                                         race_present_dx, race_present_dy, 1.0f);
+      } else {
+        gfx_gl_render_target_blit(rt_pair[rt_cur ^ 1], race_present_dx, race_present_dy, 1.0f);
+      }
       glEnable(GL_BLEND);
     } else if (use_rt) {
       float offset_x = 0.0f, offset_y = 0.0f;
