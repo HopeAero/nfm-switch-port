@@ -3455,6 +3455,16 @@ int game_run(void) {
   // 0, matching GameSparker.java:939's own gate exactly (every car sits
   // frozen at its starting-grid position, not just the player's input).
   int32_t starcnt = 130;
+  // The fly-around before the countdown can be skipped with handbrake/
+  // enter, but not by the press that confirmed the stage card: musicomp()
+  // consumes it (`control.handb = false`, xtGraphics.java:3150), and here
+  // the pad is polled by level, so a button still held from that confirm
+  // read as a skip on the race's first frame. Armed once it is released.
+  bool flyby_skip_armed = true;
+  // The loop iteration whose confirm started the race: Return is both
+  // confirm and pause here, so that same press must not also pause the
+  // race it just started (musicomp() sets `control.enter = false`).
+  int32_t intro_confirm_frame = -1;
   int32_t gocnt = 3;
 
   // Win hold-card state -- Java xtGraphics.java:7737-7751 (holdit set true
@@ -3944,6 +3954,8 @@ int game_run(void) {
         m.cy = 225;
         m.cz = 50;
         state = STATE_RACING;
+        flyby_skip_armed = false;
+        intro_confirm_frame = frame;
         // The race's accumulator starts now, not when the stage loaded.
         last_ticks_ms = platform_ticks_ms();
         accumulator_ms = 0.0;
@@ -4133,6 +4145,12 @@ int game_run(void) {
                 stage_num, STAGE_OBJECT_CAPACITY);
         if (!stage_objects) return 1; // nothing to race with at all, not even stale preview data
       }
+      // The race reloads the stage and drives the camera, so the stage
+      // list's preview no longer holds what it loaded: make it load and
+      // re-arm its dive-in camera again when the list is next shown.
+      // Without this, quitting back to the list showed no preview until
+      // the player moved off the stage and back.
+      stage_preview_loaded_num = -1;
       fprintf(stderr, "loaded stage: %d objects, %d trackers, %d checkpoints (%d laps)\n",
               stage_count, t.nt, cp.nsp, cp.nlaps);
 
@@ -4806,7 +4824,8 @@ int game_run(void) {
                         ((strcmp(screenshot_menu, "paused") == 0 && frame == screenshot_frame - 3) ||
                          (strcmp(screenshot_menu, "pausereplay") == 0 && frame == hook_replay_frame - 3) ||
                          (strcmp(screenshot_menu, "settings") == 0 && frame == screenshot_frame - 6));
-      if (state == STATE_RACING && !race_holdit && (KEY_EDGE(BTN_PAUSE) || hook_pause)) {
+      if (state == STATE_RACING && !race_holdit && frame != intro_confirm_frame &&
+          (KEY_EDGE(BTN_PAUSE) || hook_pause)) {
         audio_set_music_muted(&audio, true);
         stop_all_sfx_loops(&audio, engine_channel, &last_engine_bank, &air_channel, &wasted_channel);
         pause_opselect = 0;
@@ -4843,7 +4862,8 @@ int game_run(void) {
       if (starcnt >= 38) {
         medium_around(&m, &co[0], true);
         mvect = 80; // :976
-        if (control[0].handb || KEY_EDGE(BTN_CONFIRM)) {
+        if (!flyby_skip_armed && !control[0].handb && !KEY_EDGE(BTN_CONFIRM)) flyby_skip_armed = true;
+        if (flyby_skip_armed && (control[0].handb || KEY_EDGE(BTN_CONFIRM))) {
           starcnt = 38;
           control[0].handb = false;
         }
