@@ -1,43 +1,43 @@
-# Need for Madness — port nativo para PS Vita e Linux
+# Need for Madness — native port for PS Vita and Linux
 
 ![icon](data/icon.png)
 
-Port não oficial de **Need for Madness** (Radicalplay, 2015) para **PS Vita**
-e **Linux**, escrito em C. O código-fonte original nunca foi publicado: o
-jogo foi descompilado e reescrito linha a linha, a física primeiro em
-JavaScript/WebGL (`web/`) e depois em C (`native/`). O objetivo é ser fiel
-ao original, 1:1. O `Game.jar` original, corrigido para rodar em Java
-moderno, fica no repositório e serve de referência para comparar.
+An unofficial port of **Need for Madness** (Radicalplay, 2015) to the
+**PS Vita** and **Linux**, written in C. The original source code was never
+released: the game was decompiled and rewritten line by line, first in
+JavaScript/WebGL (`web/`) and then in C (`native/`). The goal is a faithful,
+1:1 port. The original `Game.jar`, patched to run on modern Java, stays in
+the repository as the reference to compare against.
 
-Os assets do jogo (`data/`, `stages/`, `mycars/`, `mystages/`, `music/`) são
-os originais, byte a byte, e o port os lê como estão.
+The game assets (`data/`, `stages/`, `mycars/`, `mystages/`, `music/`) are
+the originals, byte for byte, and the port reads them as they are.
 
 ---
 
-## Build para PS Vita
+## Building for the PS Vita
 
-### 1. Pré-requisitos
+### 1. Requirements
 
-- **VitaSDK** instalado (https://vitasdk.org), com as variáveis de ambiente:
+- **VitaSDK** installed (https://vitasdk.org), with its environment set:
   ```sh
   export VITASDK=/usr/local/vitasdk
   export PATH=$VITASDK/bin:$PATH
   ```
-- **vitaGL** e **zlib** pelo gerenciador de pacotes do VitaSDK:
+- **vitaGL** and **zlib** from VitaSDK's package manager:
   ```sh
   vdpm vitaGL
   vdpm zlib
   ```
-- Opcional: para tirar a splash screen do vitaGL antes do jogo, recompile o
-  vitaGL sem ela (o build avisa com um WARNING se ela ainda estiver lá):
+- Optional: to drop vitaGL's splash screen before the game, rebuild vitaGL
+  without it (the build prints a WARNING while it is still there):
   ```sh
   git clone https://github.com/Rinnegatamante/vitaGL
   cd vitaGL && make clean && make NO_SPLASHSCREEN=1 install
   ```
 
-### 2. Compilar
+### 2. Build
 
-Na raiz do repositório:
+From the repository root:
 
 ```sh
 cmake -S native -B native/build-vita -DNFM_PLATFORM=vita \
@@ -45,63 +45,63 @@ cmake -S native -B native/build-vita -DNFM_PLATFORM=vita \
 cmake --build native/build-vita -j
 ```
 
-### 3. Onde fica o VPK
+### 3. Where the VPK ends up
 
 ```
 native/build-vita/platform/vita/nfm_vita.vpk
 ```
 
-O VPK já traz todos os assets do jogo (`data/`, `stages/`, `music/`,
-`mycars/`), a bolinha e o LiveArea. Não precisa copiar nada à parte para o
-cartão de memória.
+The VPK already contains every game asset (`data/`, `stages/`, `music/`,
+`mycars/`), the home-screen bubble and the LiveArea. Nothing has to be
+copied to the memory card separately.
 
-### 4. Instalar
+### 4. Install
 
-Copie o `nfm_vita.vpk` para o Vita (por FTP ou USB no VitaShell) e instale
-pelo VitaShell. O app aparece como **Need for Madness**, Title ID
-`NFMD00001`. O progresso fica salvo em `ux0:data/NFMD00001/`.
+Copy `nfm_vita.vpk` to the Vita (over FTP or USB with VitaShell) and install
+it from VitaShell. The app shows up as **Need for Madness**, Title ID
+`NFMD00001`. Progress is saved in `ux0:data/NFMD00001/`.
 
-### Controles no Vita
+### Vita controls
 
-| Botão | Ação |
+| Button | Action |
 |---|---|
-| R | acelerar |
-| L | frear / ré |
-| Analógico esquerdo | virar |
-| X | freio de mão (e confirmar nos menus) |
-| X + analógico esquerdo, no ar | manobras: frente/trás = loops, lados = giros. Só empurrões firmes e retos contam; diagonais e toques pequenos não fazem nada |
-| Analógico direito | girar a câmera |
-| Direcional ▲ | seta guia: pista ↔ carros |
-| Direcional ▼ | radar (minimapa + velocímetro) |
-| △ | trocar câmera |
-| □ | mutar música |
-| Select | mutar efeitos |
-| Start | pausar |
-| O | voltar nos menus |
+| R | accelerate |
+| L | brake / reverse |
+| Left stick | steer |
+| Cross | handbrake (and confirm in menus) |
+| Cross + left stick, in the air | stunts: forward/back = loops, sideways = rolls. Only firm, straight pushes count; diagonals and small nudges do nothing |
+| Right stick | turn the camera |
+| D-pad up | guidance arrow: track ↔ cars |
+| D-pad down | radar (minimap + speedometer) |
+| Triangle | change camera |
+| Square | mute music |
+| Select | mute sound effects |
+| Start | pause |
+| Circle | back, in menus |
 
-Lista completa, com os do Linux, em [`CONTROLES.txt`](CONTROLES.txt).
+The full list, Linux keys included, is in [`CONTROLES.txt`](CONTROLES.txt).
 
 ---
 
-## Build para Linux
+## Building for Linux
 
-O alvo Linux é o ambiente de desenvolvimento: usa o mesmo código do Vita,
-com SDL2 e OpenGL no lugar de sceCtrl/vitaGL.
+The Linux target is the development environment: it runs the same code as
+the Vita, with SDL2 and OpenGL in place of sceCtrl/vitaGL.
 
 ```sh
-# dependências (Debian/Ubuntu)
+# dependencies (Debian/Ubuntu)
 sudo apt install build-essential cmake libsdl2-dev libgl-dev zlib1g-dev
 
 cmake -S native -B native/build-linux -DNFM_PLATFORM=linux -DCMAKE_BUILD_TYPE=Release
 cmake --build native/build-linux -j
 
-# rode a partir da RAIZ do repositório (os assets são lidos de lá)
+# run it from the repository ROOT (the assets are read from there)
 native/build-linux/platform/linux/nfm_linux
 ```
 
-Opção `-DNFM_SHOW_FPS=ON` desenha FPS e o pior frame na tela.
+`-DNFM_SHOW_FPS=ON` draws the FPS and the worst frame on screen.
 
-Testes do núcleo (rodam no host, sem janela):
+Core tests (run on the host, no window):
 
 ```sh
 cmake -S native/tests -B native/tests/build && cmake --build native/tests/build -j
@@ -110,95 +110,94 @@ cd native/tests/build && ctest
 
 ---
 
-## O que foi feito no port nativo
+## What the native port does
 
-O jogo inteiro roda: boot, menus, escolha de carro e de pista, corrida
-contra a IA, replays, pausa, telas de vitória/derrota e progresso salvo nas
-campanhas NFM 1 e NFM 2 e no Free Play.
+The whole game runs: boot, menus, car and stage selection, races against the
+AI, replays, pause, win/lose screens and saved progress across the NFM 1 and
+NFM 2 campaigns and Free Play.
 
-**Fidelidade ao original**
-- Física, colisão, IA, checkpoints, dano e manobras traduzidos do Java com a
-  mesma aritmética (inteiros de 32 bits com overflow, arredondamento float32),
-  conferidos contra o jar original com testes diferenciais.
-- Renderização sem depth buffer, por ordem de submissão, como no original:
-  céu, chão, neblina, sombras que acompanham rampas, poeira, faíscas, chamas,
-  o anel de reparo.
-- Motion blur e tremor de tela pelo mesmo mecanismo do `paint()` original
-  (blend de frames com alpha).
-- Sequência de boot original: tela de loading com a barra azul,
-  "Click/Press to Start", intro da Radicalplay.
-- Menus 1:1: principal, modos de jogo, instruções (todas as páginas, com arte
-  de botões do Vita), créditos, escolha de carro com o carro girando, escolha
-  de pista com o voo da câmera sobre a pista, pista bloqueada.
-- **Tela de apresentação da pista** antes de cada corrida: dica do Coach
-  Insano, "Loading complete! Press Start to begin..." e o botão START piscando.
-- Voo de câmera ao redor dos carros antes da contagem 3-2-1-GO.
-- Menu de pausa original (continuar, replay instantâneo, instruções, sair) e
-  replay de destaque no fim da corrida.
-- HUD original: dano, power, posição, voltas, wasted, velocímetro, radar,
-  seta guia, mensagens de manobra.
+**Faithful to the original**
+- Physics, collisions, AI, checkpoints, damage and stunts translated from the
+  Java with the same arithmetic (wrapping 32-bit ints, float32 rounding),
+  checked against the original jar with differential tests.
+- Rendering with no depth buffer, by submission order, as in the original:
+  sky, ground, fog, shadows that follow ramps, dust, sparks, flames, the
+  repair ring.
+- Motion blur and screen shake through the same mechanism as the original
+  `paint()` (alpha-blending frames).
+- The original boot sequence: loading screen with the blue bar,
+  "Click/Press to Start", the Radicalplay intro.
+- 1:1 menus: main menu, game modes, instructions (every page, with Vita
+  button art), credits, car selection with the spinning car, stage selection
+  with the camera flying over the track, locked stages.
+- The **stage presentation card** before every race: Coach Insano's hint,
+  "Loading complete! Press Start to begin..." and the blinking START button.
+- The camera fly-around the cars before the 3-2-1-GO countdown.
+- The original pause menu (resume, instant replay, instructions, quit) and
+  the highlight replay at the end of a race.
+- The original HUD: damage, power, position, laps, wasted, speedometer,
+  radar, guidance arrow, stunt messages.
 
-**Áudio**
-- **Música idêntica ao original, byte a byte**: o renderizador de MOD do jogo
-  (`ModSlayer` + `SuperClip`) foi traduzido para C (`native/core/radical_mod.c`).
-  As 34 faixas saem idênticas ao que o jar gera, inclusive os pontos de loop
-  e o "som granulado" característico do original. Isso é verificado por
-  teste.
-- Música do menu da escolha de carro até a confirmação da pista, música de
-  cada pista com o BPM, a velocidade e o volume originais, e `party.zip` na
-  pista 27 do NFM 2.
-- Todos os efeitos: motor (5 tipos × 5 rotações), ar, batidas, derrapagem,
-  raspadas, contagem, checkpoint, reparo, wasted.
+**Audio**
+- **Music identical to the original, byte for byte**: the game's MOD renderer
+  (`ModSlayer` + `SuperClip`) was translated to C (`native/core/radical_mod.c`).
+  All 34 tracks come out identical to what the jar produces, loop points
+  included, along with the original's characteristic gritty sound. A test
+  checks this.
+- Menu music from car selection until a stage is confirmed, each stage's
+  music with its original BPM, speed and volume, and `party.zip` on stage 27
+  of NFM 2.
+- Every sound effect: engines (5 types × 5 revs), air, crashes, skids,
+  scrapes, countdown, checkpoint, repair, wasted.
 
-**Extras deste port**
-- Tela de **Settings** no menu de pausa: intensidade do motion blur, de 0 a
-  100 em passos de 20, salva entre sessões.
-- Esquema de controle pensado para o Vita (tabela acima).
-- Bolinha e LiveArea feitos com a arte do próprio menu principal
-  (`native/platform/vita/make_livearea.py` regera).
+**Extras in this port**
+- A **Settings** screen in the pause menu: motion-blur intensity from 0 to
+  100 in steps of 20, saved between sessions.
+- A control scheme designed for the Vita (table above).
+- Home-screen bubble and LiveArea made from the game's own main-menu art
+  (`native/platform/vita/make_livearea.py` regenerates them).
 
-**Desempenho**
-- A corrida desenha uma vez por tick de física (53 ms, como o original) e os
-  menus a 40 ms, reapresentando o último quadro no meio, o que corta 2/3 do
-  trabalho de desenho sem mudar o que aparece na tela.
-- Instruções por quadro na corrida de 13,25M para 8,68M (ordenação, buffers
-  na pilha, funções inline, menos passes de render).
-- Vazamentos de memória corrigidos (cópias de carros no ring de replay,
-  texturas do HUD por corrida).
+**Performance**
+- The race draws once per physics tick (53 ms, as in the original) and the
+  menus every 40 ms, presenting the last frame in between, which cuts two
+  thirds of the drawing work without changing what is on screen.
+- Instructions per race frame down from 13.25M to 8.68M (sorting, stack
+  buffers, inlined functions, fewer render passes).
+- Memory leaks fixed (car copies in the replay ring, per-race HUD textures).
 
-**Ainda diferente do original**
-- O texto usa uma fonte vetorial 5×7 só com maiúsculas; o original usa Arial
-  negrito. É a maior diferença visual que sobra.
-- O multiplayer online existe no port web, mas não no nativo.
-- O alvo Vita compila e roda no aparelho, mas cada mudança é testada primeiro
-  no Linux; as mais recentes (controles, LiveArea) ainda precisam ser
-  conferidas no hardware.
+**Still different from the original**
+- Text uses a 5×7 uppercase-only vector font; the original uses Arial bold.
+  This is the biggest visual difference left.
+- Online multiplayer exists in the web port, not in the native one.
+- The Vita target builds and runs on hardware, but every change is tested on
+  Linux first; the most recent ones (controls, LiveArea) still need to be
+  checked on the device.
 
 ---
 
-## Estrutura do repositório
+## Repository layout
 
-| Pasta | Conteúdo |
+| Folder | Contents |
 |---|---|
-| `native/` | **O port nativo.** `core/` é o jogo independente de plataforma (física, render, áudio, decoders); `platform/common/game.c` é o loop do jogo e os menus; `platform/linux/` e `platform/vita/` são as camadas finas de cada alvo; `tests/` são os testes do núcleo. |
-| `web/` | O port JavaScript/WebGL, de onde o C foi traduzido. Abra `index.html` com `python3 -m http.server 8123`. |
-| `decompilation/` | O Java descompilado (`java-src/`), referência de leitura, não entrada do build. |
-| `java/` | O `Game.jar` original corrigido para Java moderno (`./start.sh`) e o original intacto (`Game.jar.bak`). |
-| `data/`, `stages/`, `mycars/`, `mystages/`, `music/` | Assets originais, **não modificar**. `data/vita/` tem a arte de botões do Vita (gerada por `tools/gen_vita_assets.py`). |
-| `tools/` | Scripts auxiliares (arte do Vita, música). |
+| `native/` | **The native port.** `core/` is the platform-independent game (physics, rendering, audio, decoders); `platform/common/game.c` is the game loop and menus; `platform/linux/` and `platform/vita/` are each target's thin layer; `tests/` are the core tests. |
+| `web/` | The JavaScript/WebGL port the C was translated from. Open `index.html` with `python3 -m http.server 8123`. |
+| `decompilation/` | The decompiled Java (`java-src/`), a reading reference, not a build input. |
+| `java/` | The original `Game.jar` patched for modern Java (`./start.sh`) and the untouched original (`Game.jar.bak`). |
+| `data/`, `stages/`, `mycars/`, `mystages/`, `music/` | Original assets, **do not modify**. `data/vita/` holds the Vita button art (generated by `tools/gen_vita_assets.py`). |
+| `tools/` | Helper scripts (Vita art, music). |
 
-## Documentação para quem for mexer
+## Documentation for contributors
 
-- [`native/PORT_SPEC.md`](native/PORT_SPEC.md) — regras do port nativo.
-- [`native/TASKS_NATIVE.md`](native/TASKS_NATIVE.md) — o que foi feito, como foi verificado e o que falta.
-- [`WORK.md`](WORK.md) — descobertas e armadilhas, uma por linha (por exemplo: o construtor do `RadicalMod` está errado no descompilado; o bug de `intToBytes16` que dá o som da música).
-- [`AGENTS.md`](AGENTS.md) — como rodar, medir e verificar; as invariantes que não podem quebrar (sem depth buffer, uma única chamada de desenho em ordem de submissão).
-- [`web/TRANSPILE_SPEC.md`](web/TRANSPILE_SPEC.md) — o contrato de tradução Java → código (overflow de inteiros, float32).
+- [`native/PORT_SPEC.md`](native/PORT_SPEC.md) — the native port's rules.
+- [`native/TASKS_NATIVE.md`](native/TASKS_NATIVE.md) — what was done, how it was verified and what is left.
+- [`WORK.md`](WORK.md) — discoveries and pitfalls, one per line (for example: the decompiled `RadicalMod` constructor is wrong; the `intToBytes16` bug that gives the music its sound).
+- [`AGENTS.md`](AGENTS.md) — how to run, measure and verify; the invariants that must not break (no depth buffer, one draw call in submission order).
+- [`web/TRANSPILE_SPEC.md`](web/TRANSPILE_SPEC.md) — the Java → code translation contract (integer overflow, float32).
 
-Comparar com o original: `./start.sh` roda o jar. Para capturas automáticas
-de qualquer tela do jar, dá para dirigi-lo com `java.awt.Robot` sob `xvfb-run`
-(ver `WORK.md`).
+To compare with the original: `./start.sh` runs the jar. For automatic
+screenshots of any of the jar's screens, it can be driven with
+`java.awt.Robot` under `xvfb-run` (see `WORK.md`).
 
 ---
 
-*Need for Madness © Radicalplay. Projeto de fã, sem fins comerciais.*
+*Need for Madness © Radicalplay. A non-commercial fan project.*
