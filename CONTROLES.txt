@@ -25,15 +25,17 @@ DIRIGIR
   L              frear / re
   Analogico esq. virar
   X              freio de mao
-  X + direcional manobras no ar (segure X no ar e use o direcional
-                 digital -- no original e o mesmo combo: freio de mao +
-                 setas). Com X segurado os gatilhos nao aceleram, para
-                 nao dar flip sem querer.
-  Analogico dir. girar a camera (esquerda/direita, segurando)
+  X + analog. esq.  manobras no ar (segure X no ar e empurre o analogico):
+                 frente = loop pra frente, tras = loop pra tras,
+                 lados = giros. So vale empurrao firme e reto: as
+                 diagonais e os toques pequenos nao fazem nada, para
+                 nao misturar loop com giro e perder o carro.
+                 Durante a manobra R/L nao fazem nada (nao giram o carro).
+  Analogico dir. girar a camera (esquerda/direita, segurando) -- so isso
 
 EM CORRIDA
-  Analog. dir. cima   seta guia: pista <-> carros
-  Analog. dir. baixo  radar
+  Direcional cima    seta guia: pista <-> carros
+  Direcional baixo   radar
   Triangulo      trocar camera (3 modos)
   Quadrado       mutar musica
   Select         mutar efeitos

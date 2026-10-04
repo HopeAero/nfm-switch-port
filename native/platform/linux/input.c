@@ -24,3 +24,9 @@ void input_poll(Control *control) {
   // camera dispatch), it just never had anything to consume until now.
   control->lookback = keys[SDL_SCANCODE_Z] ? 1 : (keys[SDL_SCANCODE_X] ? -1 : 0);
 }
+
+// The arrow keys both drive and stunt, as in the original -- nothing to swap.
+void input_set_stunting(Control *control, bool stunting) {
+  (void)control;
+  (void)stunting;
+}

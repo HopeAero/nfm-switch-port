@@ -136,7 +136,24 @@ single(g_letter_L).save(f'{SP}/vita_kz.png')
 single(g_letter_R).save(f'{SP}/vita_kx.png')
 single(g_tri,    round_btn=True).save(f'{SP}/vita_kv.png')
 single(g_sq,     round_btn=True).save(f'{SP}/vita_km.png')
-single(g_stick).save(f'{SP}/vita_ks.png')
+# S (radar) is D-pad down on the Vita: a key cap with a down arrow.
+def g_dpad_down(d, cx, cy): arrow(d, cx, cy, 'D')
+single(g_dpad_down).save(f'{SP}/vita_ks.png')
+
+# The stunt diagrams: CROSS + the LEFT STICK, pushed in one of four
+# directions. Same 81x62 footprint as arrows.gif, so the page's
+# FORWARD LOOP / BACKWARD LOOP / LEFT ROLL / RIGHT ROLL labels around it
+# keep their places.
+stick = Image.new('RGBA', (81, 62), CLEAR)
+rcap(stick, 40, 31, 15)
+sd = ImageDraw.Draw(stick)
+sd.ellipse([40-9, 31-9, 40+9, 31+9], outline=GLYPH, width=2)
+sd.ellipse([40-3, 31-3, 40+3, 31+3], fill=GLYPH)
+arrow(sd, 40, 7, 'U', L=6, W=4, T=3)
+arrow(sd, 40, 55, 'D', L=6, W=4, T=3)
+arrow(sd, 12, 31, 'L', L=6, W=4, T=3)
+arrow(sd, 68, 31, 'R', L=6, W=4, T=3)
+stick.save(f'{SP}/vita_stick.png')
 
 # SELECT: a small pill, the shape the device uses for it
 sel = Image.new('RGBA', (29, 33), CLEAR); d = ImageDraw.Draw(sel)
@@ -154,4 +171,4 @@ d.polygon([(70, 10), (78, 14), (70, 18)], fill=GLYPH)   # play-mark, as the pad 
 d.rectangle([54, 12, 64, 15], fill=GLYPH)
 en.save(f'{SP}/vita_kenter.png')
 
-print("teclas individuais: kz kx kv km kn ks kenter")
+print("teclas individuais: kz kx kv km kn ks kenter | vita_stick.png 81x62")

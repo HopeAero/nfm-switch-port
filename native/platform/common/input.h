@@ -21,6 +21,13 @@ extern "C" {
  * platform/vita/input.c (sceCtrl). */
 void input_poll(Control *control);
 
+/** Picks, for one physics tick, which of the last poll's controls feed
+ * control->up/down/left/right: the driving ones, or (`stunting`, a stunt
+ * armed in the air -- see game.c) the stunt ones. On the keyboard the two
+ * are the same four arrow keys, so platform/linux/input.c does nothing;
+ * the Vita drives with triggers + stick but stunts with CROSS + stick. */
+void input_set_stunting(Control *control, bool stunting);
+
 #ifdef __cplusplus
 }
 #endif

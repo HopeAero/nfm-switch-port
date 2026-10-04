@@ -248,13 +248,13 @@ typedef enum {
 // cannot be followed. See native/CMakeLists.txt for where the define
 // comes from.
 // KEY_STUNT is what the stunt combo pairs with the handbrake: the same
-// arrow keys on desktop, but the D-pad on the Vita, where driving itself
-// is triggers + left stick (platform/vita/input.c).
+// arrow keys on desktop, the left stick on the Vita (snapped to four
+// directions, platform/vita/input.c), where driving is triggers + stick.
 #ifdef NFM_TARGET_VITA
 #define KEY_STEER    "L/R AND LEFT STICK"
-#define KEY_STUNT    "D-PAD"
+#define KEY_STUNT    "LEFT STICK"
 #define KEY_HANDB    "CROSS"
-#define KEY_ARRACE   "FLICK THE RIGHT STICK UP"
+#define KEY_ARRACE   "PRESS UP ON THE D-PAD"
 #define KEY_CONTINUE "CROSS"
 // clicknow()'s prompt; the original asks for a mouse click.
 #define KEY_START_PROMPT "Press CROSS to Start"
@@ -2410,6 +2410,7 @@ static void draw_gamemode_menu(Graphics2D *g,
 typedef struct {
   HudImg dude[3], oflaot, nfm, racing, wasting, ory, chil, opwr, fixhoop,
          sarrow, space, arrows, plus, stunts, back, next, bggo, bgmain;
+  HudImg stunt_arrows; // what the stunt combo pairs with the handbrake: arrows.gif, or the Vita's stick
   HudImg kz, kx, kv, kenter, km, kn, ks; // page-15 "other controls" key caps
 } InstAssets;
 
@@ -2542,7 +2543,8 @@ static void draw_instructions(Graphics2D *g, const InstAssets *ia,
     vfont_draw_string(g, "PRESS COMBO " KEY_HANDB " + " KEY_STUNT, 125, 330, 1, 1.0f);
     if (ia->space.tex >= 0)  gfx_draw_image(g, ia->space.tex, 185, 355, ia->space.w, ia->space.h);
     if (ia->plus.tex >= 0)   gfx_draw_image(g, ia->plus.tex, 405, 358, ia->plus.w, ia->plus.h);
-    if (ia->arrows.tex >= 0) gfx_draw_image(g, ia->arrows.tex, 491, 323, ia->arrows.w, ia->arrows.h);
+    if (ia->stunt_arrows.tex >= 0)
+      gfx_draw_image(g, ia->stunt_arrows.tex, 491, 323, ia->stunt_arrows.w, ia->stunt_arrows.h);
     vfont_draw_string(g, "FORWARD LOOP", 492, 319, 1, 1.0f);
     vfont_draw_string(g, "BACKWARD LOOP", 490, 397, 1, 1.0f);
     vfont_draw_string(g, "LEFT ROLL", 443, 375, 1, 1.0f);
@@ -2625,7 +2627,8 @@ static void draw_instructions(Graphics2D *g, const InstAssets *ia,
     vfont_draw_string(g, "IN THE AIR PRESS COMBO " KEY_HANDB " + " KEY_STUNT, 125, 220, 1, 1.0f);
     if (ia->space.tex >= 0)  gfx_draw_image(g, ia->space.tex, 185, 245, ia->space.w, ia->space.h);
     if (ia->plus.tex >= 0)   gfx_draw_image(g, ia->plus.tex, 405, 248, ia->plus.w, ia->plus.h);
-    if (ia->arrows.tex >= 0) gfx_draw_image(g, ia->arrows.tex, 491, 213, ia->arrows.w, ia->arrows.h);
+    if (ia->stunt_arrows.tex >= 0)
+      gfx_draw_image(g, ia->stunt_arrows.tex, 491, 213, ia->stunt_arrows.w, ia->stunt_arrows.h);
     vfont_draw_string(g, "FORWARD LOOP", 492, 209, 1, 1.0f);
     vfont_draw_string(g, "BACKWARD LOOP", 490, 287, 1, 1.0f);
     vfont_draw_string(g, "LEFT ROLL", 443, 265, 1, 1.0f);
@@ -2853,6 +2856,7 @@ int game_run(void) {
   HudImg menu_select = {-1, 0, 0};                         // select.gif -- 125x18 "SELECT" caption (stage picker)
   HudImg menu_stunts = {-1, 0, 0};                         // stunts.png -- 464x110 4-car stunt visualization
   HudImg menu_arrows = {-1, 0, 0};                         // arrows.gif -- arrow keys illustration
+  HudImg menu_stunt_arrows = {-1, 0, 0};                   // the stunt diagrams' copy of it (the Vita's stick)
   HudImg menu_space = {-1, 0, 0};                          // space.gif -- spacebar key icon
   HudImg menu_plus = {-1, 0, 0};                           // plus.gif -- 25x25 "+" glyph between space and arrows
   HudImg menu_madness = {-1, 0, 0};                        // madness.gif -- 231x46 "MADNESS!" wordmark (credits page)
@@ -2960,13 +2964,16 @@ int game_run(void) {
       {
         HudImg vita_arrows = load_menu_png_file("data/vita/vita_arrows.png");
         if (vita_arrows.tex >= 0) menu_arrows = vita_arrows;
+        // Stunts are CROSS + the left stick here, so their diagrams show
+        // the stick pushed four ways instead of the D-pad.
+        menu_stunt_arrows = load_menu_png_file("data/vita/vita_stick.png");
         HudImg vita_space = load_menu_png_file("data/vita/vita_space.png");
         if (vita_space.tex >= 0) menu_space = vita_space;
         // The "OTHER CONTROLS" page's seven individual key caps, each drawn
         // to its original's exact footprint (29x33, and 97x33 for ENTER).
         // The mapping is whatever platform/vita/platform.c actually binds:
         // Z/X become the L/R triggers, V becomes Triangle, M and N become
-        // Square and Select, S becomes the right stick, and ENTER -- which
+        // Square and Select, S becomes D-pad down, and ENTER -- which
         // this page labels "navigate and pause" -- carries both Cross and
         // START, since those two took its two jobs.
         struct { HudImg *dst; const char *path; } vita_keys[] = {
@@ -3028,6 +3035,7 @@ int game_run(void) {
   inst_assets.sarrow = menu_sarrow;
   inst_assets.space = menu_space;
   inst_assets.arrows = menu_arrows;
+  inst_assets.stunt_arrows = menu_stunt_arrows.tex >= 0 ? menu_stunt_arrows : menu_arrows;
   inst_assets.plus = menu_plus;
   inst_assets.stunts = menu_stunts;
   inst_assets.back = menu_back;
@@ -4485,6 +4493,12 @@ int game_run(void) {
               if (i != j) mad_colide(&mad[i], &co[i], &mad[j], &co[j]);
             }
           }
+          // A stunt armed in the air (loop 2, or the handbrake going down
+          // off the ground, which arms it inside this very drive() call)
+          // turns every direction into a stunt until landing. Tell the
+          // input layer, so on the Vita only CROSS + stick reach the car
+          // then and the throttle/brake triggers cannot loop it.
+          input_set_stunting(&control[0], mad[0].loop == 2 || (control[0].handb && !mad[0].wtouch));
           for (int32_t i = 0; i < nplayers; i++) {
             mad_drive(&mad[i], &control[i], &co[i], &t, &cp);
           }
