@@ -150,6 +150,19 @@ foreach(assetdir data stages music mycars)
   endforeach()
 endforeach()
 
+# The home-screen bubble and LiveArea, built from the game's own main-menu
+# art by make_livearea.py (re-run it to regenerate). All 8-bit paletted,
+# which LiveArea requires.
+set(NFM_SCE_SYS "${CMAKE_CURRENT_SOURCE_DIR}/sce_sys")
+foreach(_nfm_sys
+    icon0.png
+    pic0.png
+    livearea/contents/bg.png
+    livearea/contents/startup.png
+    livearea/contents/template.xml)
+  list(APPEND NFM_VPK_FILE_ARGS FILE "${NFM_SCE_SYS}/${_nfm_sys}" "sce_sys/${_nfm_sys}")
+endforeach()
+
 vita_create_vpk(nfm_vita.vpk ${VITA_TITLEID} nfm_vita.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
