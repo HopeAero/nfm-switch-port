@@ -233,6 +233,8 @@ typedef enum {
   STATE_BOOT_CLICK,      // fase 111 -- clicknow() (xtGraphics.java:1443) over the loading() screen
   STATE_BOOT_RAD,        // fase 9 -- rad() (xtGraphics.java:1570), the Radicalplay intro
   STATE_SETTINGS,        // this port's own Settings screen, reached from the pause menu
+  STATE_STAGE_INTRO,     // fase 5 + 6 -- loadmusic()/musicomp() (xtGraphics.java:2935, :3105), the
+                         //   stage's presentation card: hint, music playing, "Press Start to begin"
 } GameState;
 
 // On-screen names for the physical controls, so the help text can say
@@ -312,14 +314,25 @@ typedef struct {
   HudImg youwastedem, yourwasted;
 } HudImages;
 
-static HudImg load_hud_gif(VfsZip *zip, const char *name, const int32_t snap[3]) {
+// Every race re-tints these for its own stage, so the texture the previous
+// race uploaded is refilled in place rather than replaced: a fresh upload
+// per race leaked ~25 textures each time (there is no texture-free call).
+static int32_t upload_or_refill(HudImg prev, const uint8_t *rgba, int32_t w, int32_t h) {
+  if (prev.tex >= 0 && prev.w == w && prev.h == h) {
+    gfx_gl_update_texture(prev.tex, rgba, w, h);
+    return prev.tex;
+  }
+  return gfx_gl_upload_texture(rgba, w, h);
+}
+
+static HudImg load_hud_gif(VfsZip *zip, const char *name, const int32_t snap[3], HudImg prev) {
   HudImg result = {-1, 0, 0};
   for (int32_t i = 0; i < zip->count; i++) {
     if (strcmp(zip->entries[i].name, name) != 0) continue;
     GifImage img;
     if (gif_decode(zip->entries[i].data, (size_t)zip->entries[i].len, &img)) {
       hud_recolor(img.rgba, img.width, img.height, snap);
-      result.tex = gfx_gl_upload_texture(img.rgba, img.width, img.height);
+      result.tex = upload_or_refill(prev, img.rgba, img.width, img.height);
       result.w = img.width;
       result.h = img.height;
       gif_free(&img);
@@ -329,6 +342,65 @@ static HudImg load_hud_gif(VfsZip *zip, const char *name, const int32_t snap[3])
     break;
   }
   return result;
+}
+
+// xtGraphics.loadopsnap() (:9641-9728): the hipnoload() screen's own tint,
+// different from loadsnap()'s. Every pixel that is not the key pixel
+// (index `key`, which is left exactly as it was -- for these GIFs it is the
+// transparent one) is darkened by m.snap and made opaque; for float.gif
+// (key 1) the bubble's fill colour (the pixel at 61993) is instead set to
+// 237-237*snap/150, or plain 250 on stage 11. The snap triple is first
+// lifted until it sums to at least -30, as hipnoload() itself does.
+static void opsnap_lift(const int32_t snap[3], int32_t out[3]) {
+  out[0] = snap[0]; out[1] = snap[1]; out[2] = snap[2];
+  while (out[0] + out[1] + out[2] < -30) {
+    for (int32_t i = 0; i < 3; i++) {
+      if (out[i] < 50) out[i]++;
+    }
+  }
+}
+
+static int32_t clamp255(int32_t v) { return v > 255 ? 255 : (v < 0 ? 0 : v); }
+
+static HudImg load_opsnap_gif(VfsZip *zip, const char *name, int32_t stage, int32_t key,
+                              const int32_t snap[3], HudImg prev) {
+  HudImg r = {-1, 0, 0};
+  for (int32_t i = 0; i < zip->count; i++) {
+    if (strcmp(zip->entries[i].name, name) != 0) continue;
+    GifImage img;
+    if (!gif_decode(zip->entries[i].data, (size_t)zip->entries[i].len, &img)) {
+      fprintf(stderr, "data/images.zip: %s failed to decode (gif)\n", name);
+      break;
+    }
+    int32_t n = img.width * img.height;
+    int32_t a[3];
+    opsnap_lift(snap, a);
+    uint8_t *px = img.rgba;
+    uint8_t keyc[4] = {px[key * 4], px[key * 4 + 1], px[key * 4 + 2], px[key * 4 + 3]};
+    uint8_t fill[4] = {0, 0, 0, 0};
+    if (key == 1 && n > 61993) memcpy(fill, px + 61993 * 4, 4);
+    for (int32_t j = 0; j < n; j++) {
+      uint8_t *c = px + j * 4;
+      if (memcmp(c, keyc, 4) == 0) continue;
+      int32_t cr, cg, cb;
+      if (key == 1 && memcmp(c, fill, 4) == 0) {
+        cr = clamp255((int32_t)(237.0f - 237.0f * ((float)a[0] / 150.0f)));
+        cg = clamp255((int32_t)(237.0f - 237.0f * ((float)a[1] / 150.0f)));
+        cb = clamp255((int32_t)(237.0f - 237.0f * ((float)a[2] / 150.0f)));
+        if (stage == 11) cr = cg = cb = 250;
+      } else {
+        cr = clamp255((int32_t)((float)c[0] - (float)c[0] * ((float)a[0] / 100.0f)));
+        cg = clamp255((int32_t)((float)c[1] - (float)c[1] * ((float)a[1] / 100.0f)));
+        cb = clamp255((int32_t)((float)c[2] - (float)c[2] * ((float)a[2] / 100.0f)));
+      }
+      c[0] = (uint8_t)cr; c[1] = (uint8_t)cg; c[2] = (uint8_t)cb; c[3] = 255;
+    }
+    r.tex = upload_or_refill(prev, img.rgba, img.width, img.height);
+    r.w = img.width; r.h = img.height;
+    gif_free(&img);
+    break;
+  }
+  return r;
 }
 
 // Menu asset loaders: NO hud_recolor pass (that's the racing-HUD-specific
@@ -3091,6 +3163,7 @@ int game_run(void) {
   else if (screenshot_menu && strcmp(screenshot_menu, "postwin") == 0) state = STATE_POST_RACE;
   else if (screenshot_menu && strcmp(screenshot_menu, "postlose") == 0) { state = STATE_POST_RACE; preview_race_lose = true; }
   else if (screenshot_menu && strcmp(screenshot_menu, "loading") == 0) state = STATE_STAGE_LOADING;
+  else if (screenshot_menu && strcmp(screenshot_menu, "intro") == 0) state = STATE_STAGE_INTRO;
   else if (screenshot_menu && strcmp(screenshot_menu, "locked") == 0) state = STATE_STAGE_LOCKED;
   else if (screenshot_menu && strcmp(screenshot_menu, "holdcard") == 0) state = STATE_RACING;
   else if (screenshot_menu && strcmp(screenshot_menu, "boot") == 0) state = STATE_BOOT_CLICK;
@@ -3299,6 +3372,18 @@ int game_run(void) {
   // stage loader is synchronous but we still hold the animated
   // transition for a short beat so the trackbg scroll is visible.
   int32_t stage_loadcnt = (screenshot_menu && strcmp(screenshot_menu, "loading") == 0) ? 100000 : 0;
+
+  // STATE_STAGE_INTRO -- hipnoload()'s own state (xtGraphics.java:2685).
+  // intro_frame counts the screen's paced draws: draw 0 is loadmusic()'s
+  // "N KB / Please Wait..." card, every later one musicomp()'s "Loading
+  // complete!" card. The images are loadopsnap()'d per stage at setup.
+  int32_t intro_frame = 0;
+  int32_t intro_dudo = 150, intro_duds = 0, intro_pstar = 0;
+  bool intro_aflk = false, intro_tflk = false;
+  bool stage_music_pending = false; // loaded, waiting for loadmusic()'s strack.play()
+  char stage_asay[96] = "";
+  HudImg intro_loadingmusic = {-1, 0, 0}, intro_flaot = {-1, 0, 0};
+  HudImg intro_star[2] = {{-1, 0, 0}, {-1, 0, 0}};
   // When previewing the locked state headlessly, park stage_num on the
   // slot that would actually be locked given the initial progression
   // (unlocked[0]==1 -> stage 2 is the cantgo target for NFM1).
@@ -3827,7 +3912,41 @@ int game_run(void) {
       }
     } else if (state == STATE_STAGE_LOADING) {
       stage_loadcnt--;
-      if (stage_loadcnt <= 0) state = STATE_RACING;
+      if (stage_loadcnt <= 0) {
+        // loadstage() ends in fase 5 (GameSparker.java:2753), and the
+        // stage-select confirm that led here armed dudo = 150 (:2587).
+        state = STATE_STAGE_INTRO;
+        intro_frame = 0;
+        intro_dudo = 150;
+      }
+    } else if (state == STATE_STAGE_INTRO) {
+      // loadmusic()'s tail (:2971-2983): the track starts once it has
+      // loaded, i.e. as the "Please Wait" card gives way to musicomp().
+      if (intro_frame >= 1 && stage_music_pending) {
+        stage_music_pending = false;
+        if (stage_music_loaded_for == stage_num) {
+          audio_start_music(&audio, &stage_music, stage_music_gain(stage_num));
+          audio_set_music_muted(&audio, control[0].mutem);
+        }
+      }
+      // musicomp() (:3105-3155): handbrake or enter starts the race, with
+      // the full-canvas viewport and the default camera projection.
+      if (intro_frame >= 1 && KEY_EDGE(BTN_CONFIRM)) {
+        m.trk = 0;
+        m.crs = false;
+        m.ih = 0;
+        m.iw = 0;
+        m.h = 450;
+        m.w = 800;
+        m.focus_point = 400;
+        m.cx = 400;
+        m.cy = 225;
+        m.cz = 50;
+        state = STATE_RACING;
+        // The race's accumulator starts now, not when the stage loaded.
+        last_ticks_ms = platform_ticks_ms();
+        accumulator_ms = 0.0;
+      }
     } else if (state == STATE_POST_RACE) {
       // Java's finish() screen (fase -5), :6994-7027: ENTER or handbrake
       // (our SPACE binding -- Java checks `control.enter || control.handb`)
@@ -3964,7 +4083,7 @@ int game_run(void) {
       total_objs = 0;
     }
 
-    if (state == STATE_RACING && !all_objs) {
+    if ((state == STATE_RACING || state == STATE_STAGE_INTRO) && !all_objs) {
       // One-time transition into racing: build everything the physics/
       // draw loop below needs, parameterised by whatever the menu (or
       // the screenshot hook's defaults) selected. Mirrors this file's
@@ -4010,11 +4129,24 @@ int game_run(void) {
         audio_stop_music(&audio); // stop referencing the OLD ModFile before freeing it
         mod_free(&stage_music);
         if (load_stage_mod(stage_num, &stage_music)) {
-          audio_start_music(&audio, &stage_music, stage_music_gain(stage_num));
           stage_music_loaded_for = stage_num;
         } else {
           stage_music_loaded_for = -1;
         }
+      }
+      // Entering from the stage card, the track waits for the card's own
+      // loadmusic() step; anything that drops straight into the race (the
+      // headless hooks) starts it here.
+      stage_music_pending = state == STATE_STAGE_INTRO && stage_music_loaded_for == stage_num;
+      if (!stage_music_pending && stage_music_loaded_for == stage_num) {
+        audio_start_music(&audio, &stage_music, stage_music_gain(stage_num));
+      }
+      // GameSparker.java:2755-2767 -- the card's title line.
+      {
+        int32_t shown = stage_num;
+        if (shown > 27) shown -= 27;
+        else if (shown > 10) shown -= 10;
+        snprintf(stage_asay, sizeof(stage_asay), "Stage %d:  %s ", shown, stage_name_buf);
       }
 
       // Real HUD panel images -- AFTER stage load, matching web/main.js's
@@ -4026,27 +4158,32 @@ int game_run(void) {
         VfsZip images_zip;
         if (vfs_read_zip("data/images.zip", &images_zip)) {
           const int32_t snap[3] = {m.snap[0], m.snap[1], m.snap[2]};
-          hud_images.dmg = load_hud_gif(&images_zip, "damage.gif", snap);
-          hud_images.pwr = load_hud_gif(&images_zip, "power.gif", snap);
-          hud_images.lap = load_hud_gif(&images_zip, "lap.gif", snap);
-          hud_images.was = load_hud_gif(&images_zip, "wasted.gif", snap);
-          hud_images.pos = load_hud_gif(&images_zip, "position.gif", snap);
-          hud_images.sped = load_hud_gif(&images_zip, "speed.gif", snap);
+          hud_images.dmg = load_hud_gif(&images_zip, "damage.gif", snap, hud_images.dmg);
+          hud_images.pwr = load_hud_gif(&images_zip, "power.gif", snap, hud_images.pwr);
+          hud_images.lap = load_hud_gif(&images_zip, "lap.gif", snap, hud_images.lap);
+          hud_images.was = load_hud_gif(&images_zip, "wasted.gif", snap, hud_images.was);
+          hud_images.pos = load_hud_gif(&images_zip, "position.gif", snap, hud_images.pos);
+          hud_images.sped = load_hud_gif(&images_zip, "speed.gif", snap, hud_images.sped);
           const char *rank_names[8] = {"1.gif", "2.gif", "3.gif", "4.gif", "5.gif", "6.gif", "7.gif", "8.gif"};
-          for (int32_t i = 0; i < 8; i++) hud_images.rank[i] = load_hud_gif(&images_zip, rank_names[i], snap);
+          for (int32_t i = 0; i < 8; i++) hud_images.rank[i] = load_hud_gif(&images_zip, rank_names[i], snap, hud_images.rank[i]);
           // Countdown glyphs (Java xtGraphics.java:840-846, :909-910). loadsnap()
           // is what recolors them per stage in the original -- load_hud_gif
           // does the same recolor+alpha pass here. Java's array uses:
           //   ocntdn[0] = "0c.gif" (the GO glyph -- misnamed for historical reasons)
           //   ocntdn[1] = "1c.gif", ocntdn[2] = "2c.gif", ocntdn[3] = "3c.gif"
           const char *cntdn_names[4] = {"0c.gif", "1c.gif", "2c.gif", "3c.gif"};
-          for (int32_t i = 0; i < 4; i++) hud_images.cntdn[i] = load_hud_gif(&images_zip, cntdn_names[i], snap);
+          for (int32_t i = 0; i < 4; i++) hud_images.cntdn[i] = load_hud_gif(&images_zip, cntdn_names[i], snap, hud_images.cntdn[i]);
           // Win/loss hold-card glyphs -- xtGraphics.java:903-907 (raw load),
           // :9515-9516 (loadsnap() recolor, same treatment as the countdown).
-          hud_images.youwon = load_hud_gif(&images_zip, "youwon.gif", snap);
-          hud_images.youlost = load_hud_gif(&images_zip, "youlost.gif", snap);
-          hud_images.youwastedem = load_hud_gif(&images_zip, "youwastedem.gif", snap);
-          hud_images.yourwasted = load_hud_gif(&images_zip, "yourwasted.gif", snap);
+          hud_images.youwon = load_hud_gif(&images_zip, "youwon.gif", snap, hud_images.youwon);
+          hud_images.youlost = load_hud_gif(&images_zip, "youlost.gif", snap, hud_images.youlost);
+          hud_images.youwastedem = load_hud_gif(&images_zip, "youwastedem.gif", snap, hud_images.youwastedem);
+          hud_images.yourwasted = load_hud_gif(&images_zip, "yourwasted.gif", snap, hud_images.yourwasted);
+          // The stage card's images -- snap()'s loadopsnap() trio, :9519-9522.
+          intro_loadingmusic = load_opsnap_gif(&images_zip, "loadingmusic.gif", stage_num, 76, snap, intro_loadingmusic);
+          intro_star[0] = load_opsnap_gif(&images_zip, "start1.gif", stage_num, 0, snap, intro_star[0]);
+          intro_star[1] = load_opsnap_gif(&images_zip, "start2.gif", stage_num, 0, snap, intro_star[1]);
+          intro_flaot = load_opsnap_gif(&images_zip, "float.gif", stage_num, 1, snap, intro_flaot);
           vfs_free_zip(&images_zip);
         } else {
           fprintf(stderr, "could not load data/images.zip -- HUD panels will be blank\n");
@@ -4815,7 +4952,8 @@ int game_run(void) {
     // (The boot prompt and intro too: their counters and blink advance per
     // draw, and the Java loop draws them at the same menu rate.)
     const bool is_paced_menu = render_state == STATE_CAR_SELECT || render_state == STATE_STAGE_SELECT ||
-                               render_state == STATE_BOOT_CLICK || render_state == STATE_BOOT_RAD;
+                               render_state == STATE_BOOT_CLICK || render_state == STATE_BOOT_RAD ||
+                               render_state == STATE_STAGE_INTRO;
     bool paced_ticked = false;
     if (is_replay || is_paced_menu) {
       const double step_ms = is_replay ? TICK_MS : 40.0;
@@ -6673,6 +6811,130 @@ int game_run(void) {
       if (menu_select.tex >= 0) {
         gfx_draw_image(&g, menu_select.tex, 338, 35, menu_select.w, menu_select.h);
       }
+    } else if (state == STATE_STAGE_INTRO) {
+      // xtGraphics.hipnoload() (:2685-2933). It draws straight to the
+      // display every frame (no trail, mvect = 100), so its per-draw state
+      // -- the coach's flicker, the hint's red flash, the start button's
+      // blink -- only advances on the screen's own 40ms paced step.
+      const bool step = paced_ticked;
+      int32_t a[3];
+      {
+        const int32_t snap[3] = {m.snap[0], m.snap[1], m.snap[2]};
+        opsnap_lift(snap, a);
+      }
+      gfx_set_color(&g, clamp255((int32_t)(230.0f - 230.0f * ((float)a[0] / 100.0f))),
+                    clamp255((int32_t)(230.0f - 230.0f * ((float)a[1] / 100.0f))),
+                    clamp255((int32_t)(230.0f - 230.0f * ((float)a[2] / 100.0f))));
+      gfx_fill_rect(&g, 65, 25, 670, 400);
+      if (menu_bg.tex >= 0) {
+        gfx_set_composite(&g, 0.3f);
+        gfx_draw_image(&g, menu_bg.tex, 0, -25, menu_bg.w, menu_bg.h);
+        gfx_set_composite(&g, 1.0f);
+      }
+      gfx_set_color(&g, 0, 0, 0);
+      gfx_fill_rect(&g, 0, 0, 65, 450);
+      gfx_fill_rect(&g, 735, 0, 65, 450);
+      gfx_fill_rect(&g, 65, 0, 670, 25);
+      gfx_fill_rect(&g, 65, 425, 670, 25);
+      draw_centered(&g, stage_asay, width / 2, 50 - 6, 1);
+      // Single player only: the stages with a hint lift the card to n3 = 0.
+      static const char *const kHints[28][5] = {
+          [1] = {"Hey!  Don't forget, to complete a lap you must pass through", "all checkpoints in the track!"},
+          [2] = {"Remember, the more power you have the faster your car will be!"},
+          [3] = {"> Hint: its easier to waste the other cars then to race in this stage!",
+                 "Press [ A ] to make the guidance arrow point to cars instead of to", "the track."},
+          [4] = {"Remember, the better the stunt you perform the more power you get!"},
+          [5] = {"Remember, the more power you have the stronger your car is!"},
+          [10] = {"NOTE: Guidance Arrow is disabled in this stage!"},
+          [11] = {"Hey!  Don't forget, to complete a lap you must pass through", "all checkpoints in the track!"},
+          [12] = {"Remember, the more power you have the faster your car will be!"},
+          [13] = {"Watch out!  Look out!  The policeman might be out to get you!",
+                  "Don't upset him or you'll be arrested!", NULL, "Better run, run, run."},
+          [14] = {"Don't waste your time.  Waste them instead!", "Try a taste of sweet revenge here (if you can)!", NULL,
+                  "Press [ A ] to make the guidance arrow point to cars instead of to", "the track."},
+          [17] = {"Welcome to the realm of the king...", NULL,
+                  "The key word here is 'POWER'.  The more you have of it the faster", "and STRONGER you car will be!"},
+          [18] = {"Watch out, EL KING is out to get you now!", "He seems to be seeking revenge?", NULL,
+                  "(To fly longer distances in the air try drifting your car on the ramp", "before take off)."},
+          [19] = {"It's good to be the king!"},
+          [20] = {"Remember, forward loops give your car a push forwards in the air", "and help in racing.", NULL,
+                  "(You may need to do more forward loops here.  Also try keeping",
+                  "your power at maximum at all times.  Try not to miss a ramp)."},
+          [22] = {"Watch out!  Beware!  Take care!", "MASHEEN is hiding out there some where, don't get mashed now!"},
+          [23] = {"Anyone for a game of Digger?!", "You can have fun using MASHEEN here!"},
+          [26] = {"This is it!  This is the toughest stage in the game!", NULL,
+                  "This track is actually a 4D object projected onto the 3D world.",
+                  "It's been broken down, separated and, in many ways, it is also a", "maze!  GOOD LUCK!"},
+      };
+      const bool has_hint = stage_num >= 1 && stage_num < 28 && kHints[stage_num][0] != NULL;
+      const int32_t n3 = has_hint ? 0 : -90;
+      if (has_hint) {
+        if (intro_dudo > 0) {
+          if (step) {
+            if (intro_aflk) {
+              double ra = nfm_random();
+              double rb = nfm_random();
+              intro_duds = (int32_t)(nfm_random() * ((ra > rb) ? 3.0 : 2.0));
+              intro_aflk = false;
+            } else {
+              intro_aflk = true;
+            }
+            intro_dudo--;
+          }
+        } else {
+          intro_duds = 0;
+        }
+        if (menu_dude[intro_duds].tex >= 0) {
+          gfx_set_composite(&g, 0.3f);
+          gfx_draw_image(&g, menu_dude[intro_duds].tex, 95, 35, menu_dude[intro_duds].w, menu_dude[intro_duds].h);
+        }
+        if (intro_flaot.tex >= 0) {
+          gfx_set_composite(&g, 0.7f);
+          gfx_draw_image(&g, intro_flaot.tex, 192, 67, intro_flaot.w, intro_flaot.h);
+        }
+        gfx_set_composite(&g, 1.0f);
+        const int32_t r2 = clamp255((int32_t)(80.0f - 80.0f * ((float)a[0] / 100.0f)));
+        const int32_t g2 = clamp255((int32_t)(80.0f - 80.0f * ((float)a[1] / 100.0f)));
+        const int32_t b2 = clamp255((int32_t)(80.0f - 80.0f * ((float)a[2] / 100.0f)));
+        gfx_set_color(&g, r2, g2, b2);
+        if (stage_num == 10) {
+          // The one warning flashes red, toggling every draw.
+          if (intro_tflk) gfx_set_color(&g, 200, g2, b2);
+          if (step) intro_tflk = !intro_tflk;
+        }
+        for (int32_t line = 0; line < 5; line++) {
+          const char *txt = kHints[stage_num][line];
+          if (txt) vfont_draw_string(&g, txt, 262, 92 + 20 * line - 6, 1, 1.0f);
+        }
+      }
+      if (intro_loadingmusic.tex >= 0) {
+        gfx_set_composite(&g, 0.8f);
+        gfx_draw_image(&g, intro_loadingmusic.tex, 289, 205 + n3, intro_loadingmusic.w, intro_loadingmusic.h);
+        gfx_set_composite(&g, 1.0f);
+      }
+      gfx_set_color(&g, 0, 0, 0);
+      if (intro_frame == 0) {
+        // loadmusic()'s card: the track's download size, from sndsize[].
+        static const int32_t kSndSize[33] = {39, 128, 23, 58, 106, 140, 81, 135, 38, 141, 106,
+                                             76, 56, 116, 92, 208, 70, 80, 152, 102, 27, 65,
+                                             52, 30, 151, 129, 80, 44, 57, 123, 202, 210, 111};
+        int32_t n4 = stage_num - 1;
+        if (n4 < 0 || n4 > 32) n4 = 32;
+        char kb[24];
+        snprintf(kb, sizeof(kb), "%d KB", kSndSize[n4]);
+        draw_centered(&g, kb, width / 2, 340 + n3 - 6, 1);
+        draw_centered(&g, " Please Wait...", width / 2, 375 + n3 - 6, 1);
+      } else {
+        draw_centered(&g, "Loading complete!  Press Start to begin...", width / 2, 365 + n3 - 6, 1);
+        if (intro_star[intro_pstar].tex >= 0) {
+          gfx_set_composite(&g, 0.5f);
+          gfx_draw_image(&g, intro_star[intro_pstar].tex, 359, 385 + n3,
+                         intro_star[intro_pstar].w, intro_star[intro_pstar].h);
+          gfx_set_composite(&g, 1.0f);
+        }
+        if (step) intro_pstar ^= 1;
+      }
+      if (step) intro_frame++;
     }
 
 #ifdef NFM_SHOW_FPS
