@@ -227,20 +227,12 @@ add_executable(audio_mixer_test
   ../core/audio_mixer.c
 )
 
-add_executable(mod_decode_test
-  mod_decode_test.c
-  ../core/mod_decode.c
+add_executable(radical_mod_test
+  radical_mod_test.c
+  ../core/radical_mod.c
   ../core/vfs.c
 )
-target_link_libraries(mod_decode_test ZLIB::ZLIB)
-
-add_executable(mod_play_test
-  mod_play_test.c
-  ../core/mod_decode.c
-  ../core/mod_play.c
-  ../core/vfs.c
-)
-target_link_libraries(mod_play_test m ZLIB::ZLIB)
+target_link_libraries(radical_mod_test ZLIB::ZLIB)
 
 add_executable(bots_test
   bots_test.c
@@ -289,8 +281,7 @@ add_test(NAME mad_test COMMAND mad_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY
 add_test(NAME progress_test COMMAND progress_test)
 add_test(NAME wav_decode_test COMMAND wav_decode_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_test(NAME audio_mixer_test COMMAND audio_mixer_test)
-add_test(NAME mod_decode_test COMMAND mod_decode_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-add_test(NAME mod_play_test COMMAND mod_play_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_test(NAME radical_mod_test COMMAND radical_mod_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_test(NAME bots_test COMMAND bots_test)
 # vfs_test reads the real stages/1.txt with a path relative to this build
 # dir (native/tests/build/) -- WORKING_DIRECTORY pins that regardless of

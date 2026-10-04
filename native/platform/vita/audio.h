@@ -24,18 +24,18 @@
 #include <psp2/types.h>
 #include <stdbool.h>
 #include "audio_mixer.h"
-#include "mod_play.h"
+#include "radical_mod.h"
 
 typedef struct {
   int port;              // sceAudioOut port handle, -1 if not opened
   int32_t grain;          // frames per sceAudioOutOutput() call (the port's fixed "len")
   AudioMixer mixer;
-  ModPlayState music;
+  RadicalPlayer music;
   bool music_active;
   // GameSparker.java's `mutem` (toggled on the M key, :3633-3640) reaches
   // the mixer through here. Java pauses/resumes its track rather than
   // silencing it, so this SKIPS the music render entirely -- which also
-  // freezes the tracker position, matching resume-from-where-you-left.
+  // freezes the stream position, matching resume-from-where-you-left.
   bool music_muted;
   SceUID thread_id;
   SceUID lock;            // lightweight mutex guarding mixer/music/music_active below
@@ -44,7 +44,7 @@ typedef struct {
 
 // Opens a stereo S16 sceAudioOut port at (as close as the hardware
 // allows to) `output_rate` Hz and starts a dedicated output thread
-// pumping audio_mixer_render()/mod_play_render() into it. Returns false
+// pumping audio_mixer_render()/radical_player_render() into it. Returns false
 // (port left unopened) on failure -- callers should treat that as "no
 // audio this session" rather than a fatal error, matching how a missing
 // data/images.zip degrades to vfont-only menus elsewhere in game.c.
@@ -63,18 +63,14 @@ int32_t audio_play(Audio *al, const int16_t *samples, int32_t frame_count,
                     int32_t sample_rate, float volume, bool loop);
 void audio_stop(Audio *al, int32_t channel);
 
-// Starts/restarts background music from `mod` (Java's own strack --
-// xtGraphics.java:2989 `loadstrack` loads music/stage{N}.zip per stage
-// and calls strack.play(), looping continuously for the whole stage --
-// see mod_play.h's own doc comment on mod_play_render()'s auto-loop).
-// `mod` is BORROWED -- the caller (game.c) owns the decoded ModFile and
-// must keep it alive until the NEXT audio_start_music() call or
-// audio_stop_music(), both of which fully stop referencing the previous
-// one (under lock) before returning, so the caller can safely mod_free()
-// the old ModFile right after calling either. `gain` is the real
-// per-stage RadicalMod gain (see ModPlayState::gain's doc comment in
-// mod_play.h) -- game.c looks it up per stage.
-void audio_start_music(Audio *al, const ModFile *mod, int32_t gain);
+// Starts background music from the top of `track` (SuperClip.play(): the
+// stream resets to its start and loops by its own rollBack fields for as
+// long as it plays -- see radical_mod.h). `track` is BORROWED -- the caller
+// (game.c) owns the rendered RadicalTrack and must keep it alive until the
+// NEXT audio_start_music() call or audio_stop_music(), both of which stop
+// referencing the previous one (under lock) before returning, so the caller
+// can radical_track_free() the old track right after calling either.
+void audio_start_music(Audio *al, const RadicalTrack *track);
 void audio_stop_music(Audio *al);
 
 /** Pauses/unpauses background music without discarding it (Java's own

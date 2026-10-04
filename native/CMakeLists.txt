@@ -92,8 +92,7 @@ add_library(nfm_core STATIC
   core/progress.c
   core/wav_decode.c
   core/audio_mixer.c
-  core/mod_decode.c
-  core/mod_play.c
+  core/radical_mod.c
   core/bots.c
 )
 target_include_directories(nfm_core PUBLIC core)

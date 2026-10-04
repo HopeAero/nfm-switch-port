@@ -8,11 +8,11 @@ static void audio_callback(void *userdata, Uint8 *stream, int len) {
   // len is bytes; output is stereo S16 (4 bytes/frame).
   int32_t frames = len / 4;
   // SFX first (clears + fills `stream`), then background music ADDS on
-  // top -- mod_play_render() never clears its output, see its own doc
+  // top -- radical_player_render() never clears its output, see its own doc
   // comment, so call order here matters.
   audio_mixer_render(&al->mixer, (int16_t *)stream, frames);
   if (al->music_active && !al->music_muted) {
-    mod_play_render(&al->music, (int16_t *)stream, frames);
+    radical_player_render(&al->music, (int16_t *)stream, frames);
   }
 }
 
@@ -68,10 +68,10 @@ void audio_stop(Audio *al, int32_t channel) {
   SDL_UnlockAudioDevice(al->device);
 }
 
-void audio_start_music(Audio *al, const ModFile *mod, int32_t gain) {
+void audio_start_music(Audio *al, const RadicalTrack *track) {
   if (al->device == 0) return;
   SDL_LockAudioDevice(al->device);
-  mod_play_init(&al->music, mod, al->mixer.output_rate, gain);
+  radical_player_start(&al->music, track, al->mixer.output_rate);
   al->music_active = true;
   SDL_UnlockAudioDevice(al->device);
 }

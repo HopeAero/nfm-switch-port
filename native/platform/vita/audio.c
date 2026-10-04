@@ -51,7 +51,7 @@ static int audio_thread_entry(SceSize args, void *argp) {
     sceKernelLockMutex(al->lock, 1, NULL);
     audio_mixer_render(&al->mixer, buf, AUDIO_GRAIN);
     if (al->music_active && !al->music_muted) {
-      mod_play_render(&al->music, buf, AUDIO_GRAIN);
+      radical_player_render(&al->music, buf, AUDIO_GRAIN);
     }
     sceKernelUnlockMutex(al->lock, 1);
 
@@ -160,10 +160,10 @@ void audio_stop(Audio *al, int32_t channel) {
   sceKernelUnlockMutex(al->lock, 1);
 }
 
-void audio_start_music(Audio *al, const ModFile *mod, int32_t gain) {
+void audio_start_music(Audio *al, const RadicalTrack *track) {
   if (al->port < 0) return;
   sceKernelLockMutex(al->lock, 1, NULL);
-  mod_play_init(&al->music, mod, al->mixer.output_rate, gain);
+  radical_player_start(&al->music, track, al->mixer.output_rate);
   al->music_active = true;
   sceKernelUnlockMutex(al->lock, 1);
 }

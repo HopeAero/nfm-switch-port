@@ -2761,17 +2761,34 @@ recorded here so it does not get re-investigated:
 - **`pgate.gif`** — already wired. Two draw sites in the original, the
   cantgo() padlock row (:2001-2003) and the car-select locked-car fence
   (:5335); the port has both.
-- **`start1.gif` / `start2.gif`** — OUT OF SCOPE, not a gap. They load
-  into `ostar[0]`/`ostar[1]` (:927-932, with `star[2] = pressed(ostar[1])`
-  as the held-down variant) and have exactly ONE draw site in the whole
-  source: :2919, inside `hipnoload()`. That function is the applet's
-  network download-progress screen -- it prints "<N> KB" and " Please
-  Wait..." while the asset archives stream in, then "Loading complete!
-  Press Start to begin..." with this button blinking underneath. A native
-  build reads its assets from local disk and has no download phase for
-  such a screen to report on, so the screen cannot exist here and neither
-  can the button. Same category as `loading()`'s own "% loaded | KB
-  remaining" readout, already excluded for the same reason.
+- ~~**`start1.gif` / `start2.gif`** — OUT OF SCOPE~~ — wrong, struck.
+  `hipnoload()` is not only a download screen: it is the stage
+  presentation card (fase 5 loadmusic + fase 6 musicomp) that waits for
+  Start before EVERY race, with Coach Insano's per-stage hint. Ported as
+  `STATE_STAGE_INTRO` (see "Fidelity pass" below).
+
+## Fidelity pass: stage card, music, menu track
+
+- [x] **Stage presentation card** (`STATE_STAGE_INTRO`): hipnoload() with
+      loadopsnap()'d loadingmusic/start1/start2/float.gif, the hints, the
+      one-frame "N KB / Please Wait..." step, the blinking Start; music
+      starts on the card, confirm runs musicomp()'s resets. Compared
+      against the real jar driven by java.awt.Robot under Xvfb.
+- [x] **Music is the original's renderer, byte for byte**
+      (`core/radical_mod.c`, replacing `mod_play.c`/`mod_decode.c`): Mod
+      parser + ModSlayer + SuperClip loop. All 34 tracks byte-identical to
+      the jar's stream, loop points included (`tests/radical_mod_test.c`).
+      The old player ignored the BPM and rate arguments and used the BPM
+      as gain.
+- [x] **Menu track** (`music/interface.zip`): plays from car select through
+      the stage list, stops on stage confirm, as intertrack does.
+- [x] **Stage 27 in the NFM2 campaign plays `music/party.zip`.**
+- [x] **M-key unmute resumes the track** instead of restarting it.
+- [x] HUD textures refilled per race instead of re-uploaded (leaked ~25
+      textures per race).
+- [ ] **Text is still the 5x7 vector font, uppercase only.** The original
+      draws every menu string in Arial bold 11/13 (mixed case, `&`, `?`,
+      `>`...). The biggest remaining visible difference on every screen.
 
 ## Performance / memory
 

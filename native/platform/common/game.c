@@ -52,7 +52,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h> // strcasecmp -- POSIX, used by load_stage_mod's case-insensitive ".mod"/".MOD" match
 
 #include "java_compat.h"
 #include "trig.h"
@@ -82,7 +81,7 @@
 #include "progress.h"
 #include "audio.h"
 #include "wav_decode.h"
-#include "mod_decode.h"
+#include "radical_mod.h"
 #include "bots.h"
 
 #define STAGE_OBJECT_CAPACITY 610 // matches GameSparker.js's own ContO[610]
@@ -861,60 +860,58 @@ static void boot_loading_frame(Graphics2D *g, const BootImages *bi, int32_t done
   platform_swap_buffers();
 }
 
-// Loads the per-stage background music track -- Java xtGraphics.java:2989
-// `loadstrack`: `music/stage{N}.zip`. Unlike every other real asset in
-// this port, the .mod filename INSIDE that zip varies per stage (verified
-// by inspecting all 29 real music/*.zip files: some are "stageN.mod",
-// most are an arbitrary track name like "ufo_tune_nfmMix.mod", one uses
-// an uppercase ".MOD" extension) -- so this looks up the first entry
-// whose name ends in ".mod" case-insensitively, rather than assuming a
-// fixed filename the way load_menu_gif/load_hud_gif do. Returns false
-// (leaving `out` zeroed) on a missing zip/entry or decode failure --
-// callers should treat that as "no music this stage", same fail-soft
-// convention as every other optional asset in this file.
-static bool load_stage_mod(int32_t stage_num, ModFile *out) {
+// The music for a race: xtGraphics.loadstrack() (:2987-3101) picks the
+// track and its RadicalMod(file, vol, rate, bpm) arguments per stage, and
+// stage 27 in the NFM2 campaign plays music/party.zip instead of its own.
+// Returned as an id so a re-race on the same track skips the re-render:
+// 1..32 are music/stageN.zip, 33 is party.zip.
+static int32_t stage_music_id(int32_t stage_num, int32_t gmode) {
+  if (stage_num == 27 && gmode == 2) return 33;
+  return stage_num;
+}
+
+// ModuleLoader.loadMod() reads the zip's FIRST entry, whatever its name.
+static bool load_music_track(int32_t id, RadicalTrack *out) {
+  // {vol, rate, bpm}, loadstrack()'s constructor arguments, index = id.
+  static const int16_t kArgs[34][3] = {
+      {0, 0, 0},         {240, 8400, 135}, {190, 9000, 145}, {170, 8500, 145}, {205, 7500, 125},
+      {170, 7900, 125}, {370, 7900, 125}, {205, 7500, 125}, {230, 7900, 125}, {180, 7900, 125},
+      {280, 8100, 145}, {120, 8000, 125}, {260, 7200, 125}, {270, 8000, 125}, {190, 8000, 125},
+      {162, 7800, 125}, {220, 7600, 125}, {300, 7500, 125}, {200, 7900, 125}, {200, 7900, 125},
+      {232, 7300, 125}, {370, 7900, 125}, {290, 7900, 125}, {222, 7600, 125}, {230, 8000, 125},
+      {220, 8000, 125}, {261, 8000, 125}, {276, 8800, 145}, {182, 8000, 125}, {220, 8000, 125},
+      {200, 8000, 125}, {350, 7900, 125}, {310, 8000, 125}, {400, 7600, 125}};
   memset(out, 0, sizeof(*out));
+  if (id < 1 || id > 33) return false;
   char zip_path[64];
-  snprintf(zip_path, sizeof(zip_path), "music/stage%d.zip", stage_num);
+  if (id == 33) snprintf(zip_path, sizeof(zip_path), "music/party.zip");
+  else snprintf(zip_path, sizeof(zip_path), "music/stage%d.zip", id);
   VfsZip zip;
   if (!vfs_read_zip(zip_path, &zip)) {
     fprintf(stderr, "could not load %s -- no music this stage\n", zip_path);
     return false;
   }
-  bool ok = false;
-  for (int32_t i = 0; i < zip.count; i++) {
-    const char *name = zip.entries[i].name;
-    size_t len = strlen(name);
-    if (len <= 4) continue;
-    const char *ext = name + len - 4;
-    if (strcasecmp(ext, ".mod") != 0) continue;
-    if (mod_decode(zip.entries[i].data, (size_t)zip.entries[i].len, out)) {
-      ok = true;
-    } else {
-      fprintf(stderr, "%s: %s failed to decode (mod)\n", zip_path, name);
-    }
-    break;
-  }
+  bool ok = zip.count > 0 &&
+            radical_render_stage(zip.entries[0].data, (size_t)zip.entries[0].len, kArgs[id][0], kArgs[id][1],
+                                 kArgs[id][2], out);
+  if (!ok) fprintf(stderr, "%s: failed to render\n", zip_path);
   vfs_free_zip(&zip);
   return ok;
 }
 
-// Real per-stage RadicalMod mixer gain -- xtGraphics.java:2984-3095's
-// loadstrack(), the 4th `new RadicalMod("music/stageN.zip", tempo,
-// samples, GAIN, false, false)` argument ModSlayer.java stores as
-// `this.gain` and mixes with (see mod_play.h's ModPlayState::gain doc
-// comment). Every stage defaults to 125 except these five explicit
-// overrides; stage 27's alternate `party.zip` branch (gmode==2) keeps
-// 125 too, so no stage number needs a game-mode-dependent lookup here.
-static int32_t stage_music_gain(int32_t stage_num) {
-  switch (stage_num) {
-    case 1: return 135;
-    case 2: return 145;
-    case 3: return 145;
-    case 10: return 145;
-    case 27: return 145;
-    default: return 125;
+// new RadicalMod("music/interface.zip") + loadimod(false) -- the menu
+// track, rendered once at boot and kept (the original re-renders it each
+// time car select opens; the bytes are the same every time).
+static bool load_interface_track(RadicalTrack *out) {
+  memset(out, 0, sizeof(*out));
+  VfsZip zip;
+  if (!vfs_read_zip("music/interface.zip", &zip)) {
+    fprintf(stderr, "could not load music/interface.zip -- no menu music\n");
+    return false;
   }
+  bool ok = zip.count > 0 && radical_render_interface(zip.entries[0].data, (size_t)zip.entries[0].len, out);
+  vfs_free_zip(&zip);
+  return ok;
 }
 
 // The post-race unlock-celebration card's fixed Y placement for the
@@ -2667,15 +2664,17 @@ int game_run(void) {
   Audio audio;
   audio_init(&audio, 44100);
 
-  // Currently-playing stage music (Java's own `strack` -- see
-  // load_stage_mod's own doc comment). Owned here so it stays alive for
-  // as long as the audio backend's ModPlayState might reference it; freed
-  // and replaced whenever the player enters a race on a different stage
-  // (see the STATE_RACING one-time setup block below), and once more at
-  // exit.
-  ModFile stage_music;
+  // The race's music (Java's `strack`, see load_music_track()). Owned here
+  // so it stays alive while the audio backend's player reads it; replaced
+  // when a race needs a different track, and freed at exit.
+  RadicalTrack stage_music;
   memset(&stage_music, 0, sizeof(stage_music));
-  int32_t stage_music_loaded_for = -1; // stage_num the above was loaded for, -1 = none yet
+  int32_t stage_music_loaded_for = -1; // stage_music_id() the above holds, -1 = none yet
+  // The menu track (Java's `intertrack`), and which of the two is the one
+  // currently playing -- see the reconcile step after the state logic.
+  RadicalTrack interface_music;
+  memset(&interface_music, 0, sizeof(interface_music));
+  bool interface_playing = false;
 
   glDisable(GL_DEPTH_TEST); // no depth buffer, by design -- see gfx.h
   glEnable(GL_BLEND);
@@ -3124,6 +3123,7 @@ int game_run(void) {
       fprintf(stderr, "could not load data/sounds.zip -- sound effects disabled\n");
     }
   }
+  load_interface_track(&interface_music);
   boot_loading_frame(&g, &boot_images, boot_kb_total, boot_kb_total);
 
   // Headless verification hook: NFM_SCREENSHOT_PPM=/path/out.ppm dumps the
@@ -3924,9 +3924,10 @@ int game_run(void) {
       // loaded, i.e. as the "Please Wait" card gives way to musicomp().
       if (intro_frame >= 1 && stage_music_pending) {
         stage_music_pending = false;
-        if (stage_music_loaded_for == stage_num) {
-          audio_start_music(&audio, &stage_music, stage_music_gain(stage_num));
+        if (stage_music_loaded_for == stage_music_id(stage_num, gmode)) {
+          audio_start_music(&audio, &stage_music);
           audio_set_music_muted(&audio, control[0].mutem);
+          interface_playing = false;
         }
       }
       // musicomp() (:3105-3155): handbrake or enter starts the race, with
@@ -4057,6 +4058,23 @@ int game_run(void) {
       }
     }
 
+    // The menu track (Java's intertrack): inishcarselect() starts it as car
+    // select opens (xtGraphics.java:5074-5077) and it plays on through the
+    // stage list, until a stage is confirmed (:2591, :2655) or the list is
+    // left with Exit (:2674). play() always starts from the top.
+    {
+      const bool want_interface =
+          state == STATE_CAR_SELECT || state == STATE_STAGE_SELECT || state == STATE_STAGE_LOCKED;
+      if (want_interface && !interface_playing && interface_music.bytes) {
+        audio_start_music(&audio, &interface_music);
+        audio_set_music_muted(&audio, false);
+        interface_playing = true;
+      } else if (!want_interface && interface_playing) {
+        audio_stop_music(&audio);
+        interface_playing = false;
+      }
+    }
+
     // Tear the finished race's world down once we are back on a menu that
     // can only be reached by ENDING a race, so the setup below runs again
     // for the next one. Without this, `!all_objs` stayed false for the
@@ -4125,11 +4143,13 @@ int game_run(void) {
       // campaign slot, shouldn't restart the track from 0 -- though in
       // practice this whole setup block only runs once per STATE_RACING
       // entry anyway, so this guard mainly documents intent).
-      if (stage_music_loaded_for != stage_num) {
-        audio_stop_music(&audio); // stop referencing the OLD ModFile before freeing it
-        mod_free(&stage_music);
-        if (load_stage_mod(stage_num, &stage_music)) {
-          stage_music_loaded_for = stage_num;
+      const int32_t music_id = stage_music_id(stage_num, gmode);
+      if (stage_music_loaded_for != music_id) {
+        audio_stop_music(&audio); // stop referencing the OLD track before freeing it
+        interface_playing = false;
+        radical_track_free(&stage_music);
+        if (load_music_track(music_id, &stage_music)) {
+          stage_music_loaded_for = music_id;
         } else {
           stage_music_loaded_for = -1;
         }
@@ -4137,9 +4157,10 @@ int game_run(void) {
       // Entering from the stage card, the track waits for the card's own
       // loadmusic() step; anything that drops straight into the race (the
       // headless hooks) starts it here.
-      stage_music_pending = state == STATE_STAGE_INTRO && stage_music_loaded_for == stage_num;
-      if (!stage_music_pending && stage_music_loaded_for == stage_num) {
-        audio_start_music(&audio, &stage_music, stage_music_gain(stage_num));
+      stage_music_pending = state == STATE_STAGE_INTRO && stage_music_loaded_for == music_id;
+      if (!stage_music_pending && stage_music_loaded_for == music_id) {
+        audio_start_music(&audio, &stage_music);
+        interface_playing = false;
       }
       // GameSparker.java:2755-2767 -- the card's title line.
       {
@@ -4578,11 +4599,9 @@ int game_run(void) {
           // inside xt_graphics_stub_playsounds() (dormant until a key
           // binds control->mutem, see that function's own doc comment).
           if (xt.mutem != last_mutem) {
-            if (xt.mutem) {
-              audio_stop_music(&audio);
-            } else if (stage_music_loaded_for == stage_num) {
-              audio_start_music(&audio, &stage_music, stage_music_gain(stage_num));
-            }
+            // :9228-9237 -- strack.stop() / strack.resume(): the track
+            // picks up where it was, it does not restart.
+            audio_set_music_muted(&audio, xt.mutem);
             last_mutem = xt.mutem;
           }
 
@@ -7205,8 +7224,9 @@ int game_run(void) {
   wav_free(&snd_tires);
   wav_free(&snd_wasted);
   wav_free(&snd_firewasted);
-  audio_stop_music(&audio); // stop referencing stage_music before freeing it
-  mod_free(&stage_music);
+  audio_stop_music(&audio); // stop referencing the tracks before freeing them
+  radical_track_free(&stage_music);
+  radical_track_free(&interface_music);
   car_smoke_warp_free(&car_smoke_warp);
   free(pause_flex_read);
   free(pause_flex_rgba);
