@@ -232,6 +232,7 @@ typedef enum {
   STATE_CANTREPLY,       // fase -8 -- cantreply() (xtGraphics.java:4820), "not enough replay data" banner
   STATE_BOOT_CLICK,      // fase 111 -- clicknow() (xtGraphics.java:1443) over the loading() screen
   STATE_BOOT_RAD,        // fase 9 -- rad() (xtGraphics.java:1570), the Radicalplay intro
+  STATE_SETTINGS,        // this port's own Settings screen, reached from the pause menu
 } GameState;
 
 // On-screen names for the physical controls, so the help text can say
@@ -1557,6 +1558,26 @@ static void pause_image(const uint8_t *rgba_bottom_up, uint8_t *out) {
     }
     dst[3] = 255;
   }
+}
+
+// The pause menu's look for the parts this port adds to it (the Settings
+// row under paused.gif, and the Settings screen): paused.gif itself is an
+// orange frame over a transparent interior, the blue being pauseimage()'s
+// tint of the backdrop, so these plates use that tint's colour and that
+// frame's orange.
+static void draw_pause_plate(Graphics2D *g, int32_t x, int32_t y, int32_t w, int32_t h) {
+  gfx_set_color(g, 86, 112, 140);
+  gfx_fill_round_rect(g, x, y, w, h, 7, 20);
+  gfx_set_color(g, 222, 132, 57);
+  gfx_draw_round_rect(g, x, y, w, h, 7, 20);
+}
+
+// A selected row's highlight -- pausedgame()'s own colours and arcs.
+static void draw_pause_highlight(Graphics2D *g, int32_t x, int32_t y, int32_t w, int32_t h) {
+  gfx_set_color(g, 64, 143, 223);
+  gfx_fill_round_rect(g, x, y, w, h, 7, 20);
+  gfx_set_color(g, 0, 89, 223);
+  gfx_draw_round_rect(g, x, y, w, h, 7, 20);
 }
 
 /**
@@ -3248,6 +3269,11 @@ int game_run(void) {
   GameProgress progress;
   char progress_path[1024];
   bool progress_path_ok = platform_progress_path(progress_path, sizeof(progress_path));
+  // Settings screen (pause menu -> Settings): motion-blur intensity 0..100
+  // in steps of 20, persisted beside the progress file. settings_row is
+  // the highlighted row (0 = Motion Blur slider, 1 = Back).
+  int32_t blur_setting = progress_path_ok ? game_settings_load_blur(progress_path) : GAME_SETTINGS_BLUR_DEFAULT;
+  int32_t settings_row = 0;
   if (progress_path_ok) {
     game_progress_load_from_disk(&progress, progress_path);
   } else {
@@ -3827,19 +3853,25 @@ int game_run(void) {
       // the direct equivalent. Confirm is `enter || handb` in the source,
       // and BTN_CONFIRM already covers both of this port's bindings for
       // that (Return and Space).
+      // Five rows: the original's four, plus this port's Settings (4).
       if (KEY_EDGE(BTN_UP)) {
         pause_opselect--;
-        if (pause_opselect == -1) pause_opselect = 3;
+        if (pause_opselect == -1) pause_opselect = 4;
       }
       if (KEY_EDGE(BTN_DOWN)) {
         pause_opselect++;
-        if (pause_opselect == 4) pause_opselect = 0;
+        if (pause_opselect == 5) pause_opselect = 0;
       }
       // NFM_SCREENSHOT_MENU=pausereplay: headless stand-in for picking
       // Instant Replay (see the matching pause trigger in the race block).
       bool hook_replay = screenshot_menu && strcmp(screenshot_menu, "pausereplay") == 0 &&
                          frame == hook_replay_frame;
       if (hook_replay) pause_opselect = 1;
+      // NFM_SCREENSHOT_MENU=settings: open the Settings screen headless.
+      if (screenshot_menu && strcmp(screenshot_menu, "settings") == 0 && frame == screenshot_frame - 3) {
+        settings_row = 0;
+        state = STATE_SETTINGS;
+      }
       if (KEY_EDGE(BTN_CONFIRM) || hook_replay) {
         if (pause_opselect == 0) {
           // :4763-4768 -- resume. Java restarts the music track it stopped
@@ -3860,6 +3892,9 @@ int game_run(void) {
             cantreply_cnt = 0;
             state = STATE_CANTREPLY;
           }
+        } else if (pause_opselect == 4) {
+          settings_row = 0;
+          state = STATE_SETTINGS;
         } else if (pause_opselect == 2) {
           // :4780-4786 -- Game Instructions, with oldfase = -7 so it comes
           // back here. instructions_return_to is this port's own oldfase.
@@ -3887,6 +3922,18 @@ int game_run(void) {
       // Java's own `++n7` sitting inside the fase -8 body.
       if (KEY_EDGE(BTN_CONFIRM)) {
         cantreply_cnt = 0;
+        state = STATE_PAUSED;
+      }
+    } else if (state == STATE_SETTINGS) {
+      // Up/down picks the row, left/right moves the slider in steps of 20,
+      // Back (or cancel from anywhere) saves and returns to the pause menu.
+      if (KEY_EDGE(BTN_UP) || KEY_EDGE(BTN_DOWN)) settings_row ^= 1;
+      if (settings_row == 0) {
+        if (KEY_EDGE(BTN_LEFT) && blur_setting > 0) blur_setting -= 20;
+        if (KEY_EDGE(BTN_RIGHT) && blur_setting < 100) blur_setting += 20;
+      }
+      if ((settings_row == 1 && KEY_EDGE(BTN_CONFIRM)) || KEY_EDGE(BTN_CANCEL)) {
+        if (progress_path_ok) game_settings_save_blur(progress_path, blur_setting);
         state = STATE_PAUSED;
       }
     }
@@ -4601,7 +4648,8 @@ int game_run(void) {
       // so it pauses the race a few frames before the dump instead.
       bool hook_pause = screenshot_menu &&
                         ((strcmp(screenshot_menu, "paused") == 0 && frame == screenshot_frame - 3) ||
-                         (strcmp(screenshot_menu, "pausereplay") == 0 && frame == hook_replay_frame - 3));
+                         (strcmp(screenshot_menu, "pausereplay") == 0 && frame == hook_replay_frame - 3) ||
+                         (strcmp(screenshot_menu, "settings") == 0 && frame == screenshot_frame - 6));
       if (state == STATE_RACING && !race_holdit && (KEY_EDGE(BTN_PAUSE) || hook_pause)) {
         audio_set_music_muted(&audio, true);
         stop_all_sfx_loops(&audio, engine_channel, &last_engine_bank, &air_channel, &wasted_channel);
@@ -4722,7 +4770,8 @@ int game_run(void) {
     const GameState render_state = state;
     const bool letterboxed = render_state != STATE_RACING && render_state != STATE_REPLAY &&
                              render_state != STATE_PAUSED && render_state != STATE_PAUSE_REPLAY &&
-                             render_state != STATE_CANTREPLY && render_state != STATE_BOOT_CLICK;
+                             render_state != STATE_CANTREPLY && render_state != STATE_BOOT_CLICK &&
+                             render_state != STATE_SETTINGS;
     const bool use_rt = motion_blur_ok &&
                         (render_state == STATE_RACING || render_state == STATE_REPLAY ||
                          render_state == STATE_PAUSE_REPLAY || render_state == STATE_CAR_SELECT ||
@@ -5500,6 +5549,54 @@ int game_run(void) {
       // and the replayed cars drove straight out of shot -- the replay
       // looked like it did nothing.
       medium_around(&m, &co[0], false);
+    } else if (state == STATE_SETTINGS) {
+      // Settings, over the same grey pauseimage() backdrop as the pause menu.
+      if (pause_flex_tex >= 0) {
+        gfx_draw_image(&g, pause_flex_tex, 0, 0, 800, 450);
+      } else {
+        draw_race_scene(&g, &m, all_objs, total_objs, visible_idx, rank, order);
+      }
+      // Covers the whole blue-tinted panel pauseimage() baked into the backdrop
+      // (281..518 x 8..196), so none of it shows around the plate.
+      draw_pause_plate(&g, 231, 8, 338, 192);
+      gfx_set_color(&g, 160, 196, 255);
+      draw_centered(&g, "Settings", 400, 30 - 9, 2);
+
+      // Row 0: Motion Blur, a slider of six stops (0, 20, ... 100).
+      if (settings_row == 0) draw_pause_highlight(&g, 251, 60, 298, 72);
+      gfx_set_color(&g, 255, 255, 255);
+      draw_centered(&g, "Motion Blur", 400, 76 - 9, 2);
+      const int32_t track_x = 290, track_w = 200, track_y = 102;
+      gfx_set_color(&g, 30, 50, 80);
+      gfx_fill_rect(&g, track_x, track_y - 2, track_w, 4);
+      for (int32_t k = 0; k <= 5; k++) {
+        int32_t sx = track_x + k * track_w / 5;
+        gfx_fill_rect(&g, sx - 1, track_y - 6, 2, 12);
+      }
+      int32_t knob_x = track_x + blur_setting * track_w / 100;
+      gfx_set_color(&g, 255, 255, 255);
+      gfx_fill_round_rect(&g, knob_x - 6, track_y - 9, 12, 18, 6, 6);
+      gfx_set_color(&g, 0, 89, 223);
+      gfx_draw_round_rect(&g, knob_x - 6, track_y - 9, 12, 18, 6, 6);
+      char blur_label[16];
+      snprintf(blur_label, sizeof(blur_label), "%d", blur_setting);
+      gfx_set_color(&g, 255, 255, 255);
+      draw_centered(&g, blur_label, 400, 120 - 6, 1);
+      // Left/right arrows (vfont has no < > glyphs), dimmed at the ends.
+      {
+        int32_t lx[3] = {track_x - 26, track_x - 16, track_x - 16};
+        int32_t ly[3] = {track_y, track_y - 7, track_y + 7};
+        int32_t rx[3] = {track_x + track_w + 26, track_x + track_w + 16, track_x + track_w + 16};
+        if (blur_setting > 0) gfx_set_color(&g, 255, 255, 255); else gfx_set_color(&g, 30, 50, 80);
+        gfx_fill_polygon(&g, lx, ly, 3);
+        if (blur_setting < 100) gfx_set_color(&g, 255, 255, 255); else gfx_set_color(&g, 30, 50, 80);
+        gfx_fill_polygon(&g, rx, ly, 3);
+      }
+
+      // Row 1: Back.
+      if (settings_row == 1) draw_pause_highlight(&g, 345, 150, 110, 22);
+      gfx_set_color(&g, 255, 255, 255);
+      draw_centered(&g, "Back", 400, 161 - 9, 2);
     } else if (state == STATE_PAUSED || state == STATE_CANTREPLY) {
       // PAUSE MENU -- fase -7, pausedgame() (xtGraphics.java:4695-4807),
       // and the fase -8 banner that sits on top of it.
@@ -5534,6 +5631,11 @@ int game_run(void) {
       // :4761 -- the panel art itself, drawn OVER the highlight so its
       // labels read on top of the selected row's fill.
       draw_hud_img(&g, menu_paused, 281, 8);
+      // This port's fifth row, Settings, on its own plate under the panel.
+      draw_pause_plate(&g, 320, 202, 160, 30);
+      if (pause_opselect == 4) draw_pause_highlight(&g, 345, 206, 110, 22);
+      gfx_set_color(&g, 255, 255, 255);
+      draw_centered(&g, "Settings", 400, 217 - 9, 2);
 
       if (state == STATE_CANTREPLY) {
         // cantreply() -- :4820-4826, plus fase -8's own 150-frame
@@ -6647,10 +6749,14 @@ int game_run(void) {
       // and the blend weight cannot drift frame to frame. mvect == 100,
       // or the first frame after a stretch without a trail (the other
       // target is stale), takes the scene as is.
-      const bool trail_active = (mvect < 100);
+      // The Settings screen's Motion Blur scales the history's weight:
+      // 100 keeps the original's 1 - mvect/100, 0 removes the trail (and
+      // with it this pass).
+      const int32_t mvect_eff = 100 - (100 - mvect) * blur_setting / 100;
+      const bool trail_active = (mvect_eff < 100);
       if (trail_active && accum_valid) {
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
-        gfx_gl_render_target_blit(rt_pair[rt_cur ^ 1], 0.0f, 0.0f, 1.0f - (float)mvect / 100.0f);
+        gfx_gl_render_target_blit(rt_pair[rt_cur ^ 1], 0.0f, 0.0f, 1.0f - (float)mvect_eff / 100.0f);
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
       }
       accum_valid = trail_active;

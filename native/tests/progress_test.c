@@ -306,7 +306,22 @@ static void test_car_unlock_stage(void) {
   CHECK(game_progress_car_unlock_stage(&p, GMODE_FREE_PLAY, 5) == 0, "unlock-stage: Free Play -> always 0");
 }
 
+static void test_settings_blur(void) {
+  const char *prog = "/tmp/nfm_settings_test/progress.bin";
+  remove("/tmp/nfm_settings_test/settings.txt");
+  CHECK(game_settings_load_blur(prog) == GAME_SETTINGS_BLUR_DEFAULT, "no settings file -> default 100");
+  CHECK(game_settings_save_blur(prog, 40), "settings save");
+  CHECK(game_settings_load_blur(prog) == 40, "settings roundtrip 40");
+  CHECK(game_settings_save_blur(prog, 0), "settings save 0");
+  CHECK(game_settings_load_blur(prog) == 0, "settings roundtrip 0");
+  FILE *f = fopen("/tmp/nfm_settings_test/settings.txt", "w");
+  if (f) { fputs("motion_blur=57\n", f); fclose(f); }
+  CHECK(game_settings_load_blur(prog) == 60, "off-grid value snaps to 60");
+  remove("/tmp/nfm_settings_test/settings.txt");
+}
+
 int main(void) {
+  test_settings_blur();
   test_reset();
   test_car_gates_free_play();
   test_car_gates_nfm1_initial();

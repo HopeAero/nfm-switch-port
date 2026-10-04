@@ -163,6 +163,23 @@ bool game_progress_save_to_disk(const GameProgress *p, const char *path);
 // per-race latches, not durable state.
 bool game_progress_load_from_disk(GameProgress *p, const char *path);
 
+// --- Player settings (this port's own pause-menu Settings screen) -------
+// Not part of the original's save; kept in a small text file next to the
+// progress file ("settings.txt" in the same directory), so the progress
+// format stays exactly what it was.
+
+/** Motion-blur intensity, 0..100 in steps of 20; 100 is the original's
+ * trail strength, 0 turns the trail off. */
+#define GAME_SETTINGS_BLUR_DEFAULT 100
+
+/** Reads the motion-blur setting saved beside `progress_path`. Returns
+ * GAME_SETTINGS_BLUR_DEFAULT when there is no file or no valid value;
+ * anything else is snapped to the 0..100 / step-20 grid. */
+int32_t game_settings_load_blur(const char *progress_path);
+
+/** Writes it there (creating the directory if needed). */
+bool game_settings_save_blur(const char *progress_path, int32_t blur);
+
 #ifdef __cplusplus
 }
 #endif

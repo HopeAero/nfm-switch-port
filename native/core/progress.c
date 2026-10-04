@@ -194,6 +194,42 @@ bool game_progress_save_to_disk(const GameProgress *p, const char *path) {
   return written == sizeof(buf) && close_rc == 0;
 }
 
+// settings.txt in the progress file's directory.
+static void settings_path_for(const char *progress_path, char *out, size_t out_len) {
+  const char *slash = strrchr(progress_path, '/');
+  size_t dir_len = slash ? (size_t)(slash - progress_path) + 1 : 0;
+  if (dir_len + sizeof("settings.txt") > out_len) dir_len = 0;
+  memcpy(out, progress_path, dir_len);
+  memcpy(out + dir_len, "settings.txt", sizeof("settings.txt"));
+}
+
+int32_t game_settings_load_blur(const char *progress_path) {
+  char path[1024];
+  settings_path_for(progress_path, path, sizeof(path));
+  FILE *f = fopen(path, "r");
+  if (!f) return GAME_SETTINGS_BLUR_DEFAULT;
+  int v = GAME_SETTINGS_BLUR_DEFAULT;
+  char line[64];
+  while (fgets(line, sizeof(line), f)) {
+    int parsed;
+    if (sscanf(line, "motion_blur=%d", &parsed) == 1) v = parsed;
+  }
+  fclose(f);
+  if (v < 0) v = 0;
+  if (v > 100) v = 100;
+  return (int32_t)(((v + 10) / 20) * 20);
+}
+
+bool game_settings_save_blur(const char *progress_path, int32_t blur) {
+  char path[1024];
+  settings_path_for(progress_path, path, sizeof(path));
+  ensure_parent_dir(path);
+  FILE *f = fopen(path, "w");
+  if (!f) return false;
+  fprintf(f, "motion_blur=%d\n", (int)blur);
+  return fclose(f) == 0;
+}
+
 bool game_progress_load_from_disk(GameProgress *p, const char *path) {
   game_progress_reset(p);
   FILE *f = fopen(path, "rb");
