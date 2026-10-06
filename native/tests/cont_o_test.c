@@ -581,11 +581,19 @@ static void test_fixit(void) {
   gfx_init(&g, 800, 450);
   gfx_begin(&g);
 
-  for (int32_t frame = 0; frame < 9; frame++) {
-    cont_o_fixit(&co, &g); // must not abort -- see this test's own comment
-    if (frame == 1) CHECK(co.p[0].flx == 1, "fixit: flx==1 after fcnt==1 frame");
-    if (frame == 4) CHECK(co.p[0].flx == 3, "fixit: flx==3 after fcnt==4 frame");
+  // A tick advances fcnt (cont_o_step_fix), the draw reads it -- and drawing
+  // the same tick several times (smooth frames) must not advance it.
+  for (int32_t tick = 0; tick < 9; tick++) {
+    if (co.fix) {
+      cont_o_fixit(&co, &g); // must not abort -- see this test's own comment
+      cont_o_fixit(&co, &g);
+    }
+    if (tick == 1) CHECK(co.p[0].flx == 1, "fixit: flx==1 after fcnt==1 frame");
+    if (tick == 4) CHECK(co.p[0].flx == 3, "fixit: flx==3 after fcnt==4 frame");
+    CHECK(co.fcnt == (tick < 8 ? tick : 8), "fixit: drawing does not advance fcnt");
+    cont_o_step_fix(&co);
   }
+  cont_o_step_fix(&co);
   CHECK(g.count > 0, "fixit: drew something across the cycle");
   CHECK(!co.fix, "fixit: co.fix clears once fcnt passes 7");
   CHECK(co.fcnt == 0, "fixit: co.fcnt resets to 0 once it passes 7");

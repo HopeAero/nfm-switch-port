@@ -3998,6 +3998,7 @@ int game_run(void) {
   GfxClip hud_clip = {0};
   int32_t *smooth_dist = NULL;
   bool smooth_ready = false;
+  bool smooth_captured = false; // smooth_curr holds a tick of THIS race
   double race_frame_ms = TICK_MS; // this frame's length, for the trail
   bool race_confirm_latch = false;
 
@@ -4832,6 +4833,7 @@ int game_run(void) {
       order = malloc(sizeof(int32_t) * (size_t)total_objs);
       smooth_dist = malloc(sizeof(int32_t) * (size_t)total_objs);
       smooth_ready = false;
+      smooth_captured = false;
       race_confirm_latch = false;
 
       last_ticks_ms = platform_ticks_ms();
@@ -5312,7 +5314,10 @@ int game_run(void) {
         race_confirm_latch = false;
         accumulator_ms -= TICK_MS;
       }
-      if (ticked_this_frame) smooth_capture(&smooth_curr, co, nplayers, &m);
+      if (ticked_this_frame) {
+        smooth_capture(&smooth_curr, co, nplayers, &m);
+        smooth_captured = true;
+      }
       // Mark this frame for the draw-phase effect guards -- see
       // ticked_this_frame's own comment above the loop. Set here rather
       // than at the draw site so it lands before ANY draw for this frame,
@@ -5981,7 +5986,10 @@ int game_run(void) {
           gfx_set_color(&g, 0, 0, 0);
           draw_centered(&g, "Press  [ " KEY_CONTINUE " ]  to continue", width / 2, 350 - 6, 1);
         }
-        if (use_rt && settings.smooth) {
+        // Ready only once this race has ticked: a frame drawn before its
+        // first tick would otherwise blend -- and restore into the cars --
+        // the snapshots the LAST race left, scattering the starting grid.
+        if (use_rt && settings.smooth && smooth_captured) {
           gfx_clip_save(&hud_clip, &g, hud_mark);
           smooth_ready = true;
         }
@@ -6047,6 +6055,9 @@ int game_run(void) {
       // newcar-rebuild comment above), so hfix[i] CAN match replay_tick
       // for a car that got fixed during the recorded window.
       for (int32_t i = 0; i < nplayers; i++) {
+        // The repair flash's step, once per replay tick (the draw above used
+        // to advance it; see cont_o_fixit).
+        cont_o_step_fix(&co[i]);
         if (rpd.hfix[i] == replay_tick) {
           if (co[i].dist == 0) co[i].fcnt = 8;
           else co[i].fix = true;
@@ -6205,6 +6216,9 @@ int game_run(void) {
 
       // :1320-1337 -- fix-zone resurrection, then the frame itself.
       for (int32_t i = 0; i < nplayers; i++) {
+        // The repair flash's step, once per replay tick (the draw above used
+        // to advance it; see cont_o_fixit).
+        cont_o_step_fix(&co[i]);
         if (rpd.fix[i] == pause_replay_tick) {
           if (co[i].dist == 0) co[i].fcnt = 8;
           else co[i].fix = true;
@@ -7693,7 +7707,18 @@ int game_run(void) {
     prof_swap_start = platform_ticks_us();
     platform_swap_buffers();
     prof_sum[3] += platform_ticks_us() - prof_swap_start;
-    platform_delay_ms(16);
+    // Pace to 60 Hz: sleep only what is left of this frame's 16.7 ms. A flat
+    // 16 ms sleep on top of the frame's own work held the Switch at ~47 fps
+    // with ~6 ms of work a frame (its swap does not wait for vsync). Where
+    // the swap does wait, the frame is already due and nothing sleeps. A
+    // frame more than 50 ms late restarts the schedule instead of bursting.
+    {
+      static uint64_t next_frame_us = 0;
+      const uint64_t now_us = platform_ticks_us();
+      if (next_frame_us == 0 || now_us > next_frame_us + 50000) next_frame_us = now_us;
+      next_frame_us += 16667;
+      if (next_frame_us > now_us + 1000) platform_delay_ms((uint32_t)((next_frame_us - now_us) / 1000));
+    }
     frame++;
     // Snapshot this frame's buttons as "previous" for the next frame's
     // KEY_EDGE() checks -- done at the very end of the loop so every

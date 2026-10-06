@@ -720,13 +720,10 @@ void cont_o_fixit(ContO *co, struct Graphics2D *g) {
     gfx_set_color(g, r3, g3, b3);
     gfx_fill_polygon(g, array, array2, 8);
   }
-
-  if (co->fcnt > 7) {
-    co->fcnt = 0;
-    co->fix = false;
-  } else {
-    co->fcnt++;
-  }
+  // fcnt is advanced once per tick by cont_o_step_fix, and only there. It
+  // was ALSO advanced here, per draw: with a draw per display frame it ran
+  // past the 7/8 that mad_drive reads once a tick to finish the repair, so
+  // the car was never rebuilt and kept the repair tint.
 }
 // Ports `pdust()` -- the DRAWING half of the dust-puff particle (see
 // cont_o_dust for the seed-only half), ContO.java:1950-2105. Was stubbed

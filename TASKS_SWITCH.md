@@ -142,6 +142,18 @@ PC with `nxlink -s`.
       (The stage-select dive did not show the web launcher's far-camera
       distortion -- that one was the launcher's own overhead view.)
 - [x] Screenshot hook logs each car's cleared checkpoints.
+- [x] **Fixes from the first hardware test** (Switch v1, 2026-10-06):
+      - ~47 fps with ~6 ms of work a frame: a flat `platform_delay_ms(16)` after
+        every swap (the Switch's swap does not wait for vsync). Now a 60 Hz
+        limiter that sleeps only the rest of the 16.7 ms frame.
+      - The repair tint stuck on a fixed car: `cont_o_fixit` advanced `fcnt` per
+        DRAW as well as `cont_o_step_fix` per tick; with smooth frames it ran
+        past the 7/8 that mad_drive reads, so the car was never rebuilt. Only
+        the tick advances it now (the replays step it per replay tick).
+      - The starting grid scattered: a race's first frame drawn before its
+        first tick turned smooth frames on with the LAST race's snapshots and
+        restored those positions into the cars. Smooth frames wait for a tick
+        of the current race (`smooth_captured`).
 - [ ] Missing vs the web port: the Arial font, custom cars, Rivals.
 - [ ] Performance not measured on hardware. The web port's known heavy item is
       the per-plane ground shadow (`Plane.s` for every plane of a nearby car);
