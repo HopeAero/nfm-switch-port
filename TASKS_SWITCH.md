@@ -87,6 +87,13 @@ PC with `nxlink -s`.
       paired) and the Pro Controller, as strong and long as the crash shake;
       `platform_rumble()` is a no-op on Linux/Vita, which do not show the row.
       Saved in `settings.txt` (`graphics=`, `screen_shake=`, `vibration=`).
+- [x] **Settings from the main menu too**: a fourth row, *Settings*, in the slot
+      the original's own fourth row used (y=351). Its label is options.png's style
+      redrawn -- the Adventure face at 18 px, the size that gives the original
+      labels their widths (`tools/gen_menu_label.py` -> `data/port/opsettings.png`;
+      the font is not in the repo, DS-addons' appcore.jar has the game's copy).
+      Opened there, the screen is letterboxed like the menu, over its background,
+      and Back returns to it. `NFM_SCREENSHOT_MENU=mainsettings` captures it.
 - [x] Docked at launch: the window is 1920x1080 (HD draws at that size);
       handheld 1280x720.
 - [ ] Docking / undocking mid-game keeps the size the game started with.

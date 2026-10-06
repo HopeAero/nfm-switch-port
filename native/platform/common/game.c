@@ -772,7 +772,6 @@ static void draw_trackbg(Graphics2D *gr, TrackBgState *s,
  * Compiled only into the Vita build, since that is the only caller today --
  * lift the guard the moment the desktop side needs a loose-file image too.
  */
-#if defined(NFM_TARGET_VITA) || defined(NFM_TARGET_SWITCH)
 static HudImg load_menu_png_file(const char *path) {
   HudImg r = {-1, 0, 0};
   int32_t len = 0;
@@ -792,7 +791,6 @@ static HudImg load_menu_png_file(const char *path) {
   vfs_free_bytes(bytes);
   return r;
 }
-#endif
 
 static HudImg load_menu_gif(VfsZip *zip, const char *name) {
   HudImg r = {-1, 0, 0};
@@ -2254,7 +2252,7 @@ static void draw_menu_option_rect(Graphics2D *g, int32_t x, int32_t y, int32_t w
 static void draw_main_menu(Graphics2D *g,
                             HudImg bgmain, HudImg logomadbg, HudImg logomadnes,
                             HudImg dude, HudImg logocars, HudImg opback, HudImg opti,
-                            HudImg byrd, HudImg nfmcoms,
+                            HudImg byrd, HudImg nfmcoms, HudImg opsettings,
                             int32_t *bgmy_ptr, int32_t *flkat_ptr,
                             int32_t *gxdu_ptr, int32_t *gydu_ptr, int32_t *movly_ptr,
                             int32_t opselect, bool *aflk_ptr) {
@@ -2275,13 +2273,16 @@ static void draw_main_menu(Graphics2D *g,
   // Java's own per-label metrics (each option has its own snug width
   // because the labels themselves have different lengths).
   struct MenuOpt { int32_t x, y, w; int32_t r_aflk, g_aflk, b_aflk; int32_t r_solid, g_solid, b_solid; };
-  const struct MenuOpt opts[3] = {
+  // A fourth row, this port's Settings, takes the slot the original's own
+  // fourth row used (y=351), which the brown pill already makes room for.
+  const struct MenuOpt opts[4] = {
     { 343, 261, 110, 200, 200,   0, 255, 128, 0 },  // Play Game (Java opselect=0)
     { 301, 291, 196, 200, 128,   0, 255, 128, 0 },  // Game Instructions (Java opselect=2, moved from y=321)
     { 357, 321,  85, 200,   0,   0, 255, 128, 0 },  // Credits (Java opselect=3, moved from y=351)
+    { 353, 351,  93, 200, 200,   0, 255, 128, 0 },  // Settings (this port's)
   };
 
-  for (int32_t i = 0; i < 3; i++) {
+  for (int32_t i = 0; i < 4; i++) {
     const struct MenuOpt *o = &opts[i];
     draw_menu_option_rect(g, o->x, o->y, o->w, 22, i == opselect,
                            o->r_aflk, o->g_aflk, o->b_aflk,
@@ -2303,6 +2304,9 @@ static void draw_main_menu(Graphics2D *g,
                         0, 60, opti.w, 30, opti.w, opti.h);
     gfx_draw_image_sub(g, opti.tex, 294, 325, opti.w, 15,
                         0, 90, opti.w, 15, opti.w, opti.h);
+  }
+  if (opsettings.tex >= 0) {
+    gfx_draw_image(g, opsettings.tex, 400 - opsettings.w / 2, 355, opsettings.w, opsettings.h);
   }
 
   // 9. byrd at (72, 410). Java 4493.
@@ -2941,6 +2945,7 @@ int game_run(void) {
   HudImg menu_opback = {-1, 0, 0};                          // opback.png -- brown pill
   HudImg menu_opti = {-1, 0, 0};                            // options.png -- main menu 4-option label block
   HudImg menu_opti2 = {-1, 0, 0};                           // options2.png -- gamemode submenu 4-option label block
+  HudImg menu_opsettings = {-1, 0, 0};                      // data/port/opsettings.png -- this port's Settings row
   HudImg menu_byrd = {-1, 0, 0};                            // byrd.png -- byline
   HudImg menu_nfmcoms_asset = {-1, 0, 0};                   // nfmcoms.png -- www.NFM.com footer
   HudImg menu_back = {-1, 0, 0}, menu_next = {-1, 0, 0};
@@ -3056,6 +3061,9 @@ int game_run(void) {
       menu_opback = load_menu_png(&images_zip, "opback.png");
       menu_opti = load_menu_png(&images_zip, "options.png");
       menu_opti2 = load_menu_png(&images_zip, "options2.png");
+      // This port's fourth main-menu row. Not an original asset: options.png's
+      // style redrawn (tools/gen_menu_label.py), a loose file beside data/vita/.
+      menu_opsettings = load_menu_png_file("data/port/opsettings.png");
       menu_byrd = load_menu_png(&images_zip, "byrd.png");
       menu_nfmcoms_asset = load_menu_png(&images_zip, "nfmcoms.png");
       menu_back = load_menu_gif(&images_zip, "back.gif");
@@ -3225,6 +3233,7 @@ int game_run(void) {
   GameState state;
   bool preview_race_lose = false;
   if (screenshot_menu && strcmp(screenshot_menu, "main") == 0) state = STATE_MAIN_MENU;
+  else if (screenshot_menu && strcmp(screenshot_menu, "mainsettings") == 0) state = STATE_MAIN_MENU;
   else if (screenshot_menu && strcmp(screenshot_menu, "gamemode") == 0) state = STATE_GAMEMODE_MENU;
   else if (screenshot_menu && strcmp(screenshot_menu, "instructions") == 0) state = STATE_INSTRUCTIONS;
   else if (screenshot_menu && strcmp(screenshot_menu, "credits") == 0) state = STATE_CREDITS;
@@ -3422,6 +3431,8 @@ int game_run(void) {
     motion_blur_ok = scene_targets_build(&scene_rt, &accum_rt, motion_blur_ok, width, height, settings.graphics);
   }
   int32_t settings_row = 0;
+  // Where Back leaves Settings: the pause menu or the main menu.
+  GameState settings_return = STATE_PAUSED;
   if (progress_path_ok) {
     game_progress_load_from_disk(&progress, progress_path);
   } else {
@@ -3723,8 +3734,16 @@ int game_run(void) {
       // 3 selectable options (Play Game / Instructions / Credits) --
       // Multiplayer is deliberately hidden in this single-player-only
       // port (user decision). `mainmenu_opselect` cycles 0..2 with wrap.
-      if (KEY_EDGE(BTN_DOWN)) mainmenu_opselect = (mainmenu_opselect + 1) % 3;
-      if (KEY_EDGE(BTN_UP)) mainmenu_opselect = (mainmenu_opselect + 2) % 3;
+      // NFM_SCREENSHOT_MENU=mainsettings: open Settings from here, headless.
+      if (screenshot_menu && strcmp(screenshot_menu, "mainsettings") == 0 && frame == screenshot_frame - 3) {
+        mainmenu_opselect = 3;
+        settings_row = 0;
+        settings_return = STATE_MAIN_MENU;
+        state = STATE_SETTINGS;
+      }
+      // A fourth, Settings, opens the same screen the pause menu does.
+      if (KEY_EDGE(BTN_DOWN)) mainmenu_opselect = (mainmenu_opselect + 1) % 4;
+      if (KEY_EDGE(BTN_UP)) mainmenu_opselect = (mainmenu_opselect + 3) % 4;
       if (KEY_EDGE(BTN_CONFIRM)) {
         // Java's fase transitions from maini() -- see xtGraphics.java:4449.
         // Play Game -> fase 102 (gamemode submenu).
@@ -3771,6 +3790,11 @@ int game_run(void) {
             state = STATE_INSTRUCTIONS;
             break;
           case 2: state = STATE_CREDITS; break;
+          case 3:
+            settings_row = 0;
+            settings_return = STATE_MAIN_MENU;
+            state = STATE_SETTINGS;
+            break;
         }
         // :4489 -- maini's ENTER handler ends by zeroing the shared
         // `flipo` for whichever screen it just dispatched to; the
@@ -4077,6 +4101,7 @@ int game_run(void) {
       // NFM_SCREENSHOT_MENU=settings: open the Settings screen headless.
       if (screenshot_menu && strcmp(screenshot_menu, "settings") == 0 && frame == screenshot_frame - 3) {
         settings_row = 0;
+        settings_return = STATE_PAUSED;
         state = STATE_SETTINGS;
       }
       if (KEY_EDGE(BTN_CONFIRM) || hook_replay) {
@@ -4101,6 +4126,7 @@ int game_run(void) {
           }
         } else if (pause_opselect == 4) {
           settings_row = 0;
+          settings_return = STATE_PAUSED;
           state = STATE_SETTINGS;
         } else if (pause_opselect == 2) {
           // :4780-4786 -- Game Instructions, with oldfase = -7 so it comes
@@ -4169,7 +4195,7 @@ int game_run(void) {
       }
       if ((settings_row == 4 && KEY_EDGE(BTN_CONFIRM)) || KEY_EDGE(BTN_CANCEL)) {
         if (progress_path_ok) game_settings_save(progress_path, &settings);
-        state = STATE_PAUSED;
+        state = settings_return;
       }
     }
 
@@ -5066,7 +5092,8 @@ int game_run(void) {
     const bool letterboxed = render_state != STATE_RACING && render_state != STATE_REPLAY &&
                              render_state != STATE_PAUSED && render_state != STATE_PAUSE_REPLAY &&
                              render_state != STATE_CANTREPLY && render_state != STATE_BOOT_CLICK &&
-                             render_state != STATE_SETTINGS;
+                             // Settings is letterboxed like the menu it was opened from.
+                             !(render_state == STATE_SETTINGS && settings_return != STATE_MAIN_MENU);
     const bool use_rt = motion_blur_ok &&
                         (render_state == STATE_RACING || render_state == STATE_REPLAY ||
                          render_state == STATE_PAUSE_REPLAY || render_state == STATE_CAR_SELECT ||
@@ -5859,23 +5886,32 @@ int game_run(void) {
       // looked like it did nothing.
       medium_around(&m, &co[0], false);
     } else if (state == STATE_SETTINGS) {
-      // Settings, over the same grey pauseimage() backdrop as the pause menu.
-      if (pause_flex_tex >= 0) {
+      // From the main menu the screen is drawn like the menu, letterboxed
+      // (the 670x400 interior at (65,25) fills the display), so the panel
+      // moves down into that interior.
+      const int32_t sdy = settings_return == STATE_MAIN_MENU ? 40 : 0;
+      // Settings, over the same grey pauseimage() backdrop as the pause menu --
+      // or, opened from the main menu, over the menu's own background.
+      if (settings_return == STATE_MAIN_MENU) {
+        draw_menu_common_bg(&g, menu_bgmain, menu_logomadbg, menu_logomadnes, menu_dude[0],
+                            menu_logocars, menu_opback, mainbg_bgmy, &mainmenu_flkat,
+                            &mainmenu_gxdu, &mainmenu_gydu, &mainmenu_movly);
+      } else if (pause_flex_tex >= 0) {
         gfx_draw_image(&g, pause_flex_tex, 0, 0, 800, 450);
       } else {
         draw_race_scene(&g, &m, all_objs, total_objs, visible_idx, rank, order);
       }
       // Covers the whole blue-tinted panel pauseimage() baked into the backdrop
       // (281..518 x 8..196), so none of it shows around the plate.
-      draw_pause_plate(&g, 231, 8, 338, 300);
+      draw_pause_plate(&g, 231, 8 + sdy, 338, 300);
       gfx_set_color(&g, 160, 196, 255);
-      draw_centered(&g, "Settings", 400, 30 - 9, 2);
+      draw_centered(&g, "Settings", 400, 30 - 9 + sdy, 2);
 
       // Row 0: Motion Blur, a slider of six stops (0, 20, ... 100).
-      if (settings_row == 0) draw_pause_highlight(&g, 251, 60, 298, 72);
+      if (settings_row == 0) draw_pause_highlight(&g, 251, 60 + sdy, 298, 72);
       gfx_set_color(&g, 255, 255, 255);
-      draw_centered(&g, "Motion Blur", 400, 76 - 9, 2);
-      const int32_t track_x = 290, track_w = 200, track_y = 102;
+      draw_centered(&g, "Motion Blur", 400, 76 - 9 + sdy, 2);
+      const int32_t track_x = 290, track_w = 200, track_y = 102 + sdy;
       gfx_set_color(&g, 30, 50, 80);
       gfx_fill_rect(&g, track_x, track_y - 2, track_w, 4);
       for (int32_t k = 0; k <= 5; k++) {
@@ -5890,7 +5926,7 @@ int game_run(void) {
       char blur_label[16];
       snprintf(blur_label, sizeof(blur_label), "%d", settings.blur);
       gfx_set_color(&g, 255, 255, 255);
-      draw_centered(&g, blur_label, 400, 120 - 6, 1);
+      draw_centered(&g, blur_label, 400, 120 - 6 + sdy, 1);
       // Left/right arrows (vfont has no < > glyphs), dimmed at the ends.
       {
         int32_t lx[3] = {track_x - 26, track_x - 16, track_x - 16};
@@ -5914,7 +5950,7 @@ int game_run(void) {
         };
         const int32_t nrows = platform_has_rumble() ? 3 : 2;
         for (int32_t i = 0; i < nrows; i++) {
-          const int32_t y = 150 + i * 36;
+          const int32_t y = 150 + i * 36 + sdy;
           if (settings_row == rows[i].row) draw_pause_highlight(&g, 251, y - 12, 298, 28);
           char label[48];
           snprintf(label, sizeof(label), "%s: %s", rows[i].name, rows[i].value);
@@ -5930,9 +5966,9 @@ int game_run(void) {
       }
 
       // Row 4: Back.
-      if (settings_row == 4) draw_pause_highlight(&g, 345, 268, 110, 22);
+      if (settings_row == 4) draw_pause_highlight(&g, 345, 268 + sdy, 110, 22);
       gfx_set_color(&g, 255, 255, 255);
-      draw_centered(&g, "Back", 400, 279 - 9, 2);
+      draw_centered(&g, "Back", 400, 279 - 9 + sdy, 2);
     } else if (state == STATE_PAUSED || state == STATE_CANTREPLY) {
       // PAUSE MENU -- fase -7, pausedgame() (xtGraphics.java:4695-4807),
       // and the fase -8 banner that sits on top of it.
@@ -6059,7 +6095,7 @@ int game_run(void) {
       draw_main_menu(&g,
                       menu_bgmain, menu_logomadbg, menu_logomadnes,
                       menu_dude[0], menu_logocars, menu_opback, menu_opti,
-                      menu_byrd, menu_nfmcoms_asset,
+                      menu_byrd, menu_nfmcoms_asset, menu_opsettings,
                       mainbg_bgmy, &mainmenu_flkat,
                       &mainmenu_gxdu, &mainmenu_gydu, &mainmenu_movly,
                       mainmenu_opselect, &mainmenu_aflk);
