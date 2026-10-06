@@ -85,6 +85,7 @@
 #include "wav_decode.h"
 #include "radical_mod.h"
 #include "bots.h"
+#include "diag.h"
 
 #define STAGE_OBJECT_CAPACITY 610 // matches GameSparker.js's own ContO[610]
 #define NUM_STAGES 32              // stages/1.txt .. stages/32.txt
@@ -3932,6 +3933,7 @@ int game_run(void) {
   GameProgress progress;
   char progress_path[1024];
   bool progress_path_ok = platform_progress_path(progress_path, sizeof(progress_path));
+  if (progress_path_ok) diag_init(progress_path);
   // Settings screen (pause menu -> Settings): motion-blur intensity 0..100
   // in steps of 20, persisted beside the progress file. the screen state is
   // the highlighted row (0 = Motion Blur slider, 1 = Back).
@@ -4242,6 +4244,22 @@ int game_run(void) {
   int32_t prof_avg_tenths[4] = {0, 0, 0, 0}; // last window's per-frame mean, 0.1ms units
   while (running) {
     prof_frame_start = platform_ticks_us();
+    // Breadcrumbs for the freeze watchdog / crash handler (diag.h).
+    if (frame == 0) diag_start_watchdog();
+    g_diag.heartbeat++;
+    g_diag.frame = frame;
+    g_diag.state = (int32_t)state;
+    g_diag.stage = stage_num;
+    g_diag.gmode = gmode;
+    g_diag.car = car_index;
+    g_diag.nplayers = nplayers;
+    DIAG_PHASE("frame: input and menus");
+    // NFM_DEBUG_FREEZE_FRAME=n: hang on purpose at frame n, to check the
+    // freeze watchdog writes its report.
+    if (getenv("NFM_DEBUG_FREEZE_FRAME") && frame == atoi(getenv("NFM_DEBUG_FREEZE_FRAME"))) {
+      DIAG_PHASE("debug: deliberate freeze (NFM_DEBUG_FREEZE_FRAME)");
+      for (volatile int spin = 1; spin;) {}
+    }
     bool held[BTN_COUNT];
     bool race_ticked = false; // this frame consumed at least one physics tick
     running = platform_poll(held);
@@ -4727,7 +4745,7 @@ int game_run(void) {
         bench.n = 0;
         bench.ended_early = false;
         gmode = GMODE_FREE_PLAY;
-        stage_num = BENCH_STAGE;
+        stage_num = getenv("NFM_BENCH_STAGE") ? atoi(getenv("NFM_BENCH_STAGE")) : BENCH_STAGE;
         car_index = BENCH_CAR;
         stage_read_name(stage_num, stage_name_buf, sizeof(stage_name_buf));
         nfm_set_seed(BENCH_SEED);
@@ -4806,6 +4824,7 @@ int game_run(void) {
       m.h = 450;
       m.w = 800;
 
+      DIAG_PHASE("race setup: loading the stage");
       bool stage_ok = load_stage_objects(&stage_objects, &stage_count, stage_count,
                                           base_models, &m, &t, &cp, stage_num, NULL, NULL);
       if (!stage_ok) {
@@ -5160,6 +5179,8 @@ int game_run(void) {
           xt.pending_skid = XT_SKID_NONE;
           xt.pending_scrape = XT_SCRAPE_NONE;
           xt.pending_gscrape = false;
+          g_diag.ticks++;
+          DIAG_PHASE("race tick: collisions");
           for (int32_t i = 0; i < nplayers; i++) {
             for (int32_t j = 0; j < nplayers; j++) {
               if (i != j) mad_colide(&mad[i], &co[i], &mad[j], &co[j]);
@@ -5171,9 +5192,12 @@ int game_run(void) {
           // input layer, so on the Vita only CROSS + stick reach the car
           // then and the throttle/brake triggers cannot loop it.
           if (!bench.active) input_set_stunting(&control[0], mad[0].loop == 2 || (control[0].handb && !mad[0].wtouch));
+          DIAG_PHASE("race tick: driving");
           for (int32_t i = 0; i < nplayers; i++) {
+            g_diag.aux[0] = i;
             mad_drive(&mad[i], &control[i], &co[i], &t, &cp);
           }
+          DIAG_PHASE("race tick: checkpoints and repairs");
           // GameSparker.java:950-952 -- one record.rec() per car, BETWEEN
           // the drive() loop and checkstat(), every tick. Advances the
           // 300-tick position/spark/skid ring, ticks fix[]/dest[] down,
@@ -5312,7 +5336,14 @@ int game_run(void) {
           // GameSparker.java:954-956 -- bots react to what checkstat just
           // computed, setting up their input for the NEXT tick's drive().
           // Skips index 0 (the human).
+          DIAG_PHASE("race tick: AI (aux: car, point, clear, laps, route points, gates)");
           for (int32_t i = bench.active ? 0 : 1; i < nplayers; i++) {
+            g_diag.aux[0] = i;
+            g_diag.aux[1] = mad[i].point;
+            g_diag.aux[2] = mad[i].clear;
+            g_diag.aux[3] = mad[i].nlaps;
+            g_diag.aux[4] = cp.n;
+            g_diag.aux[5] = cp.nsp;
             control_preform(&control[i], &mad[i], &co[i], &cp, &t);
           }
 
@@ -5781,6 +5812,7 @@ int game_run(void) {
         smooth_apply(&smooth_prev, &smooth_curr, (float)(t < 1.0 ? t : 1.0), co, nplayers, &m);
       }
       nfm_set_draw_phase(true);
+      DIAG_PHASE("race draw: scene");
       medium_d(&m, &g); // ground/sky backdrop -- must run before any cont_o_d,
                          // which queues into m.nsp (medium_d zeroes it first)
 
@@ -5840,6 +5872,7 @@ int game_run(void) {
         // again would advance its blink and banner timers per display frame.
         gfx_clip_play(&g, &hud_clip);
       } else {
+        DIAG_PHASE("race draw: HUD");
         gfx_flush(&g);
         const GfxMark hud_mark = gfx_mark(&g);
         // Real HUD: ports the actual XtGraphics.js draw calls (JS lines
@@ -7690,6 +7723,7 @@ int game_run(void) {
       if (step) intro_frame++;
     }
 
+    DIAG_PHASE("frame: submit to GL");
     prof_submit_start = platform_ticks_us();
     gfx_submit_gl(&g);
 
@@ -7994,6 +8028,7 @@ int game_run(void) {
       free(pixels);
       if (frame >= screenshot_frame + screenshot_count - 1) running = false;
     }
+    DIAG_PHASE("frame: swap (waiting on the GPU)");
     prof_swap_start = platform_ticks_us();
     platform_swap_buffers();
     prof_sum[3] += platform_ticks_us() - prof_swap_start;

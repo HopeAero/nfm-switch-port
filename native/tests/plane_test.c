@@ -173,6 +173,30 @@ static void test_d_damaged_quad(void) {
   gfx_free(&g); plane_free(&p); medium_free(&m);
 }
 
+// Regression: a freeze seen on hardware. With smooth frames an interpolated
+// pass replays the tick's randoms in a cycle; with a one-value recording the
+// embos-16 spark's `pb` re-roll got the same vertex as `pa` forever. It must
+// return, with two different vertices.
+static void test_d_spark_reroll_terminates(void) {
+  nfm_set_seed(1004);
+  Medium m; medium_init(&m);
+  m.cx = 400; m.cy = 225; m.cz = 100; m.focus_point = 500; m.trk = 0; m.adv = 900;
+  m.interpolating = true;
+  m.rlog[0] = 0.5f;
+  m.rn = 1;
+  m.rp = 0;
+  Trackers t; trackers_init(&t);
+  int32_t ox[4] = {-40, 40, 40, -40}, oz[4] = {-40, -40, 40, 40}, oy[4] = {0, 0, 0, 0};
+  int32_t oc[3] = {210, 60, 60};
+  Plane p; plane_init(&p, &m, &t, ox, oz, oy, 4, oc, 3, -1, 0, 0, 0, 0, 7, 0, false, 0, false);
+  p.embos = 16;
+  Graphics2D g; gfx_init(&g, 800, 450); gfx_begin(&g);
+  plane_d(&p, &g, 20, -200, 1800, 3, -5, 0, 0, 0, false, -1);
+  CHECK(p.pa != p.pb, "spark re-roll ends with two different vertices");
+  gfx_free(&g);
+  medium_free(&m);
+}
+
 // Oracle: embos forced to 12 on entry -> chip=1/ctmag=2.0/bfase=-7, so this
 // call draws the damage-shard debris triangle. This is the scenario that
 // caught the cox/coy/coz axis-grouping bug (see this file's header).
@@ -309,6 +333,7 @@ int main(void) {
   test_deltafntyp();
   test_d_undamaged_quad();
   test_d_damaged_quad();
+  test_d_spark_reroll_terminates();
   test_d_chip_debris();
   test_d_wheel_rotation_gate();
   test_s_shadow();

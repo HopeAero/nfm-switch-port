@@ -761,7 +761,12 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
               }
               n17 = (mad->clear != n18 + mad->nlaps * checkPoints->nsp) ? 1 : 0;
             }
-            while (checkPoints->typ[n16] == 0 || checkPoints->typ[n16] == -1 || checkPoints->typ[n16] == -3 || n17 != 0) {
+            // Bounded by one trip round the route: a stop it can reach, it
+            // reaches within that (the Java's loop, unchanged); one it
+            // cannot -- a mad->clear no gate answers to -- must not hang.
+            int32_t skip_guard = 0;
+            while ((checkPoints->typ[n16] == 0 || checkPoints->typ[n16] == -1 || checkPoints->typ[n16] == -3 || n17 != 0) &&
+                   skip_guard++ <= checkPoints->n) {
               waypoint = n16;
               n16++;
               if (n16 >= checkPoints->n) n16 = 0;

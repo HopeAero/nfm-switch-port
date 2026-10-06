@@ -194,6 +194,10 @@ void medium_free(Medium *m) {
 
 
 float medium_random(Medium *m) {
+  // An interpolated pass replays what the tick's draw rolled, cycling the
+  // recording if it needs more. A short cycle can answer the same value
+  // forever, so every loop that re-rolls until a value changes must be
+  // bounded (plane_d's `pa != pb`, as web/Plane.js does).
   if (m->interpolating && m->rn != 0) {
     return m->rlog[(m->rp++) % m->rn];
   }

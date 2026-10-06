@@ -286,9 +286,13 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
     if (p->embos == 16) {
       p->pa = jtrunc(medium_random(p->m) * (float)p->n);
       p->pb = jtrunc(medium_random(p->m) * (float)p->n);
-      while (p->pa == p->pb) {
+      // Re-rolls until the two differ, as the Java does -- bounded, so a
+      // random source that keeps answering the same (see medium_random's
+      // replay note) cannot hang the game; then any other vertex will do.
+      for (int32_t tries = 0; p->pa == p->pb && tries < 64; tries++) {
         p->pb = jtrunc(medium_random(p->m) * (float)p->n);
       }
+      if (p->pa == p->pb) p->pb = (p->pa + 1) % (p->n > 1 ? p->n : 1);
     }
     if (p->embos >= 16) {
       int32_t n10 = 1, n11 = 1;

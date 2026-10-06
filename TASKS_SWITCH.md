@@ -162,6 +162,21 @@ PC with `nxlink -s`.
       frame, late frames (over 20 ms, over 33 ms), work per frame split logic /
       draw / gl / swap, faces and vertices, fps per second, the 8 slowest frames.
       Headless: `NFM_SCREENSHOT_MENU=bench NFM_BENCH_SECONDS=15`.
+- [x] **Freeze on hardware (game stopped, music went on)**: smooth frames'
+      interpolated passes replay the tick's draw randoms in a cycle
+      (`medium_random`), and `plane_d`'s embos-16 spark re-rolled
+      `while (pa == pb)` -- with a one-value recording, forever. A heavily
+      damaged car could hang the game. Bounded now, as web/Plane.js already
+      was ("the page froze on a wasted car's replay"); `plane_test`'s
+      `test_d_spark_reroll_terminates` hangs without the fix. The AI's skip
+      loop (control.c) is bounded to one trip round the route as well.
+- [x] **Freeze and crash reports** (platform/common/diag.c): the loop leaves
+      breadcrumbs (phase, screen, stage, tick, the AI car being thought about);
+      a watchdog thread writes `freeze.txt` beside the save when the loop
+      stops for 8 s; on Switch, `__libnx_exception_handler` writes `crash.txt`
+      (registers, fault address, pc/lr and a frame-pointer backtrace as offsets
+      into the .nro -- `aarch64-none-elf-addr2line -e nfm_switch.elf 0x...`)
+      and closes the game. `NFM_DEBUG_FREEZE_FRAME=n` hangs on purpose.
 - [ ] Missing vs the web port: the Arial font, custom cars, Rivals.
 - [ ] Performance not measured on hardware. The web port's known heavy item is
       the per-plane ground shadow (`Plane.s` for every plane of a nearby car);

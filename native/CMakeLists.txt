@@ -106,7 +106,7 @@ target_include_directories(nfm_core PRIVATE platform/${NFM_PLATFORM})
 # Needs the SAME per-platform include dir as nfm_core above: game.c's
 # `#include "gl_include.h"`/`"audio.h"` resolve against whichever platform
 # directory is active, exactly like gfx_gl.c's does.
-add_library(nfm_game STATIC platform/common/game.c)
+add_library(nfm_game STATIC platform/common/game.c platform/common/diag.c)
 target_include_directories(nfm_game PUBLIC platform/common)
 target_include_directories(nfm_game PRIVATE platform/${NFM_PLATFORM})
 target_link_libraries(nfm_game PUBLIC nfm_core)
