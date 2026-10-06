@@ -3530,6 +3530,11 @@ int game_run(void) {
   int32_t screenshot_count = screenshot_count_env ? atoi(screenshot_count_env) : 1;
   // NFM_SCREENSHOT_MENU=pausereplay picks Instant Replay at this frame
   // (default: 60 frames before the dump), so a run can dump any point of it.
+  // NFM_SIM_TICKS_PER_FRAME=n: the race runs exactly n ticks every frame,
+  // whatever the clock says -- a headless run then simulates a known number
+  // of ticks by a given frame, and two runs can be compared.
+  const char *sim_ticks_env = getenv("NFM_SIM_TICKS_PER_FRAME");
+  const int32_t sim_ticks_per_frame = sim_ticks_env ? atoi(sim_ticks_env) : 0;
   const char *hook_replay_env = getenv("NFM_HOOK_REPLAY_FRAME");
   int32_t hook_replay_frame = hook_replay_env ? atoi(hook_replay_env) : screenshot_frame - 60;
 
@@ -4843,6 +4848,7 @@ int game_run(void) {
       accumulator_ms += race_frame_ms;
       last_ticks_ms = now_ms;
       if (accumulator_ms > MAX_ACCUMULATOR_MS) accumulator_ms = MAX_ACCUMULATOR_MS;
+      if (sim_ticks_per_frame > 0) accumulator_ms = TICK_MS * sim_ticks_per_frame;
 
       // Real drive() physics against the real loaded stage's Trackers, at a
       // fixed 53ms/tick regardless of how often this loop iterates.
@@ -7668,7 +7674,10 @@ int game_run(void) {
       char shot_file[1024];
       if (screenshot_count > 1) snprintf(shot_file, sizeof(shot_file), "%s.%d", screenshot_path, frame - screenshot_frame);
       else snprintf(shot_file, sizeof(shot_file), "%s", screenshot_path);
-      fprintf(stderr, "screenshot %s: ticked=%d t=%.2f\n", shot_file, (int)race_ticked, accumulator_ms / TICK_MS);
+      fprintf(stderr, "screenshot %s: ticked=%d t=%.2f checkpoints cleared:", shot_file, (int)race_ticked,
+              accumulator_ms / TICK_MS);
+      for (int32_t i = 0; i < nplayers; i++) fprintf(stderr, " %d", cp.clear[i]);
+      fprintf(stderr, "\n");
       FILE *f = fopen(shot_file, "wb");
       if (f) {
         fprintf(f, "P6\n%d %d\n255\n", shot_w, shot_h);

@@ -177,14 +177,19 @@ void medium_init(Medium *m);
 // NOT free `m` itself.
 void medium_free(Medium *m);
 
-// Perspective projection. All-int in Java; the product can exceed 2^31.
+// Perspective projection. All-int in Java, where the product wraps past
+// 2^31 -- only for a point both far away and far off-centre, which the race
+// never draws (its fog culls first) but the stage select's high dive does:
+// pieces of the big stages (8, 9) projected to garbage and vanished. In 64
+// bits the result is the Java's wherever the Java did not wrap, and right
+// where it did (and signed overflow is undefined in C anyway).
 static inline int32_t medium_xs(Medium *m, int32_t n, int32_t cz) {
   if (cz < m->cz) cz = m->cz;
-  return (cz - m->focus_point) * (m->cx - n) / cz + n;
+  return (int32_t)((int64_t)(cz - m->focus_point) * (m->cx - n) / cz + n);
 }
 static inline int32_t medium_ys(Medium *m, int32_t n, int32_t n2) {
   if (n2 < m->cz) n2 = m->cz;
-  return (n2 - m->focus_point) * (m->cy - n) / n2 + n;
+  return (int32_t)((int64_t)(n2 - m->focus_point) * (m->cy - n) / n2 + n);
 }
 
 // Table lookup with fractional-index lerp -- see the JS's comment on why

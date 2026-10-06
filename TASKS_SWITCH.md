@@ -132,9 +132,20 @@ PC with `nxlink -s`.
 - [x] **Stunts in 8 directions**: B + left stick reads eight 45-degree sectors;
       a diagonal presses two arrows at once (the original's combined stunts).
       It was snapped to 4 (the Vita's choice), so diagonals did nothing.
-- [ ] Missing vs the web port: the Arial font, custom cars, Rivals, `set(...)p`
-      route points (`checkPoints` typ -1..-4 from set lines; game_sparker.c
-      only reads `chk`).
+- [x] **The AI's route points** (`set(...)p` lines, typ 0/-1..-4): game_sparker.c
+      read only `chk`, so control_preform's waypoint code never had a waypoint
+      and the bots aimed from gate to gate. Same fixed seed, 3 ticks a frame,
+      1800 ticks (`NFM_SIM_TICKS_PER_FRAME=3`, deterministic): stage 10 bots at
+      10/8/5 checkpoints against 3/4/5 before; stage 1's at 2/2/4 against 0/0.
+- [x] Projection in 64 bits (`medium_xs/ys`, `cont_o_xs/ys`): identical to the
+      Java wherever its int product does not wrap; removes C's signed-overflow UB.
+      (The stage-select dive did not show the web launcher's far-camera
+      distortion -- that one was the launcher's own overhead view.)
+- [x] Screenshot hook logs each car's cleared checkpoints.
+- [ ] Missing vs the web port: the Arial font, custom cars, Rivals.
+- [ ] Performance not measured on hardware. The web port's known heavy item is
+      the per-plane ground shadow (`Plane.s` for every plane of a nearby car);
+      Settings > Shadows off is the lever until it is measured.
 - [x] **Settings from the main menu too**: a fourth row, *Settings*, in the slot
       the original's own fourth row used (y=351). Its label is options.png's style
       redrawn -- the Adventure face at 18 px, the size that gives the original

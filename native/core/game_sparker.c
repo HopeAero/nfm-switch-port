@@ -221,7 +221,25 @@ bool game_sparker_loadstage(ContO *out_objects, int32_t out_capacity, int32_t *o
                         m->ground - base_models[slot].grat,
                         gs_getint("set", trimmed, 2),
                         gs_getint("set", trimmed, 3));
-      if (strstr(trimmed, ")p")) notb = nob + 1;
+      // `set(...)p` -- a road piece that is also a route point for the AI
+      // (GameSparker.java's set branch): typ 0 plain, -1 `)pt`, -2 `)pr`
+      // (ramp), -3 `)po`, -4 `)ph`. control_preform steers bots along
+      // these between the checkpoints; without them they aimed straight
+      // from one gate to the next.
+      if (strstr(trimmed, ")p")) {
+        if (cp->n < CHECK_POINTS_MAX) {
+          cp->x[cp->n] = gs_getint("set", trimmed, 1);
+          cp->z[cp->n] = gs_getint("set", trimmed, 2);
+          cp->y[cp->n] = 0;
+          cp->typ[cp->n] = 0;
+          if (strstr(trimmed, ")pt")) cp->typ[cp->n] = -1;
+          if (strstr(trimmed, ")pr")) cp->typ[cp->n] = -2;
+          if (strstr(trimmed, ")po")) cp->typ[cp->n] = -3;
+          if (strstr(trimmed, ")ph")) cp->typ[cp->n] = -4;
+          cp->n++;
+        }
+        notb = nob + 1;
+      }
       nob++;
     }
     if (starts_with(trimmed, "chk")) {

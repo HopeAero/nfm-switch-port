@@ -253,11 +253,11 @@ void cont_o_free(ContO *co);
 // rather than re-scoped away. See cont_o.c for each one's translation.
 static inline int32_t cont_o_xs(ContO *co, int32_t n, int32_t n2) {
   if (n2 < 50) n2 = 50;
-  return (n2 - co->m->focus_point) * (co->m->cx - n) / n2 + n;
+  return (int32_t)((int64_t)(n2 - co->m->focus_point) * (co->m->cx - n) / n2 + n); // see medium_xs
 }
 static inline int32_t cont_o_ys(ContO *co, int32_t n, int32_t n2) {
   if (n2 < 50) n2 = 50;
-  return (n2 - co->m->focus_point) * (co->m->cy - n) / n2 + n;
+  return (int32_t)((int64_t)(n2 - co->m->focus_point) * (co->m->cy - n) / n2 + n);
 }
 
 /** Rotate a point set about (n,n2) by n3 degrees -- identical math to
