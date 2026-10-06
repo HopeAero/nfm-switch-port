@@ -129,6 +129,9 @@ PC with `nxlink -s`.
       (game_sparker.c). Clouds draw from the race's random stream at load, as
       the original; stars twinkle per tick. `fadefrom(` sets the stage's own fog
       bands and Draw Distance now scales those (`Medium.fade_base/fade_pct`).
+- [x] **Stunts in 8 directions**: B + left stick reads eight 45-degree sectors;
+      a diagonal presses two arrows at once (the original's combined stunts).
+      It was snapped to 4 (the Vita's choice), so diagonals did nothing.
 - [ ] Missing vs the web port: the Arial font, custom cars, Rivals, `set(...)p`
       route points (`checkPoints` typ -1..-4 from set lines; game_sparker.c
       only reads `chk`).

@@ -4,7 +4,7 @@
 //   left stick x       steering
 //   B                  handbrake, and held in the air the stunt key (Vita Cross:
 //                      the bottom face button)
-//   B + left stick     stunts, snapped to 4 directions
+//   B + left stick     stunts, in 8 directions (diagonals = two arrows)
 //   right stick x      look around (the original's Z/X look-behind)
 // platform_poll() (platform.c) has already called padUpdate() this frame.
 #include "input.h"
@@ -15,24 +15,28 @@ extern PadState g_pad;
 static bool g_drive_up, g_drive_down, g_drive_left, g_drive_right;
 static bool g_stunt_up, g_stunt_down, g_stunt_left, g_stunt_right;
 
-// The Vita's snap_stunt (platform/vita/input.c has the reasoning): one of four
-// directions, a larger deadzone than steering, an axis only when it clearly
-// dominates (|major| >= 1.6x |minor|), hysteresis on the held axis. The stick
-// here is +-32767 with up positive; dy is flipped to the Vita's down-positive.
+// The left stick in the air, as eight directions: each axis counts while it
+// is within 67.5 degrees of the stick (|component| >= sin 22.5 = 0.383 of the
+// stick's length), so the four diagonal 45-degree sectors press two arrows at
+// once -- the original's combined stunts (up+left, down+right, ...). A larger
+// deadzone than steering, and hysteresis (an arrow already held stays down
+// down to sin 15 = 0.259) so a stick resting on a sector edge does not
+// chatter. The stick is +-32767 with up positive; dy comes in down-positive.
 static void snap_stunt(int32_t dx, int32_t dy) {
-  const int32_t kStuntDeadzone = 14336;   // the Vita's 56/128
-  static int32_t held_axis = 0;           // 0 none, 1 horizontal, 2 vertical
-  const int32_t ax = dx < 0 ? -dx : dx, ay = dy < 0 ? -dy : dy;
-  int32_t axis = 0;
-  if (held_axis == 1 && ax > kStuntDeadzone && ax >= ay) axis = 1;
-  else if (held_axis == 2 && ay > kStuntDeadzone && ay >= ax) axis = 2;
-  else if (ax > kStuntDeadzone && (int64_t)ax * 10 >= (int64_t)ay * 16) axis = 1;
-  else if (ay > kStuntDeadzone && (int64_t)ay * 10 >= (int64_t)ax * 16) axis = 2;
-  held_axis = axis;
-  g_stunt_left = axis == 1 && dx < 0;
-  g_stunt_right = axis == 1 && dx > 0;
-  g_stunt_up = axis == 2 && dy < 0;   // stick forward: forward loop
-  g_stunt_down = axis == 2 && dy > 0; // stick back: backward loop
+  const int64_t kStuntDeadzone = 14336;     // 56/128 of the travel
+  const int64_t x2 = (int64_t)dx * dx, y2 = (int64_t)dy * dy, mag2 = x2 + y2;
+  static bool held_x = false, held_y = false;
+  if (mag2 <= kStuntDeadzone * kStuntDeadzone) {
+    held_x = held_y = false;
+  } else {
+    // c^2 >= k^2 * |v|^2, k^2 in ten-thousandths: 0.383^2 = .1464, 0.259^2 = .0670.
+    held_x = x2 * 10000 >= (held_x ? 670 : 1464) * mag2;
+    held_y = y2 * 10000 >= (held_y ? 670 : 1464) * mag2;
+  }
+  g_stunt_left = held_x && dx < 0;
+  g_stunt_right = held_x && dx > 0;
+  g_stunt_up = held_y && dy < 0;   // stick forward: forward loop
+  g_stunt_down = held_y && dy > 0; // stick back: backward loop
 }
 
 void input_poll(Control *control) {
