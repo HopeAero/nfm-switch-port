@@ -165,6 +165,7 @@ bool game_sparker_loadstage(ContO *out_objects, int32_t out_capacity, int32_t *o
   int32_t ge1 = 0, ge2 = 100, ge3 = 0, ge4 = 100;
   int32_t nob = 0;
   int32_t nfix = 0; // caps `fix(` placement at 5, matching CheckPoints.nfix's role
+  int32_t notb = 0; // objects up to the last checkpoint/fix -- seeds newpolys
   bool ok = true;
 
   char **lines;
@@ -198,6 +199,19 @@ bool game_sparker_loadstage(ContO *out_objects, int32_t out_capacity, int32_t *o
       medium_setfade(m, gs_getint("fog", trimmed, 0), gs_getint("fog", trimmed, 1),
                       gs_getint("fog", trimmed, 2));
     }
+    if (starts_with(trimmed, "clouds")) {
+      medium_setcloads(m, gs_getint("clouds", trimmed, 0), gs_getint("clouds", trimmed, 1),
+                       gs_getint("clouds", trimmed, 2), gs_getint("clouds", trimmed, 3),
+                       gs_getint("clouds", trimmed, 4));
+    }
+    if (starts_with(trimmed, "density")) {
+      m->fogd = (gs_getint("density", trimmed, 0) + 1) * 2 - 1;
+      if (m->fogd < 1) m->fogd = 1;
+      if (m->fogd > 30) m->fogd = 30;
+    }
+    if (starts_with(trimmed, "fadefrom")) medium_fadfrom(m, gs_getint("fadefrom", trimmed, 0));
+    if (starts_with(trimmed, "lightson")) m->lightson = true;
+    if (starts_with(trimmed, "mountains")) m->mgen = gs_getint("mountains", trimmed, 0);
 
     if (starts_with(trimmed, "set")) {
       int32_t slot = gs_getint("set", trimmed, 0) + 46;
@@ -207,6 +221,7 @@ bool game_sparker_loadstage(ContO *out_objects, int32_t out_capacity, int32_t *o
                         m->ground - base_models[slot].grat,
                         gs_getint("set", trimmed, 2),
                         gs_getint("set", trimmed, 3));
+      if (strstr(trimmed, ")p")) notb = nob + 1;
       nob++;
     }
     if (starts_with(trimmed, "chk")) {
@@ -236,6 +251,7 @@ bool game_sparker_loadstage(ContO *out_objects, int32_t out_capacity, int32_t *o
       out_objects[nob].checkpoint = cp->nsp + 1;
       cp->nsp++;
       nob++;
+      notb = nob;
     }
     if (nfix != 5 && starts_with(trimmed, "fix")) {
       int32_t slot = gs_getint("fix", trimmed, 0) + 46;
@@ -274,6 +290,7 @@ bool game_sparker_loadstage(ContO *out_objects, int32_t out_capacity, int32_t *o
         cp->fn++;
       }
       nob++;
+      notb = nob;
       nfix++;
     }
     if (starts_with(trimmed, "nlaps")) {
@@ -340,6 +357,10 @@ bool game_sparker_loadstage(ContO *out_objects, int32_t out_capacity, int32_t *o
   }
   vfs_free_lines(lines, line_count);
 
+  medium_newpolys(m, ge2, ge1 - ge2, ge4, ge3 - ge4, t, notb);
+  medium_newclouds(m, ge2, ge1, ge4, ge3);
+  medium_newmountains(m, ge2, ge1, ge4, ge3);
+  medium_newstars(m);
   trackers_devidetrackers(t, ge2, ge1 - ge2, ge4, ge3 - ge4);
 
   // GameSparker.java:2736-2737 -- the stage-select 3D preview's camera

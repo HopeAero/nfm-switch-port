@@ -57,6 +57,11 @@ typedef struct Medium {
   int32_t ground;
   int32_t skyline;
   int32_t fade[16];
+  // The stage's own fog bands (the defaults, or its fadefrom(), which
+  // the original never resets between stages) and the Draw Distance
+  // percent fade[] is them scaled by.
+  int32_t fade_base[16];
+  int32_t fade_pct;
   int32_t cldd[5];
   int32_t clds[3];
   int32_t osky[3];
@@ -327,6 +332,23 @@ void medium_setgrnd(Medium *m, int32_t n, int32_t n2, int32_t n3);
 void medium_setexture(Medium *m, int32_t n, int32_t n2, int32_t n3, int32_t n4);
 void medium_setpolys(Medium *m, int32_t n, int32_t n2, int32_t n3);
 void medium_setfade(Medium *m, int32_t n, int32_t n2, int32_t n3);
+/** `clouds(r,g,b,mix,height)` and `fadefrom(d)` lines. */
+void medium_setcloads(Medium *m, int32_t n, int32_t n2, int32_t n3, int32_t n4, int32_t n5);
+void medium_fadfrom(Medium *m, int32_t n);
+
+/** The stage backdrop's procedural parts, generated after the stage file
+ * is read (bounds from its maxl/maxr/maxt/maxb): the ground patches around
+ * the track (seeded from the stage, kept off the road by `t`), the clouds
+ * (from the race's random stream), the mountains (seeded by `mountains(`)
+ * and, on a `lightson` stage, the stars. */
+struct Trackers;
+void medium_newpolys(Medium *m, int32_t n, int32_t n2, int32_t n3, int32_t n4, const struct Trackers *t, int32_t n5);
+void medium_newclouds(Medium *m, int32_t n, int32_t n2, int32_t n3, int32_t n4);
+void medium_newmountains(Medium *m, int32_t n, int32_t n2, int32_t n3, int32_t n4);
+void medium_newstars(Medium *m);
+void medium_drawclouds(Medium *m, struct Graphics2D *g);
+void medium_drawmountains(Medium *m, struct Graphics2D *g);
+void medium_drawstars(Medium *m, struct Graphics2D *g);
 
 /** Settings > Graphics > Draw Distance: the fog bands (and with them where
  * objects stop being drawn) at `percent` of the original's distances --

@@ -121,8 +121,17 @@ PC with `nxlink -s`.
       continue, fly-by skip) is latched, so a press between ticks is not lost.
 - [x] `NFM_SCREENSHOT_COUNT=n`: the screenshot hook dumps n consecutive frames
       (`path.0`, `path.1`, ...) and logs whether each one ticked.
-- [ ] Missing vs the web port: clouds / mountains / stars (`medium.c`: not
-      ported), the stages' `fadefrom(`, the Arial font, custom cars, Rivals.
+- [x] **The stage backdrop** (2026-10-06, checked headless on stages 1, 2, 8, 20):
+      clouds, mountains, the stars of the `lightson` stages, and the ground
+      patches around the track (`newpolys`: groundpolys was ported but had no
+      data). Ported from web/Medium.js into medium.c with the stage lines that
+      feed them -- `clouds(`, `density(`, `fadefrom(`, `mountains(`, `lightson`
+      (game_sparker.c). Clouds draw from the race's random stream at load, as
+      the original; stars twinkle per tick. `fadefrom(` sets the stage's own fog
+      bands and Draw Distance now scales those (`Medium.fade_base/fade_pct`).
+- [ ] Missing vs the web port: the Arial font, custom cars, Rivals, `set(...)p`
+      route points (`checkPoints` typ -1..-4 from set lines; game_sparker.c
+      only reads `chk`).
 - [x] **Settings from the main menu too**: a fourth row, *Settings*, in the slot
       the original's own fourth row used (y=351). Its label is options.png's style
       redrawn -- the Adventure face at 18 px, the size that gives the original

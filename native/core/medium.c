@@ -20,6 +20,7 @@
 #include "trig.h"
 #include "gfx.h"
 #include "cont_o.h" // ContO -- only medium_around() needs it (co->x/y/z)
+#include "trackers.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,7 +31,8 @@ static const int32_t fade_init[16] = {3000, 4500, 6000, 7500, 9000, 10500, 12000
                                       15000, 16500, 18000, 19500, 21000, 22500, 24000, 25500};
 
 void medium_draw_distance(Medium *m, int32_t percent) {
-  for (int32_t i = 0; i < 16; i++) m->fade[i] = fade_init[i] * percent / 100;
+  m->fade_pct = percent;
+  for (int32_t i = 0; i < 16; i++) m->fade[i] = m->fade_base[i] * percent / 100;
 }
 
 void medium_init(Medium *m) {
@@ -40,6 +42,8 @@ void medium_init(Medium *m) {
   m->ground = 250;
   m->skyline = -300;
   memcpy(m->fade, fade_init, sizeof(fade_init));
+  memcpy(m->fade_base, fade_init, sizeof(fade_init));
+  m->fade_pct = 100;
   static const int32_t cldd_init[5] = {210, 210, 210, 1, -1000};
   memcpy(m->cldd, cldd_init, sizeof(cldd_init));
   static const int32_t clds_init[3] = {210, 210, 210};
@@ -92,13 +96,7 @@ void medium_init(Medium *m) {
   memcpy(m->tsin, TSIN, sizeof(TSIN));
 }
 
-void medium_free(Medium *m) {
-  free(m->rlog);
-  m->rlog = NULL;
-
-  // Procedural-generation state: not allocated by anything ported yet, but
-  // written to be safe to call once it is (all pointers are NULL until
-  // then, and free(NULL) is a no-op).
+static void free_polys(Medium *m) {
   if (m->ogpx) { for (int32_t i = 0; i < m->nrw * m->ncl; i++) free(m->ogpx[i]); free(m->ogpx); }
   if (m->ogpz) { for (int32_t i = 0; i < m->nrw * m->ncl; i++) free(m->ogpz[i]); free(m->ogpz); }
   if (m->pvr)  { for (int32_t i = 0; i < m->nrw * m->ncl; i++) free(m->pvr[i]);  free(m->pvr); }
@@ -106,7 +104,12 @@ void medium_free(Medium *m) {
   free(m->cgpz);
   free(m->pmx);
   free(m->pcv);
+  m->ogpx = m->ogpz = NULL; m->pvr = NULL;
+  m->cgpx = m->cgpz = m->pmx = NULL; m->pcv = NULL;
+  m->nrw = m->ncl = 0;
+}
 
+static void free_clouds(Medium *m) {
   if (m->clax) {
     for (int32_t i = 0; i < m->noc; i++) {
       for (int32_t j = 0; j < 3; j++) { free(m->clax[i][j]); free(m->clay[i][j]); free(m->claz[i][j]); }
@@ -127,7 +130,12 @@ void medium_free(Medium *m) {
   free(m->clx);
   free(m->clz);
   free(m->cmx);
+  m->clax = m->clay = m->claz = NULL; m->clc = NULL;
+  m->clx = m->clz = m->cmx = NULL;
+  m->noc = 0;
+}
 
+static void free_mountains(Medium *m) {
   if (m->mtx) {
     for (int32_t i = 0; i < m->nmt; i++) { free(m->mtx[i]); free(m->mty[i]); free(m->mtz[i]); }
     free(m->mtx); free(m->mty); free(m->mtz);
@@ -141,7 +149,12 @@ void medium_free(Medium *m) {
   }
   free(m->mrd);
   free(m->nmv);
+  m->mtx = m->mty = m->mtz = NULL; m->mtc = NULL;
+  m->mrd = m->nmv = NULL;
+  m->nmt = 0;
+}
 
+static void free_stars(Medium *m) {
   if (m->stc) {
     for (int32_t i = 0; i < m->nst; i++) {
       for (int32_t j = 0; j < 2; j++) free(m->stc[i][j]);
@@ -153,6 +166,18 @@ void medium_free(Medium *m) {
   free(m->stz);
   free(m->bst);
   free(m->twn);
+  m->stc = NULL; m->stx = m->stz = NULL; m->bst = NULL; m->twn = NULL;
+  m->nst = 0;
+}
+
+void medium_free(Medium *m) {
+  free(m->rlog);
+  m->rlog = NULL;
+
+  free_polys(m);
+  free_clouds(m);
+  free_mountains(m);
+  free_stars(m);
 
   memset(m, 0, sizeof(*m));
 }
@@ -775,9 +800,9 @@ void medium_d(Medium *m, Graphics2D *g) {
           gfx_fill_polygon(g, arr_x, arr_y, 4);
         }
       }
-      // NOT ported: drawstars/drawmountains/drawclouds -- see medium.h.
-      // Safe: noc/nmt/nst all stay 0 until newclouds/newmountains/newstars
-      // exist, at which point those three would loop zero times anyway.
+      if (m->lightson) medium_drawstars(m, g);
+      medium_drawmountains(m, g);
+      medium_drawclouds(m, g);
     }
   }
 
@@ -898,4 +923,520 @@ void medium_setfade(Medium *m, int32_t n, int32_t n2, int32_t n3) {
   m->cfade[0] = medium_snapped(n, m->snap[0]);
   m->cfade[1] = medium_snapped(n2, m->snap[1]);
   m->cfade[2] = medium_snapped(n3, m->snap[2]);
+}
+
+// --- stage backdrop: clouds(, density, fadefrom(, mountains(, lightson ----
+// Ports web/Medium.js's setcloads/fadfrom and its four procedural
+// generators with their draws. Arithmetic follows web/TRANSPILE_SPEC.md:
+// a JS fr() of one operation is that operation in float; anything the JS
+// leaves unwrapped is double, truncated with jtrunc_d.
+
+void medium_setcloads(Medium *m, int32_t n, int32_t n2, int32_t n3, int32_t n4, int32_t n5) {
+  if (n4 < 0) n4 = 0;
+  if (n4 > 10) n4 = 10;
+  if (n5 < -1500) n5 = -1500;
+  if (n5 > -500) n5 = -500;
+  m->cldd[0] = n;
+  m->cldd[1] = n2;
+  m->cldd[2] = n3;
+  m->cldd[3] = n4;
+  m->cldd[4] = n5;
+  for (int32_t i = 0; i < 3; i++) {
+    m->clds[i] = medium_snapped((m->osky[i] * m->cldd[3] + m->cldd[i]) / (m->cldd[3] + 1), m->snap[i]);
+  }
+}
+
+void medium_fadfrom(Medium *m, int32_t n) {
+  if (n > 8000) n = 8000;
+  for (int32_t i = 1; i < 17; i++) m->fade_base[i - 1] = (n / 2) * (i + 1);
+  medium_draw_distance(m, m->fade_pct);
+}
+
+static int32_t imul32(int32_t a, int32_t b) { return (int32_t)((uint32_t)a * (uint32_t)b); }
+
+static int32_t **alloc_i2(int32_t a, int32_t b) {
+  int32_t **p = malloc(sizeof(int32_t *) * (size_t)(a > 0 ? a : 1));
+  for (int32_t i = 0; i < a; i++) p[i] = calloc((size_t)b, sizeof(int32_t));
+  return p;
+}
+
+void medium_newpolys(Medium *m, int32_t n, int32_t n2, int32_t n3, int32_t n4, const Trackers *t, int32_t n5) {
+  free_polys(m);
+  JavaRandom rnd;
+  jrandom_init(&rnd, (int64_t)(n5 + m->cgrnd[0] + m->cgrnd[1] + m->cgrnd[2]) * 1671);
+  m->nrw = n2 / 1200 + 9;
+  m->ncl = n4 / 1200 + 9;
+  m->sgpx = n - 4800;
+  m->sgpz = n3 - 4800;
+  const int32_t cells = m->nrw * m->ncl;
+  m->ogpx = alloc_i2(cells, 8);
+  m->ogpz = alloc_i2(cells, 8);
+  m->pvr = malloc(sizeof(float *) * (size_t)(cells > 0 ? cells : 1));
+  for (int32_t i = 0; i < cells; i++) m->pvr[i] = calloc(8, sizeof(float));
+  m->cgpx = calloc((size_t)cells + 1, sizeof(int32_t));
+  m->cgpz = calloc((size_t)cells + 1, sizeof(int32_t));
+  m->pmx = calloc((size_t)cells + 1, sizeof(int32_t));
+  m->pcv = calloc((size_t)cells + 1, sizeof(float));
+  int32_t n6 = 0, n7 = 0;
+  for (int32_t i = 0; i < cells; i++) {
+    m->cgpx[i] = m->sgpx + n6 * 1200 + jtrunc_d(jrandom_next_double(&rnd) * 1000.0 - 500.0);
+    m->cgpz[i] = m->sgpz + n7 * 1200 + jtrunc_d(jrandom_next_double(&rnd) * 1000.0 - 500.0);
+    if (t) {
+      for (int32_t j = 0; j < t->nt; j++) {
+        if (t->zy[j] == 0 && t->xy[j] == 0) {
+          if (t->radx[j] < t->radz[j] && abs(m->cgpz[i] - t->z[j]) < t->radz[j]) {
+            while (abs(m->cgpx[i] - t->x[j]) < t->radx[j]) {
+              m->cgpx[i] = jtrunc_d((double)m->cgpx[i] + (jrandom_next_double(&rnd) * t->radx[j] * 2.0 - t->radx[j]));
+            }
+          }
+          if (t->radz[j] < t->radx[j] && abs(m->cgpx[i] - t->x[j]) < t->radx[j]) {
+            while (abs(m->cgpz[i] - t->z[j]) < t->radz[j]) {
+              m->cgpz[i] = jtrunc_d((double)m->cgpz[i] + (jrandom_next_double(&rnd) * t->radz[j] * 2.0 - t->radz[j]));
+            }
+          }
+        }
+      }
+    }
+    if (++n6 == m->nrw) {
+      n6 = 0;
+      ++n7;
+    }
+  }
+  for (int32_t k = 0; k < cells; k++) {
+    const double n10 = (float)(0.3 + 1.6 * jrandom_next_double(&rnd));
+    int32_t *ox = m->ogpx[k], *oz = m->ogpz[k];
+    ox[0] = 0;
+    oz[0] = jtrunc_d((100.0 + jrandom_next_double(&rnd) * 760.0) * n10);
+    ox[1] = jtrunc_d((100.0 + jrandom_next_double(&rnd) * 760.0) * 0.7071 * n10);
+    oz[1] = ox[1];
+    ox[2] = jtrunc_d((100.0 + jrandom_next_double(&rnd) * 760.0) * n10);
+    oz[2] = 0;
+    ox[3] = jtrunc_d((100.0 + jrandom_next_double(&rnd) * 760.0) * 0.7071 * n10);
+    oz[3] = -ox[3];
+    ox[4] = 0;
+    oz[4] = -jtrunc_d((100.0 + jrandom_next_double(&rnd) * 760.0) * n10);
+    ox[5] = -jtrunc_d((100.0 + jrandom_next_double(&rnd) * 760.0) * 0.7071 * n10);
+    oz[5] = ox[5];
+    ox[6] = -jtrunc_d((100.0 + jrandom_next_double(&rnd) * 760.0) * n10);
+    oz[6] = 0;
+    ox[7] = -jtrunc_d((100.0 + jrandom_next_double(&rnd) * 760.0) * 0.7071 * n10);
+    oz[7] = -ox[7];
+    for (int32_t l = 0; l < 8; l++) {
+      int32_t n11 = l - 1;
+      if (n11 == -1) n11 = 7;
+      int32_t n12 = l + 1;
+      if (n12 == 8) n12 = 0;
+      ox[l] = ((ox[n11] + ox[n12]) / 2 + ox[l]) / 2;
+      oz[l] = ((oz[n11] + oz[n12]) / 2 + oz[l]) / 2;
+      const float pv = (float)(1.1 + jrandom_next_double(&rnd) * 0.8);
+      m->pvr[k][l] = pv;
+      const float a = (float)imul32(ox[l], ox[l]) * pv * pv;
+      const float b = (float)imul32(oz[l], oz[l]) * pv * pv;
+      const int32_t n13 = jtrunc_d(sqrt((double)jtrunc(a + b)));
+      if (n13 > m->pmx[k]) m->pmx[k] = n13;
+    }
+    m->pcv[k] = (float)(0.97 + jrandom_next_double(&rnd) * 0.03);
+    if (m->pcv[k] > 1.0f) m->pcv[k] = 1.0f;
+    const double r1 = jrandom_next_double(&rnd), r2 = jrandom_next_double(&rnd);
+    if (r1 > r2) m->pcv[k] = 1.0f;
+  }
+}
+
+// The 12 rim points of a cloud, at 30-degree steps. Written as the Java's
+// coefficients per point -- NOT a clean rotation (point 2 has no z, and the
+// signs are asymmetric); a "tidier" table reshapes every cloud.
+static const double kCloudRimX[12] = {0.3826, 0.7071, 0.9238, 0.9238, 0.7071, 0.3826,
+                                      -0.3826, -0.7071, -0.9238, -0.9238, -0.7071, -0.3826};
+static const double kCloudRimZ[12] = {0.9238, 0.7071, 0.0, -0.3826, -0.7071, -0.9238,
+                                      -0.9238, -0.7071, -0.3826, 0.3826, 0.7071, 0.9238};
+
+void medium_newclouds(Medium *m, int32_t n, int32_t n2, int32_t n3, int32_t n4) {
+  free_clouds(m);
+  n = n / 20 - 10000;
+  n2 = n2 / 20 + 10000;
+  n3 = n3 / 20 - 10000;
+  n4 = n4 / 20 + 10000;
+  m->noc = imul32(n2 - n, n4 - n3) / 16666667;
+  if (m->noc < 0) m->noc = 0;
+  m->clx = calloc((size_t)(m->noc + 1), sizeof(int32_t));
+  m->clz = calloc((size_t)(m->noc + 1), sizeof(int32_t));
+  m->cmx = calloc((size_t)(m->noc + 1), sizeof(int32_t));
+  m->clax = malloc(sizeof(int32_t **) * (size_t)(m->noc + 1));
+  m->clay = malloc(sizeof(int32_t **) * (size_t)(m->noc + 1));
+  m->claz = malloc(sizeof(int32_t **) * (size_t)(m->noc + 1));
+  m->clc = malloc(sizeof(int32_t ***) * (size_t)(m->noc + 1));
+  for (int32_t i = 0; i < m->noc; i++) {
+    m->clax[i] = alloc_i2(3, 12);
+    m->clay[i] = alloc_i2(3, 12);
+    m->claz[i] = alloc_i2(3, 12);
+    m->clc[i] = malloc(sizeof(int32_t **) * 2);
+    for (int32_t j = 0; j < 2; j++) m->clc[i][j] = alloc_i2(6, 3);
+  }
+  for (int32_t i = 0; i < m->noc; i++) {
+    int32_t **ax = m->clax[i], **ay = m->clay[i], **az = m->claz[i];
+    m->clx[i] = jtrunc_d(n + (double)(n2 - n) * nfm_random());
+    m->clz[i] = jtrunc_d(n3 + (double)(n4 - n3) * nfm_random());
+    const double n5 = (float)(0.25 + nfm_random() * 1.25);
+    for (int32_t k = 0; k < 12; k++) {
+      const double r = (float)((200.0 + nfm_random() * 700.0) * n5);
+      ax[0][k] = jtrunc_d(r * kCloudRimX[k]);
+      az[0][k] = jtrunc_d(r * kCloudRimZ[k]);
+      ay[0][k] = jtrunc_d((25.0 - nfm_random() * 50.0) * n5);
+    }
+    for (int32_t j = 0; j < 12; j++) {
+      int32_t a = j - 1;
+      if (a == -1) a = 11;
+      int32_t b = j + 1;
+      if (b == 12) b = 0;
+      ax[0][j] = ((ax[0][a] + ax[0][b]) / 2 + ax[0][j]) / 2;
+      ay[0][j] = ((ay[0][a] + ay[0][b]) / 2 + ay[0][j]) / 2;
+      az[0][j] = ((az[0][a] + az[0][b]) / 2 + az[0][j]) / 2;
+    }
+    for (int32_t k = 0; k < 12; k++) {
+      const float n20 = (float)(1.2 + 0.6 * nfm_random());
+      ax[1][k] = jtrunc((float)ax[0][k] * n20);
+      az[1][k] = jtrunc((float)az[0][k] * n20);
+      ay[1][k] = jtrunc_d(ay[0][k] - 100.0 * nfm_random());
+      const float n21 = (float)(1.1 + 0.3 * nfm_random());
+      ax[2][k] = jtrunc((float)ax[1][k] * n21);
+      az[2][k] = jtrunc((float)az[1][k] * n21);
+      ay[2][k] = jtrunc_d(ay[1][k] - 240.0 * nfm_random());
+    }
+    m->cmx[i] = 0;
+    for (int32_t l = 0; l < 12; l++) {
+      int32_t a = l - 1;
+      if (a == -1) a = 11;
+      int32_t b = l + 1;
+      if (b == 12) b = 0;
+      ay[1][l] = ((ay[1][a] + ay[1][b]) / 2 + ay[1][l]) / 2;
+      ay[2][l] = ((ay[2][a] + ay[2][b]) / 2 + ay[2][l]) / 2;
+      const int32_t n24 = jtrunc_d(sqrt((double)imul32(ax[2][l], ax[2][l]) + (double)imul32(az[2][l], az[2][l])));
+      if (n24 > m->cmx[i]) m->cmx[i] = n24;
+    }
+    for (int32_t n25 = 0; n25 < 6; n25++) {
+      const double r1 = nfm_random();
+      const double r2 = nfm_random();
+      for (int32_t c = 0; c < 3; c++) {
+        const float hi = (float)(m->clds[c] * 1.05);
+        const float n27 = hi - (float)m->clds[c];
+        int32_t v = jtrunc_d(m->clds[c] + (double)n27 * r1);
+        m->clc[i][0][n25][c] = v > 255 ? 255 : v < 0 ? 0 : v;
+        v = jtrunc_d((double)hi + (double)n27 * r2);
+        m->clc[i][1][n25][c] = v > 255 ? 255 : v < 0 ? 0 : v;
+      }
+    }
+  }
+}
+
+// The fogged colour of a backdrop polygon `d` away -- the loop every cloud
+// part repeats.
+static void fog_color(Medium *m, Graphics2D *g, int32_t r, int32_t gg, int32_t b, int32_t d) {
+  for (int32_t k = 0; k < 16; k++) {
+    if (d > m->fade[k]) {
+      r = (r * m->fogd + m->cfade[0]) / (m->fogd + 1);
+      gg = (gg * m->fogd + m->cfade[1]) / (m->fogd + 1);
+      b = (b * m->fogd + m->cfade[2]) / (m->fogd + 1);
+    }
+  }
+  gfx_set_color(g, r, gg, b);
+}
+
+// One skirt of a cloud: the quad strip between layer lo and layer hi. The
+// Java has it twice inline; the draw order between the calls is kept.
+static void cloud_band(Medium *m, Graphics2D *g, int32_t i, int32_t ax[3][12], int32_t ay[3][12],
+                       int32_t az[3][12], int32_t lo, int32_t hi, int32_t cslot) {
+  int32_t px[6], py[6];
+  for (int32_t l = 0; l < 12; l += 2) {
+    int32_t c1 = 0, c2 = 0, c3 = 0, c4 = 0;
+    int32_t sx = 0, sy = 0, sz = 0;
+    for (int32_t v = 0; v < 6; v++) {
+      int32_t k = 0, layer = lo;
+      if (v == 0) k = l;
+      if (v == 1) { k = l + 1; if (k >= 12) k -= 12; }
+      if (v == 2) { k = l + 2; if (k >= 12) k -= 12; }
+      if (v == 3) { k = l + 2; if (k >= 12) k -= 12; layer = hi; }
+      if (v == 4) { k = l + 1; if (k >= 12) k -= 12; layer = hi; }
+      if (v == 5) { k = l; layer = hi; }
+      px[v] = medium_xs(m, ax[layer][k], az[layer][k]);
+      py[v] = medium_ys(m, ay[layer][k], az[layer][k]);
+      sx += ax[layer][k];
+      sy += ay[layer][k];
+      sz += az[layer][k];
+      // az[0][v], as the Java has it (layer 0, indexed by the vertex number).
+      if (py[v] < 0 || az[0][v] < 10) ++c1;
+      if (py[v] > m->h || az[0][v] < 10) ++c2;
+      if (px[v] < 0 || az[0][v] < 10) ++c3;
+      if (px[v] > m->w || az[0][v] < 10) ++c4;
+    }
+    if (c3 == 6 || c1 == 6 || c2 == 6 || c4 == 6) continue;
+    const int32_t mx = sx / 6, my = sy / 6, mz = sz / 6;
+    const int32_t d = jtrunc_d(sqrt((double)imul32(m->cy - my, m->cy - my) + (double)imul32(m->cx - mx, m->cx - mx) +
+                                     (double)imul32(mz, mz)));
+    if (d < m->fade[7]) {
+      const int32_t *c = m->clc[i][cslot][l / 2];
+      fog_color(m, g, c[0], c[1], c[2], d);
+      gfx_fill_polygon(g, px, py, 6);
+    }
+  }
+}
+
+void medium_drawclouds(Medium *m, Graphics2D *g) {
+  const float xz = m->xz + m->fxz, zy = m->zy + m->fzy;
+  const float cos_xz = medium_cos(m, xz), sin_xz = medium_sin(m, xz);
+  const float cos_zy = medium_cos(m, zy), sin_zy = medium_sin(m, zy);
+  for (int32_t i = 0; i < m->noc; i++) {
+    const int32_t X = m->clx[i] - m->x / 20 - m->cx, Z = m->clz[i] - m->z / 20 - m->cz;
+    const int32_t n = m->cx + jtrunc((float)X * cos_xz - (float)Z * sin_xz);
+    const int32_t inner = m->cz + jtrunc((float)X * sin_xz + (float)Z * cos_xz);
+    const int32_t n2 = m->cz + jtrunc((float)(m->cldd[4] - m->y / 20 - m->cy) * sin_zy + (float)(inner - m->cz) * cos_zy);
+    const int32_t xs = medium_xs(m, n + m->cmx[i], n2);
+    const int32_t xs2 = medium_xs(m, n - m->cmx[i], n2);
+    if (!(xs > 0 && xs2 < m->w && n2 > -m->cmx[i] && xs - xs2 > 20)) continue;
+    int32_t ax[3][12], ay[3][12], az[3][12];
+    for (int32_t j = 0; j < 3; j++) {
+      for (int32_t k = 0; k < 12; k++) {
+        ax[j][k] = m->clax[i][j][k] + m->clx[i] - m->x / 20;
+        az[j][k] = m->claz[i][j][k] + m->clz[i] - m->z / 20;
+        ay[j][k] = m->clay[i][j][k] + m->cldd[4] - m->y / 20;
+      }
+      medium_rot(m, ax[j], az[j], m->cx, m->cz, xz, 12);
+      medium_rot(m, ay[j], az[j], m->cy, m->cz, zy, 12);
+    }
+    // Outer skirt, inner skirt, then the cap: the cloud's own depth order.
+    cloud_band(m, g, i, ax, ay, az, 1, 2, 1);
+    cloud_band(m, g, i, ax, ay, az, 0, 1, 0);
+    int32_t px[12], py[12];
+    int32_t c1 = 0, c2 = 0, c3 = 0, c4 = 0, sx = 0, sy = 0, sz = 0;
+    for (int32_t k = 0; k < 12; k++) {
+      px[k] = medium_xs(m, ax[0][k], az[0][k]);
+      py[k] = medium_ys(m, ay[0][k], az[0][k]);
+      sx += ax[0][k];
+      sy += ay[0][k];
+      sz += az[0][k];
+      if (py[k] < 0 || az[0][k] < 10) ++c1;
+      if (py[k] > m->h || az[0][k] < 10) ++c2;
+      if (px[k] < 0 || az[0][k] < 10) ++c3;
+      if (px[k] > m->w || az[0][k] < 10) ++c4;
+    }
+    if (c3 == 12 || c1 == 12 || c2 == 12 || c4 == 12) continue;
+    const int32_t mx = sx / 12, my = sy / 12, mz = sz / 12;
+    const int32_t d = jtrunc_d(sqrt((double)imul32(m->cy - my, m->cy - my) + (double)imul32(m->cx - mx, m->cx - mx) +
+                                     (double)imul32(mz, mz)));
+    if (d < m->fade[7]) {
+      fog_color(m, g, m->clds[0], m->clds[1], m->clds[2], d);
+      gfx_fill_polygon(g, px, py, 12);
+    }
+  }
+}
+
+void medium_newmountains(Medium *m, int32_t n, int32_t n2, int32_t n3, int32_t n4) {
+  free_mountains(m);
+  JavaRandom rnd;
+  jrandom_init(&rnd, m->mgen);
+  m->nmt = jtrunc_d(20.0 + 10.0 * jrandom_next_double(&rnd));
+  const int32_t n5 = (n + n2) / 60;
+  const int32_t n6 = (n3 + n4) / 60;
+  const int32_t n7 = (n2 - n > n4 - n3 ? n2 - n : n4 - n3) / 60;
+  m->mrd = calloc((size_t)m->nmt, sizeof(int32_t));
+  m->nmv = calloc((size_t)m->nmt, sizeof(int32_t));
+  m->mtx = calloc((size_t)m->nmt, sizeof(int32_t *));
+  m->mty = calloc((size_t)m->nmt, sizeof(int32_t *));
+  m->mtz = calloc((size_t)m->nmt, sizeof(int32_t *));
+  m->mtc = calloc((size_t)m->nmt, sizeof(int32_t **));
+  int32_t *dist = calloc((size_t)m->nmt, sizeof(int32_t));
+  int32_t *rank = calloc((size_t)m->nmt, sizeof(int32_t));
+  for (int32_t i = 0; i < m->nmt; i++) {
+    dist[i] = jtrunc_d(10000.0 + jrandom_next_double(&rnd) * 10000.0);
+    const int32_t n8 = jtrunc_d(jrandom_next_double(&rnd) * 360.0);
+    double n9, n10;
+    int32_t n11;
+    const double ra = jrandom_next_double(&rnd), rb = jrandom_next_double(&rnd);
+    if (ra > rb) {
+      n9 = (float)(0.2 + jrandom_next_double(&rnd) * 0.35);
+      n10 = (float)(0.2 + jrandom_next_double(&rnd) * 0.35);
+      m->nmv[i] = jtrunc_d(n9 * (24.0 + 16.0 * jrandom_next_double(&rnd)));
+      n11 = jtrunc_d(85.0 + 10.0 * jrandom_next_double(&rnd));
+    } else {
+      n9 = (float)(0.3 + jrandom_next_double(&rnd) * 1.1);
+      n10 = (float)(0.2 + jrandom_next_double(&rnd) * 0.35);
+      m->nmv[i] = jtrunc_d(n9 * (12.0 + 8.0 * jrandom_next_double(&rnd)));
+      n11 = jtrunc_d(104.0 - 10.0 * jrandom_next_double(&rnd));
+    }
+    const int32_t nv = m->nmv[i];
+    int32_t *tx = m->mtx[i] = calloc((size_t)(nv * 2 + 1), sizeof(int32_t));
+    int32_t *ty = m->mty[i] = calloc((size_t)(nv * 2 + 1), sizeof(int32_t));
+    int32_t *tz = m->mtz[i] = calloc((size_t)(nv * 2 + 1), sizeof(int32_t));
+    m->mtc[i] = alloc_i2(nv, 3);
+    for (int32_t j = 0; j < nv; j++) {
+      tx[j] = jtrunc_d(((double)(j * 500) + (jrandom_next_double(&rnd) * 800.0 - 400.0) - 250.0 * (nv - 1)) * n9);
+      tx[j + nv] = jtrunc_d(((double)(j * 500) + (jrandom_next_double(&rnd) * 800.0 - 400.0) - 250.0 * (nv - 1)) * n9);
+      // Both ends are rewritten on every pass, as the Java does (each one a
+      // random drawn); the second reads tx[nv-1] before it is set.
+      tx[nv] = jtrunc_d((double)tx[0] - (100.0 + jrandom_next_double(&rnd) * 600.0) * n9);
+      tx[nv * 2 - 1] = jtrunc_d((double)tx[nv - 1] + (100.0 + jrandom_next_double(&rnd) * 600.0) * n9);
+      if (j == 0 || j == nv - 1) ty[j] = jtrunc_d((-400.0 - 1200.0 * jrandom_next_double(&rnd)) * n10 + m->ground);
+      if (j == 1 || j == nv - 2) ty[j] = jtrunc_d((-1000.0 - 1450.0 * jrandom_next_double(&rnd)) * n10 + m->ground);
+      if (j > 1 && j < nv - 2) ty[j] = jtrunc_d((-1600.0 - 1700.0 * jrandom_next_double(&rnd)) * n10 + m->ground);
+      ty[j + nv] = m->ground - 70;
+      tz[j] = n6 + n7 + dist[i];
+      tz[j + nv] = n6 + n7 + dist[i];
+      const float n12 = (float)(0.5 + jrandom_next_double(&rnd) * 0.5);
+      const float r170 = (float)(170.0 * n12);
+      int32_t c = jtrunc(r170 + r170 * (float)(m->snap[0] / 100.0));
+      m->mtc[i][j][0] = c > 255 ? 255 : c < 0 ? 0 : c;
+      c = jtrunc((float)n11 * n12 + (float)(85.0 * n12) * (float)(m->snap[1] / 100.0));
+      m->mtc[i][j][1] = c > 255 ? 255 : c < 1 ? 0 : c;
+      m->mtc[i][j][2] = 0;
+    }
+    for (int32_t k = 1; k < nv - 1; k++) ty[k] = ((ty[k - 1] + ty[k + 1]) / 2 + ty[k]) / 2;
+    medium_rot(m, tx, tz, n5, n6, (float)n8, nv * 2);
+  }
+  // Ranked by distance so medium_drawmountains paints far to near.
+  for (int32_t l = 0; l < m->nmt; l++) {
+    for (int32_t k = l + 1; k < m->nmt; k++) {
+      if (dist[l] < dist[k]) ++rank[l];
+      else ++rank[k];
+    }
+    m->mrd[rank[l]] = l;
+  }
+  free(dist);
+  free(rank);
+}
+
+void medium_drawmountains(Medium *m, Graphics2D *g) {
+  const float xz = m->xz + m->fxz, zy = m->zy + m->fzy;
+  const float cos_xz = medium_cos(m, xz), sin_xz = medium_sin(m, xz);
+  const float cos_zy = medium_cos(m, zy), sin_zy = medium_sin(m, zy);
+  for (int32_t i = 0; i < m->nmt; i++) {
+    const int32_t n = m->mrd[i];
+    const int32_t nv = m->nmv[n];
+    if (nv < 1) continue;
+    int32_t ends_x[2], ends_z[2];
+    const int32_t end_idx[2] = {0, nv - 1};
+    for (int32_t e = 0; e < 2; e++) {
+      const int32_t idx = end_idx[e];
+      const int32_t X = m->mtx[n][idx] - m->x / 30 - m->cx, Z = m->mtz[n][idx] - m->z / 30 - m->cz;
+      ends_x[e] = m->cx + jtrunc((float)X * cos_xz - (float)Z * sin_xz);
+      const int32_t inner = m->cz + jtrunc((float)X * sin_xz + (float)Z * cos_xz);
+      ends_z[e] = m->cz + jtrunc((float)(m->mty[n][idx] - m->y / 30 - m->cy) * sin_zy + (float)(inner - m->cz) * cos_zy);
+    }
+    if (!(medium_xs(m, ends_x[1], ends_z[1]) > 0 && medium_xs(m, ends_x[0], ends_z[0]) < m->w)) continue;
+    int32_t *ax = malloc(sizeof(int32_t) * (size_t)nv * 6);
+    int32_t *ay = ax + nv * 2, *az = ax + nv * 4;
+    for (int32_t j = 0; j < nv * 2; j++) {
+      ax[j] = m->mtx[n][j] - m->x / 30;
+      ay[j] = m->mty[n][j] - m->y / 30;
+      az[j] = m->mtz[n][j] - m->z / 30;
+    }
+    const int32_t q = nv / 4;
+    const int32_t n4 = jtrunc_d(sqrt((double)imul32(ax[q], ax[q]) + (double)imul32(az[q], az[q])));
+    medium_rot(m, ax, az, m->cx, m->cz, xz, nv * 2);
+    medium_rot(m, ay, az, m->cy, m->cz, zy, nv * 2);
+    int32_t px[4], py[4];
+    for (int32_t k = 0; k < nv - 1; k++) {
+      int32_t c1 = 0, c2 = 0, c3 = 0, c4 = 0;
+      for (int32_t l = 0; l < 4; l++) {
+        int32_t v = l + k;
+        if (l == 2) v = k + nv + 1;
+        if (l == 3) v = k + nv;
+        px[l] = medium_xs(m, ax[v], az[v]);
+        py[l] = medium_ys(m, ay[v], az[v]);
+        if (py[l] < 0 || az[v] < 10) ++c1;
+        if (py[l] > m->h || az[v] < 10) ++c2;
+        if (px[l] < 0 || az[v] < 10) ++c3;
+        if (px[l] > m->w || az[v] < 10) ++c4;
+      }
+      if (c3 == 4 || c1 == 4 || c2 == 4 || c4 == 4) continue;
+      float n10 = (float)(n4 / 2500.0) + (float)((8000.0 - m->fade[0]) / 1000.0);
+      n10 = n10 - 2.0f;
+      n10 = n10 - (float)((fabs((double)m->y) - 250.0) / 5000.0);
+      if (n10 > 0.0f && n10 < 10.0f) {
+        if (n10 < 3.5f) n10 = 3.5f;
+        const float den = 2.0f + n10 * 2.0f;
+        int32_t rgb[3];
+        for (int32_t c = 0; c < 3; c++) {
+          const float sum = (float)((double)(m->mtc[n][k][c] + m->cgrnd[c]) + (double)((float)m->csky[c] * n10) +
+                                    (double)((float)m->cfade[c] * n10));
+          rgb[c] = jtrunc(sum / den);
+        }
+        gfx_set_color(g, rgb[0], rgb[1], rgb[2]);
+        gfx_fill_polygon(g, px, py, 4);
+      }
+    }
+    free(ax);
+  }
+}
+
+// A star's two colours: base 200, one channel raised by up to 55 and its
+// neighbour by 55, then mixed with the sky. `rnd` NULL draws from
+// nfm_random (the twinkle), else from the stage's own JavaRandom.
+static double star_rand(JavaRandom *rnd) { return rnd ? jrandom_next_double(rnd) : nfm_random(); }
+
+static void star_colour(Medium *m, int32_t i, JavaRandom *rnd) {
+  int32_t a = jtrunc_d(3.0 * star_rand(rnd));
+  if (a >= 3) a = 0;
+  if (a <= -1) a = 2;
+  int32_t b = a + 1;
+  const double r1 = star_rand(rnd), r2 = star_rand(rnd);
+  if (r1 > r2) b = a - 1;
+  if (b == 3) b = 0;
+  if (b == -1) b = 2;
+  for (int32_t j = 0; j < 3; j++) {
+    m->stc[i][0][j] = 200;
+    if (a == j) m->stc[i][0][j] = jtrunc_d(m->stc[i][0][j] + 55.0 * star_rand(rnd));
+    if (b == j) m->stc[i][0][j] += 55;
+    m->stc[i][0][j] = (m->stc[i][0][j] * 2 + m->csky[j]) / 3;
+    m->stc[i][1][j] = (m->stc[i][0][j] + m->csky[j]) / 2;
+  }
+}
+
+void medium_newstars(Medium *m) {
+  free_stars(m);
+  if (!m->lightson) return;
+  JavaRandom rnd;
+  jrandom_init(&rnd, jtrunc_d(nfm_random() * 100000.0));
+  m->nst = 40;
+  m->stx = calloc((size_t)m->nst, sizeof(int32_t));
+  m->stz = calloc((size_t)m->nst, sizeof(int32_t));
+  m->bst = calloc((size_t)m->nst, sizeof(bool));
+  m->twn = calloc((size_t)m->nst, sizeof(int32_t));
+  m->stc = malloc(sizeof(int32_t **) * (size_t)m->nst);
+  for (int32_t i = 0; i < m->nst; i++) {
+    m->stc[i] = alloc_i2(2, 3);
+    m->stx[i] = jtrunc_d(2000.0 * jrandom_next_double(&rnd) - 1000.0);
+    m->stz[i] = jtrunc_d(2000.0 * jrandom_next_double(&rnd) - 1000.0);
+    star_colour(m, i, &rnd);
+    m->twn[i] = jtrunc_d(4.0 * jrandom_next_double(&rnd));
+    m->bst[i] = jrandom_next_double(&rnd) > 0.8;
+  }
+}
+
+void medium_drawstars(Medium *m, Graphics2D *g) {
+  const float xz = m->xz + m->fxz, zy = m->zy + m->fzy;
+  const float cos_xz = medium_cos(m, xz), sin_xz = medium_sin(m, xz);
+  const float cos_zy = medium_cos(m, zy), sin_zy = medium_sin(m, zy);
+  for (int32_t i = 0; i < m->nst; i++) {
+    const int32_t n = m->cx + jtrunc((float)m->stx[i] * cos_xz - (float)m->stz[i] * sin_xz);
+    const int32_t n2 = m->cz + jtrunc((float)m->stx[i] * sin_xz + (float)m->stz[i] * cos_xz);
+    const int32_t n3 = m->cy + jtrunc(-200.0f * cos_zy - (float)n2 * sin_zy);
+    const int32_t n4 = m->cz + jtrunc(-200.0f * sin_zy + (float)n2 * cos_zy);
+    const int32_t xs = medium_xs(m, n, n4);
+    const int32_t ys = medium_ys(m, n3, n4);
+    if (!(xs - 1 > m->iw && xs + 3 < m->w && ys - 1 > m->ih && ys + 3 < m->h)) continue;
+    // The twinkle is a per-tick effect (and rolls the draw randoms).
+    if (!m->interpolating) {
+      if (m->twn[i] == 0) {
+        star_colour(m, i, NULL);
+        m->twn[i] = 3;
+      } else {
+        --m->twn[i];
+      }
+    }
+    const int32_t big = m->bst[i] ? 1 : 0;
+    gfx_set_color(g, m->stc[i][1][0], m->stc[i][1][1], m->stc[i][1][2]);
+    gfx_fill_rect(g, xs - 1, ys, 3 + big, 1 + big);
+    gfx_fill_rect(g, xs, ys - 1, 1 + big, 3 + big);
+    gfx_set_color(g, m->stc[i][0][0], m->stc[i][0][1], m->stc[i][0][2]);
+    gfx_fill_rect(g, xs, ys, 1 + big, 1 + big);
+  }
 }
