@@ -22,6 +22,10 @@ option(NFM_NXLINK "Send stdout/stderr to nxlink on the PC" OFF)
 if(NFM_NXLINK)
   target_compile_definitions(nfm_switch PRIVATE NFM_NXLINK=1)
 endif()
+option(NFM_SVCLOG "Send stderr to svcOutputDebugString (emulator logs)" OFF)
+if(NFM_SVCLOG)
+  target_compile_definitions(nfm_switch PRIVATE NFM_SVCLOG=1)
+endif()
 
 # RomFS: the game's own asset folders, copied verbatim from the repo root.
 set(NFM_ROMFS "${CMAKE_CURRENT_BINARY_DIR}/romfs")

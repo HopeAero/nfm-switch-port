@@ -51,6 +51,12 @@ PC with `nxlink -s`.
 - [x] `native/platform/switch/`: SDL2 window, legacy GL 2.1 context, the 33 GL
       functions loaded at runtime (`gl_include.h`: no libGL, devkitPro's glad is
       core-only), romfs assets, SD-card save, libnx pads. **Builds** (`23a6e5e`).
+- [x] **Runs in Eden** (yuzu fork, v0.2.0-rc2, 2026-10-06): 60 FPS, menus and
+      Instructions drawn right. The first build was black at 37 FPS: without
+      `SDL_GL_CONTEXT_PROFILE_MASK` SDL's Switch backend creates an **OpenGL ES 3.2**
+      context, where glBegin & co. resolve to no-ops. With the compatibility mask
+      Mesa gives `4.3 (Compatibility Profile) Mesa 20.1.0 | NV120 | nouveau`.
+      `-DNFM_SVCLOG=ON` prints stderr in the emulator's log (how this was found).
 - [ ] **First run on hardware** -- untested. What to watch: the GL context
       (if Mesa refuses a legacy 2.1 context the game prints
       `SDL_GL_CreateContext failed` or `GL function not available: ...` with

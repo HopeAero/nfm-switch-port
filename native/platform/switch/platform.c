@@ -43,9 +43,12 @@ bool platform_init(int32_t width, int32_t height) {
     fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
     return false;
   }
-  // A legacy (pre-3.1) context: Mesa serves the GL 1.1 fixed-function
+  // Desktop GL, compatibility profile: Mesa serves the GL 1.1 fixed-function
   // pipeline in it, which is what the renderer is written in; the FBO calls
-  // (ARB_framebuffer_object) are there too on nouveau.
+  // (ARB_framebuffer_object) are there too on nouveau. Without the profile
+  // mask SDL's Switch backend hands out an OpenGL ES 3.2 context, where
+  // glBegin & co. resolve to no-ops and every frame comes out black.
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
@@ -67,6 +70,11 @@ bool platform_init(int32_t width, int32_t height) {
   if (missing) {
     fprintf(stderr, "GL function not available: %s\n", missing);
     return false;
+  }
+  const GLubyte *(*get_string)(GLenum) = (const GLubyte *(*)(GLenum))SDL_GL_GetProcAddress("glGetString");
+  if (get_string) {
+    fprintf(stderr, "GL: %s | %s | %s\n", (const char *)get_string(GL_VERSION),
+            (const char *)get_string(GL_RENDERER), (const char *)get_string(GL_VENDOR));
   }
   SDL_GL_SetSwapInterval(1);
   return true;
