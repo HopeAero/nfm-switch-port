@@ -26,6 +26,27 @@ static SDL_Window *g_window = NULL;
 static SDL_GLContext g_gl = NULL;
 PadState g_pad;   // shared with input.c
 
+// Vibration: the handles for each way player 1 may be holding the console --
+// the Joy-Cons attached (handheld), both detached in the hands (dual), or a
+// Pro Controller (full key). A value is sent to all of them; the ones not in
+// use just refuse it. platform_poll() sends the stop when the time is up.
+static HidVibrationDeviceHandle g_vib[3][2];
+static bool g_vib_ok[3];
+static uint64_t g_rumble_end_ms = 0;   // 0: nothing running
+
+static void rumble_send(float amp) {
+  HidVibrationValue v[2];
+  for (int i = 0; i < 2; i++) {
+    v[i].amp_low = amp;
+    v[i].freq_low = 160.0f;
+    v[i].amp_high = amp;
+    v[i].freq_high = 320.0f;
+  }
+  for (int k = 0; k < 3; k++) {
+    if (g_vib_ok[k]) hidSendVibrationValues(g_vib[k], v, 2);
+  }
+}
+
 bool platform_init(int32_t width, int32_t height) {
   (void)width;
   (void)height;
@@ -38,6 +59,9 @@ bool platform_init(int32_t width, int32_t height) {
   }
   padConfigureInput(1, HidNpadStyleSet_NpadStandard);
   padInitializeDefault(&g_pad);
+  g_vib_ok[0] = R_SUCCEEDED(hidInitializeVibrationDevices(g_vib[0], 2, HidNpadIdType_Handheld, HidNpadStyleTag_NpadHandheld));
+  g_vib_ok[1] = R_SUCCEEDED(hidInitializeVibrationDevices(g_vib[1], 2, HidNpadIdType_No1, HidNpadStyleTag_NpadJoyDual));
+  g_vib_ok[2] = R_SUCCEEDED(hidInitializeVibrationDevices(g_vib[2], 2, HidNpadIdType_No1, HidNpadStyleTag_NpadFullKey));
 
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
     fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -53,10 +77,14 @@ bool platform_init(int32_t width, int32_t height) {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-  // The screen is 1280x720 (docked output is scaled by the console); game.c
-  // draws its 800x450 game space to an offscreen target and stretches it to
-  // platform_display_size() at the end of each frame.
-  g_window = SDL_CreateWindow("Need for Madness", 0, 0, 1280, 720, SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN);
+  // 1280x720 handheld, 1920x1080 in the dock (as the console is at launch;
+  // docking or undocking mid-game keeps the size it started with, the
+  // console scales the other). game.c draws its 800x450 game space into an
+  // offscreen target -- at this size when Settings > Graphics is HD -- and
+  // stretches it to platform_display_size() at the end of each frame.
+  const bool docked = appletGetOperationMode() == AppletOperationMode_Console;
+  g_window = SDL_CreateWindow("Need for Madness", 0, 0, docked ? 1920 : 1280, docked ? 1080 : 720,
+                              SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN);
   if (!g_window) {
     fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
     return false;
@@ -81,6 +109,7 @@ bool platform_init(int32_t width, int32_t height) {
 }
 
 void platform_shutdown(void) {
+  rumble_send(0.0f);
   if (g_gl) { SDL_GL_DeleteContext(g_gl); g_gl = NULL; }
   if (g_window) { SDL_DestroyWindow(g_window); g_window = NULL; }
   SDL_Quit();
@@ -120,8 +149,23 @@ bool platform_progress_path(char *buf, size_t buf_len) {
   return n > 0 && (size_t)n < buf_len;
 }
 
+bool platform_has_rumble(void) {
+  return true;
+}
+
+void platform_rumble(float strength, uint32_t ms) {
+  if (strength <= 0.0f || ms == 0) return;
+  if (strength > 1.0f) strength = 1.0f;
+  rumble_send(strength);
+  g_rumble_end_ms = SDL_GetTicks64() + ms;
+}
+
 bool platform_poll(bool held[BTN_COUNT]) {
   bool running = appletMainLoop();   // false when HOME > close asks the app to quit
+  if (g_rumble_end_ms && SDL_GetTicks64() >= g_rumble_end_ms) {
+    rumble_send(0.0f);
+    g_rumble_end_ms = 0;
+  }
   SDL_Event ev;
   while (SDL_PollEvent(&ev)) {
     if (ev.type == SDL_QUIT) running = false;

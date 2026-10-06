@@ -56,9 +56,16 @@ void gfx_gl_update_texture_rows(int32_t texture, const uint8_t *rgba, int32_t wi
 // for what this exists to support. `fbo`/`tex` are GL object names (GLuint
 // in gfx_gl.c) stored as plain ints so this header stays GL-type-free,
 // same convention gfx_gl_upload_texture's own int32_t return already uses.
+// `width`/`height` are the target's size in GAME-SPACE units (the 800x450
+// every draw and blit quad is laid out in); `px_w`/`px_h` its texture's real
+// size in pixels. They are the same at the original resolution; the Settings
+// screen's HD draws the same game space into a display-sized texture -- bind
+// it with glViewport(0, 0, px_w, px_h) and the projection does the rest.
 typedef struct {
   uint32_t fbo, tex;
   int32_t width, height;
+  int32_t px_w, px_h;
+  bool linear;   // the texture's filter (init_scaled)
 } GfxGlRenderTarget;
 
 /** Allocates a `width`x`height` RGBA8 texture and a framebuffer object
@@ -67,6 +74,12 @@ typedef struct {
  * should fall back to drawing straight to the default framebuffer, same
  * fail-soft convention as a missing HUD asset elsewhere in this port. */
 bool gfx_gl_render_target_init(GfxGlRenderTarget *rt, int32_t width, int32_t height);
+
+/** The same, `width`x`height` game-space units in a `px_w`x`px_h` texture,
+ * sampled with linear filtering when `linear` (the stretch to the display
+ * then blends instead of repeating texels). */
+bool gfx_gl_render_target_init_scaled(GfxGlRenderTarget *rt, int32_t width, int32_t height,
+                                      int32_t px_w, int32_t px_h, bool linear);
 void gfx_gl_render_target_free(GfxGlRenderTarget *rt);
 
 /** Redirects subsequent drawing (gfx_submit_gl, raw glClear/glViewport)

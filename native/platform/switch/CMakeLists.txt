@@ -25,6 +25,7 @@ endif()
 option(NFM_SVCLOG "Send stderr to svcOutputDebugString (emulator logs)" OFF)
 if(NFM_SVCLOG)
   target_compile_definitions(nfm_switch PRIVATE NFM_SVCLOG=1)
+  target_compile_definitions(nfm_game PRIVATE NFM_SVCLOG=1)   # game.c's diagnostics
 endif()
 
 # RomFS: the game's own asset folders, copied verbatim from the repo root.

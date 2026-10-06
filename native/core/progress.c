@@ -203,30 +203,42 @@ static void settings_path_for(const char *progress_path, char *out, size_t out_l
   memcpy(out + dir_len, "settings.txt", sizeof("settings.txt"));
 }
 
-int32_t game_settings_load_blur(const char *progress_path) {
+GameSettings game_settings_defaults(int32_t graphics) {
+  GameSettings s = {GAME_SETTINGS_BLUR_DEFAULT, graphics, true, true};
+  return s;
+}
+
+void game_settings_load(const char *progress_path, GameSettings *s) {
   char path[1024];
   settings_path_for(progress_path, path, sizeof(path));
   FILE *f = fopen(path, "r");
-  if (!f) return GAME_SETTINGS_BLUR_DEFAULT;
-  int v = GAME_SETTINGS_BLUR_DEFAULT;
+  if (!f) return;
   char line[64];
   while (fgets(line, sizeof(line), f)) {
-    int parsed;
-    if (sscanf(line, "motion_blur=%d", &parsed) == 1) v = parsed;
+    int v;
+    if (sscanf(line, "motion_blur=%d", &v) == 1) {
+      if (v < 0) v = 0;
+      if (v > 100) v = 100;
+      s->blur = (int32_t)(((v + 10) / 20) * 20);
+    } else if (sscanf(line, "graphics=%d", &v) == 1) {
+      if (v >= 0 && v < GFX_QUALITY_COUNT) s->graphics = v;
+    } else if (sscanf(line, "screen_shake=%d", &v) == 1) {
+      s->shake = v != 0;
+    } else if (sscanf(line, "vibration=%d", &v) == 1) {
+      s->rumble = v != 0;
+    }
   }
   fclose(f);
-  if (v < 0) v = 0;
-  if (v > 100) v = 100;
-  return (int32_t)(((v + 10) / 20) * 20);
 }
 
-bool game_settings_save_blur(const char *progress_path, int32_t blur) {
+bool game_settings_save(const char *progress_path, const GameSettings *s) {
   char path[1024];
   settings_path_for(progress_path, path, sizeof(path));
   ensure_parent_dir(path);
   FILE *f = fopen(path, "w");
   if (!f) return false;
-  fprintf(f, "motion_blur=%d\n", (int)blur);
+  fprintf(f, "motion_blur=%d\ngraphics=%d\nscreen_shake=%d\nvibration=%d\n",
+          (int)s->blur, (int)s->graphics, s->shake ? 1 : 0, s->rumble ? 1 : 0);
   return fclose(f) == 0;
 }
 

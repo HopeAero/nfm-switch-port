@@ -127,3 +127,13 @@ bool platform_poll(bool held[BTN_COUNT]) {
   held[BTN_PAUSE] = keys[SDL_SCANCODE_RETURN];
   return running;
 }
+
+// No controller vibration on this target (see common/platform.h).
+bool platform_has_rumble(void) {
+  return false;
+}
+
+void platform_rumble(float strength, uint32_t ms) {
+  (void)strength;
+  (void)ms;
+}

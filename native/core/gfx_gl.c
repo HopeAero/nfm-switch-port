@@ -108,9 +108,17 @@ void gfx_gl_update_texture_rows(int32_t texture, const uint8_t *rgba, int32_t wi
 }
 
 bool gfx_gl_render_target_init(GfxGlRenderTarget *rt, int32_t width, int32_t height) {
+  return gfx_gl_render_target_init_scaled(rt, width, height, width, height, false);
+}
+
+bool gfx_gl_render_target_init_scaled(GfxGlRenderTarget *rt, int32_t width, int32_t height,
+                                      int32_t px_w, int32_t px_h, bool linear) {
   rt->fbo = rt->tex = 0;
   rt->width = width;
   rt->height = height;
+  rt->px_w = px_w;
+  rt->px_h = px_h;
+  rt->linear = linear;
 
   GLuint tex = 0;
   glGenTextures(1, &tex);
@@ -121,11 +129,14 @@ bool gfx_gl_render_target_init(GfxGlRenderTarget *rt, int32_t width, int32_t hei
   // own doc comment), a 1:1 texel copy every time, so filtering never
   // actually runs; NEAREST just documents that intent rather than
   // implying a smoothing pass that isn't happening.
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  // (Smooth / HD: LINEAR, so the stretch to the display blends; the 1:1
+  // target-to-target blits of the trail land on texel centres either way.)
+  const GLint filter = linear ? GL_LINEAR : GL_NEAREST;
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, px_w, px_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
   glBindTexture(GL_TEXTURE_2D, 0);
 
   GLuint fbo = 0;
@@ -219,7 +230,8 @@ void gfx_gl_render_target_blit_region(const GfxGlRenderTarget *rt, float src_x, 
   glTexCoord2f(u1, vb); glVertex2f(x1, y1);
   glTexCoord2f(u0, vb); glVertex2f(x0, y1);
   glEnd();
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  // Back to the target's own filter (NEAREST unless Smooth / HD made it LINEAR).
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, rt->linear ? GL_LINEAR : GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, rt->linear ? GL_LINEAR : GL_NEAREST);
   glDisable(GL_TEXTURE_2D);
 }

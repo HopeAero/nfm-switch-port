@@ -2661,6 +2661,55 @@ static void draw_instructions(Graphics2D *g, const InstAssets *ia,
   }
 }
 
+// Settings > Graphics' default: the Switch's screen is far past 800x450, so
+// it starts in HD; the Vita (960x544) and desktop keep the original look.
+#ifdef NFM_TARGET_SWITCH
+#define NFM_DEFAULT_GRAPHICS GFX_HD
+#else
+#define NFM_DEFAULT_GRAPHICS GFX_ORIGINAL
+#endif
+
+/**
+ * (Re)creates the two targets the frame is drawn into and the trail blends
+ * between (see the comment where game_run() first calls this), sized for
+ * Settings > Graphics: the 800x450 game space in an 800x450 texture
+ * (Original, NEAREST; Smooth, LINEAR), or in a texture the display's own size
+ * (HD) -- same game-space coordinates, just more pixels per unit. `had`
+ * frees the previous pair first. Returns false (both freed) if either fails,
+ * and the frame then draws straight to the display.
+ */
+static bool scene_targets_build(GfxGlRenderTarget *scene, GfxGlRenderTarget *accum, bool had,
+                                int32_t width, int32_t height, int32_t quality) {
+  if (had) {
+    gfx_gl_render_target_free(scene);
+    gfx_gl_render_target_free(accum);
+  }
+  int32_t px_w = width, px_h = height;
+  if (quality == GFX_HD) platform_display_size(&px_w, &px_h);
+  const bool linear = quality != GFX_ORIGINAL;
+  if (!gfx_gl_render_target_init_scaled(scene, width, height, px_w, px_h, linear)) return false;
+  if (!gfx_gl_render_target_init_scaled(accum, width, height, px_w, px_h, linear)) {
+    gfx_gl_render_target_free(scene);
+    return false;
+  }
+  // glTexImage2D with a NULL pixel pointer leaves contents undefined, and the
+  // trail reads this one before it is ever fully written.
+  gfx_gl_render_target_bind(accum);
+  glClear(GL_COLOR_BUFFER_BIT);
+  gfx_gl_render_target_bind(NULL);
+  return true;
+}
+
+/** 800x450 RGBA from a `w`x`h` glReadPixels frame (both bottom-up), nearest. */
+static void downsample_to_game(const uint8_t *src, int32_t w, int32_t h, uint8_t *dst) {
+  for (int32_t y = 0; y < 450; y++) {
+    const uint8_t *row = src + (size_t)(y * h / 450) * (size_t)w * 4;
+    for (int32_t x = 0; x < 800; x++) {
+      memcpy(dst + ((size_t)y * 800 + (size_t)x) * 4, row + (size_t)(x * w / 800) * 4, 4);
+    }
+  }
+}
+
 int game_run(void) {
   // See platform_asset_prefix()'s own doc comment (platform.h) -- "" on
   // desktop (repo-root-relative paths, matching AGENTS.md's convention
@@ -2801,8 +2850,7 @@ int game_run(void) {
   // drawing straight to the default framebuffer every frame, same
   // fail-soft convention as a missing HUD asset elsewhere in this file --
   // just without the trailing effect, not a crash.
-  GfxGlRenderTarget scene_rt;
-  bool motion_blur_ok = gfx_gl_render_target_init(&scene_rt, width, height);
+  GfxGlRenderTarget scene_rt = {0};
 
   // The trail's HISTORY, held in a texture this code owns rather than in
   // the window's back buffer. The composite used to blend this frame's
@@ -2821,20 +2869,11 @@ int game_run(void) {
   // result is what reaches the screen. Same exponential falloff, now
   // identical on both platforms because nothing outside this file touches
   // the buffer between frames.
-  GfxGlRenderTarget accum_rt;
-  if (motion_blur_ok) {
-    motion_blur_ok = gfx_gl_render_target_init(&accum_rt, width, height);
-    if (!motion_blur_ok) {
-      gfx_gl_render_target_free(&scene_rt);
-    } else {
-      // glTexImage2D with a NULL pixel pointer leaves contents undefined,
-      // and this one is read before it is ever fully written -- without
-      // this the first frames composite against uninitialised GPU memory.
-      gfx_gl_render_target_bind(&accum_rt);
-      glClear(GL_COLOR_BUFFER_BIT);
-      gfx_gl_render_target_bind(NULL);
-    }
-  }
+  //
+  // Both are built by scene_targets_build(), at the size Settings > Graphics
+  // asks for (rebuilt once the settings are read, and when they change).
+  GfxGlRenderTarget accum_rt = {0};
+  bool motion_blur_ok = scene_targets_build(&scene_rt, &accum_rt, false, width, height, GFX_ORIGINAL);
 
   // Menu asset textures -- loaded ONCE at startup (they don't change
   // between menu states, and holding them across the whole session
@@ -3376,7 +3415,12 @@ int game_run(void) {
   // Settings screen (pause menu -> Settings): motion-blur intensity 0..100
   // in steps of 20, persisted beside the progress file. settings_row is
   // the highlighted row (0 = Motion Blur slider, 1 = Back).
-  int32_t blur_setting = progress_path_ok ? game_settings_load_blur(progress_path) : GAME_SETTINGS_BLUR_DEFAULT;
+  // Also Graphics (see scene_targets_build), Screen Shake and Vibration.
+  GameSettings settings = game_settings_defaults(NFM_DEFAULT_GRAPHICS);
+  if (progress_path_ok) game_settings_load(progress_path, &settings);
+  if (settings.graphics != GFX_ORIGINAL) {
+    motion_blur_ok = scene_targets_build(&scene_rt, &accum_rt, motion_blur_ok, width, height, settings.graphics);
+  }
   int32_t settings_row = 0;
   if (progress_path_ok) {
     game_progress_load_from_disk(&progress, progress_path);
@@ -4090,13 +4134,41 @@ int game_run(void) {
     } else if (state == STATE_SETTINGS) {
       // Up/down picks the row, left/right moves the slider in steps of 20,
       // Back (or cancel from anywhere) saves and returns to the pause menu.
-      if (KEY_EDGE(BTN_UP) || KEY_EDGE(BTN_DOWN)) settings_row ^= 1;
-      if (settings_row == 0) {
-        if (KEY_EDGE(BTN_LEFT) && blur_setting > 0) blur_setting -= 20;
-        if (KEY_EDGE(BTN_RIGHT) && blur_setting < 100) blur_setting += 20;
+      // Rows: 0 Motion Blur, 1 Graphics, 2 Screen Shake, 3 Vibration (only
+      // where the platform can vibrate), 4 Back.
+      const bool has_rumble = platform_has_rumble();
+      if (KEY_EDGE(BTN_DOWN)) {
+        settings_row = settings_row == 4 ? 0 : settings_row + 1;
+        if (settings_row == 3 && !has_rumble) settings_row = 4;
       }
-      if ((settings_row == 1 && KEY_EDGE(BTN_CONFIRM)) || KEY_EDGE(BTN_CANCEL)) {
-        if (progress_path_ok) game_settings_save_blur(progress_path, blur_setting);
+      if (KEY_EDGE(BTN_UP)) {
+        settings_row = settings_row == 0 ? 4 : settings_row - 1;
+        if (settings_row == 3 && !has_rumble) settings_row = 2;
+      }
+      const int32_t step = KEY_EDGE(BTN_RIGHT) ? 1 : KEY_EDGE(BTN_LEFT) ? -1 : 0;
+      if (step != 0) {
+        if (settings_row == 0) {
+          settings.blur += step * 20;
+          if (settings.blur < 0) settings.blur = 0;
+          if (settings.blur > 100) settings.blur = 100;
+        } else if (settings_row == 1) {
+          int32_t q = settings.graphics + step;
+          if (q >= 0 && q < GFX_QUALITY_COUNT && q != settings.graphics) {
+            settings.graphics = q;
+            // Applied at once: the next frame draws at the new size (the
+            // trail restarts; the paused frame behind this screen is kept).
+            motion_blur_ok = scene_targets_build(&scene_rt, &accum_rt, motion_blur_ok, width, height, q);
+            accum_valid = false;
+          }
+        } else if (settings_row == 2) {
+          settings.shake = !settings.shake;
+        } else if (settings_row == 3) {
+          settings.rumble = !settings.rumble;
+          if (settings.rumble) platform_rumble(0.6f, 200);   // a taste of it
+        }
+      }
+      if ((settings_row == 4 && KEY_EDGE(BTN_CONFIRM)) || KEY_EDGE(BTN_CANCEL)) {
+        if (progress_path_ok) game_settings_save(progress_path, &settings);
         state = STATE_PAUSED;
       }
     }
@@ -4842,9 +4914,15 @@ int game_run(void) {
       // car-targeting branch, the arrace leaderboard, and radarstat()).
       if (KEY_EDGE(BTN_ARRACE)) {
         control[0].arrace = !control[0].arrace;
+#ifdef NFM_SVCLOG
+        fprintf(stderr, "input: arrace -> %d\n", control[0].arrace);
+#endif
       }
       if (KEY_EDGE(BTN_RADAR)) {
         control[0].radar = !control[0].radar;
+#ifdef NFM_SVCLOG
+        fprintf(stderr, "input: radar -> %d\n", control[0].radar);
+#endif
       }
 
       // Pause -- xtGraphics.java:7579-7585, the `fase == 0` arm of stat()'s
@@ -4954,6 +5032,10 @@ int game_run(void) {
         if (mad[0].outshakedam > 0) {
           shaka = mad[0].outshakedam / 20;
           if (shaka > 25) shaka = 25;
+          // Settings > Vibration: the same crash felt in the controller, as
+          // strong and as long as the shake it arms (a no-op where the
+          // platform has no vibration, platform_rumble()).
+          if (settings.rumble) platform_rumble(0.25f + 0.75f * (float)shaka / 25.0f, 120u + 12u * (uint32_t)shaka);
         }
         mvect = 65 + (abs(lmxz - m.xz) / 5) * 100;
         if (mvect > 90) mvect = 90;
@@ -5002,8 +5084,20 @@ int game_run(void) {
         if (!pause_flex_read) pause_flex_read = malloc((size_t)800 * 450 * 4);
         if (!pause_flex_rgba) pause_flex_rgba = malloc((size_t)800 * 450 * 4);
         if (pause_flex_read && pause_flex_rgba) {
-          gfx_gl_render_target_bind(rt_pair[rt_cur ^ 1]);
-          glReadPixels(0, 0, 800, 450, GL_RGBA, GL_UNSIGNED_BYTE, pause_flex_read);
+          const GfxGlRenderTarget *shot = rt_pair[rt_cur ^ 1];
+          gfx_gl_render_target_bind(shot);
+          if (shot->px_w == 800 && shot->px_h == 450) {
+            glReadPixels(0, 0, 800, 450, GL_RGBA, GL_UNSIGNED_BYTE, pause_flex_read);
+          } else {
+            // Graphics: HD -- the frame is display-sized; pause_image() works
+            // on the original 800x450, so read it whole and bring it down.
+            uint8_t *full = malloc((size_t)shot->px_w * (size_t)shot->px_h * 4);
+            if (full) {
+              glReadPixels(0, 0, shot->px_w, shot->px_h, GL_RGBA, GL_UNSIGNED_BYTE, full);
+              downsample_to_game(full, shot->px_w, shot->px_h, pause_flex_read);
+              free(full);
+            }
+          }
           gfx_gl_render_target_bind(NULL);
           pause_image(pause_flex_read, pause_flex_rgba);
           if (pause_flex_tex < 0) pause_flex_tex = gfx_gl_upload_texture(pause_flex_rgba, 800, 450);
@@ -5062,9 +5156,10 @@ int game_run(void) {
       // Nothing to draw; the composite presents the last picture.
     } else if (use_rt) {
       gfx_gl_render_target_bind(rt_pair[rt_cur]);
-      // The target IS logical 800x450 (see gfx_gl_render_target_init());
-      // the composite at the end stretches it to the display.
-      glViewport(0, 0, width, height);
+      // The target is the logical 800x450 game space in px_w x px_h pixels
+      // (800x450 itself unless Graphics is HD); the composite at the end
+      // stretches it to the display.
+      glViewport(0, 0, rt_pair[rt_cur]->px_w, rt_pair[rt_cur]->px_h);
     } else {
       // Straight to the display: the viewport is the physical screen
       // (960x544 on the Vita), and the projection does the stretching the
@@ -5772,7 +5867,7 @@ int game_run(void) {
       }
       // Covers the whole blue-tinted panel pauseimage() baked into the backdrop
       // (281..518 x 8..196), so none of it shows around the plate.
-      draw_pause_plate(&g, 231, 8, 338, 192);
+      draw_pause_plate(&g, 231, 8, 338, 300);
       gfx_set_color(&g, 160, 196, 255);
       draw_centered(&g, "Settings", 400, 30 - 9, 2);
 
@@ -5787,13 +5882,13 @@ int game_run(void) {
         int32_t sx = track_x + k * track_w / 5;
         gfx_fill_rect(&g, sx - 1, track_y - 6, 2, 12);
       }
-      int32_t knob_x = track_x + blur_setting * track_w / 100;
+      int32_t knob_x = track_x + settings.blur * track_w / 100;
       gfx_set_color(&g, 255, 255, 255);
       gfx_fill_round_rect(&g, knob_x - 6, track_y - 9, 12, 18, 6, 6);
       gfx_set_color(&g, 0, 89, 223);
       gfx_draw_round_rect(&g, knob_x - 6, track_y - 9, 12, 18, 6, 6);
       char blur_label[16];
-      snprintf(blur_label, sizeof(blur_label), "%d", blur_setting);
+      snprintf(blur_label, sizeof(blur_label), "%d", settings.blur);
       gfx_set_color(&g, 255, 255, 255);
       draw_centered(&g, blur_label, 400, 120 - 6, 1);
       // Left/right arrows (vfont has no < > glyphs), dimmed at the ends.
@@ -5801,16 +5896,43 @@ int game_run(void) {
         int32_t lx[3] = {track_x - 26, track_x - 16, track_x - 16};
         int32_t ly[3] = {track_y, track_y - 7, track_y + 7};
         int32_t rx[3] = {track_x + track_w + 26, track_x + track_w + 16, track_x + track_w + 16};
-        if (blur_setting > 0) gfx_set_color(&g, 255, 255, 255); else gfx_set_color(&g, 30, 50, 80);
+        if (settings.blur > 0) gfx_set_color(&g, 255, 255, 255); else gfx_set_color(&g, 30, 50, 80);
         gfx_fill_polygon(&g, lx, ly, 3);
-        if (blur_setting < 100) gfx_set_color(&g, 255, 255, 255); else gfx_set_color(&g, 30, 50, 80);
+        if (settings.blur < 100) gfx_set_color(&g, 255, 255, 255); else gfx_set_color(&g, 30, 50, 80);
         gfx_fill_polygon(&g, rx, ly, 3);
       }
 
-      // Row 1: Back.
-      if (settings_row == 1) draw_pause_highlight(&g, 345, 150, 110, 22);
+      // Rows 1-3: a name and its value between arrows (dimmed at the ends of
+      // Graphics; the two switches just flip). Vibration only where the
+      // platform has it.
+      {
+        static const char *const kQuality[GFX_QUALITY_COUNT] = {"Original", "Smooth", "HD"};
+        struct { int32_t row; const char *name; const char *value; bool can_l, can_r; } rows[3] = {
+          {1, "Graphics", kQuality[settings.graphics], settings.graphics > 0, settings.graphics < GFX_QUALITY_COUNT - 1},
+          {2, "Screen Shake", settings.shake ? "On" : "Off", true, true},
+          {3, "Vibration", settings.rumble ? "On" : "Off", true, true},
+        };
+        const int32_t nrows = platform_has_rumble() ? 3 : 2;
+        for (int32_t i = 0; i < nrows; i++) {
+          const int32_t y = 150 + i * 36;
+          if (settings_row == rows[i].row) draw_pause_highlight(&g, 251, y - 12, 298, 28);
+          char label[48];
+          snprintf(label, sizeof(label), "%s: %s", rows[i].name, rows[i].value);
+          gfx_set_color(&g, 255, 255, 255);
+          draw_centered(&g, label, 400, y - 6, 1);
+          int32_t lx[3] = {268, 278, 278}, rx[3] = {532, 522, 522};
+          int32_t ly[3] = {y + 2, y - 5, y + 9};
+          if (rows[i].can_l) gfx_set_color(&g, 255, 255, 255); else gfx_set_color(&g, 30, 50, 80);
+          gfx_fill_polygon(&g, lx, ly, 3);
+          if (rows[i].can_r) gfx_set_color(&g, 255, 255, 255); else gfx_set_color(&g, 30, 50, 80);
+          gfx_fill_polygon(&g, rx, ly, 3);
+        }
+      }
+
+      // Row 4: Back.
+      if (settings_row == 4) draw_pause_highlight(&g, 345, 268, 110, 22);
       gfx_set_color(&g, 255, 255, 255);
-      draw_centered(&g, "Back", 400, 161 - 9, 2);
+      draw_centered(&g, "Back", 400, 279 - 9, 2);
     } else if (state == STATE_PAUSED || state == STATE_CANTREPLY) {
       // PAUSE MENU -- fase -7, pausedgame() (xtGraphics.java:4695-4807),
       // and the fase -8 banner that sits on top of it.
@@ -7075,6 +7197,10 @@ int game_run(void) {
         offset_x = (float)(int32_t)(shaka * 2.0 * nfm_random() - shaka);
         offset_y = (float)(int32_t)(shaka * 2.0 * nfm_random() - shaka);
         shaka--;
+        // Settings > Screen Shake off: no jitter -- but the two randoms are
+        // still drawn, so the sequence the rest of the race reads from stays
+        // the original's whatever the setting.
+        if (!settings.shake) offset_x = offset_y = 0.0f;
       }
       // The trail: paint() blits each new frame over the last one at
       // alpha mvect/100, i.e. history = scene*a + history*(1-a). With the
@@ -7090,7 +7216,7 @@ int game_run(void) {
       // The Settings screen's Motion Blur scales the history's weight:
       // 100 keeps the original's 1 - mvect/100, 0 removes the trail (and
       // with it this pass).
-      const int32_t mvect_eff = 100 - (100 - mvect) * blur_setting / 100;
+      const int32_t mvect_eff = 100 - (100 - mvect) * settings.blur / 100;
       const bool trail_active = (mvect_eff < 100);
       if (trail_active && accum_valid) {
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
@@ -7136,14 +7262,17 @@ int game_run(void) {
 
     if (screenshot_path && frame >= screenshot_frame) {
       glFinish();
-      uint8_t *pixels = malloc((size_t)width * height * 3);
-      glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels);
+      // The whole display as presented (on desktop the same 800x450 window).
+      int32_t shot_w, shot_h;
+      platform_display_size(&shot_w, &shot_h);
+      uint8_t *pixels = malloc((size_t)shot_w * shot_h * 3);
+      glReadPixels(0, 0, shot_w, shot_h, GL_RGB, GL_UNSIGNED_BYTE, pixels);
       FILE *f = fopen(screenshot_path, "wb");
       if (f) {
-        fprintf(f, "P6\n%d %d\n255\n", width, height);
+        fprintf(f, "P6\n%d %d\n255\n", shot_w, shot_h);
         // glReadPixels' origin is bottom-left; PPM's is top-left.
-        for (int row = height - 1; row >= 0; row--) {
-          fwrite(pixels + (size_t)row * width * 3, 1, (size_t)width * 3, f);
+        for (int row = shot_h - 1; row >= 0; row--) {
+          fwrite(pixels + (size_t)row * shot_w * 3, 1, (size_t)shot_w * 3, f);
         }
         fclose(f);
       }

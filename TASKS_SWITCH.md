@@ -19,6 +19,12 @@ docker run --rm -v "$PWD:/src" -w /src devkitpro/devkita64 bash -c \
 Windows (Git Bash): prefix with `MSYS_NO_PATHCONV=1` and mount the drive path,
 e.g. `-v "D:/platica/nfm-switch-port:/src"`.
 
+Diagnostics: `-DNFM_SVCLOG=ON` (stderr in the emulator's log). That build also
+reads `sdmc:/switch/nfm/debug_env.txt` (KEY=VALUE lines) into the environment,
+so game.c's headless hooks work on Switch, e.g. in Eden's SD folder:
+`NFM_SCREENSHOT_PPM=sdmc:/switch/nfm/shot.ppm`, `NFM_SCREENSHOT_FRAME=300`,
+`NFM_SCREENSHOT_MENU=settings` -- the game saves its own frame and exits.
+
 Output: `native/build-switch/platform/switch/nfm_switch.nro` (~13 MB, every
 asset inside its RomFS). Add `-DNFM_NXLINK=ON` to get `printf`/`stderr` on the
 PC with `nxlink -s`.
@@ -71,7 +77,20 @@ PC with `nxlink -s`.
 - [x] The .nro is rebuilt when an asset changes or is added (the RomFS copy is a
       tracked devkitPro asset target; a plain folder was not, and new files
       never reached the .nro).
-- [ ] Docked vs handheld: the window is a fixed 1280x720.
+- [x] **Settings (pause menu): Graphics, Screen Shake, Vibration** (2026-10-06, checked
+      in Eden). Graphics: *Original* (800x450 stretched unfiltered, as the Vita
+      draws it), *Smooth* (same, linear), *HD* (default on Switch: the game space
+      drawn into a display-sized target -- `GfxGlRenderTarget.px_w/px_h` apart
+      from its 800x450 game-space `width/height`; applied at once). Screen Shake
+      off still draws the shake's two randoms, so the race's random sequence
+      stays the original's. Vibration: libnx, on the Joy-Cons (handheld or
+      paired) and the Pro Controller, as strong and long as the crash shake;
+      `platform_rumble()` is a no-op on Linux/Vita, which do not show the row.
+      Saved in `settings.txt` (`graphics=`, `screen_shake=`, `vibration=`).
+- [x] Docked at launch: the window is 1920x1080 (HD draws at that size);
+      handheld 1280x720.
+- [ ] Docking / undocking mid-game keeps the size the game started with.
+- [ ] Vibration on real hardware (Eden forwards it to a PC pad; untested here).
 - [ ] Touch screen in menus (taps as clicks), as the web port does.
 
 ## From nfm-master, later (small first)

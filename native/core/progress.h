@@ -172,13 +172,29 @@ bool game_progress_load_from_disk(GameProgress *p, const char *path);
  * trail strength, 0 turns the trail off. */
 #define GAME_SETTINGS_BLUR_DEFAULT 100
 
-/** Reads the motion-blur setting saved beside `progress_path`. Returns
- * GAME_SETTINGS_BLUR_DEFAULT when there is no file or no valid value;
- * anything else is snapped to the 0..100 / step-20 grid. */
-int32_t game_settings_load_blur(const char *progress_path);
+/** How the race (and the car/stage selects) reach the screen: drawn at the
+ * original 800x450 and stretched with no filtering, the same stretched with
+ * linear filtering, or drawn at the display's own resolution. */
+typedef enum { GFX_ORIGINAL = 0, GFX_SMOOTH = 1, GFX_HD = 2, GFX_QUALITY_COUNT } GfxQuality;
+
+/** The Settings screen's values, saved beside the progress file. */
+typedef struct {
+  int32_t blur;         // 0..100, step 20
+  int32_t graphics;     // GfxQuality
+  bool shake;           // the screen shake on a crash (the original's `shaka`)
+  bool rumble;          // controller vibration on a crash, where the platform has it
+} GameSettings;
+
+/** Defaults: the original's trail and shake, vibration on, and `graphics`
+ * as the caller passes (each platform picks its own). */
+GameSettings game_settings_defaults(int32_t graphics);
+
+/** Reads settings.txt beside `progress_path` into `s`, which holds the
+ * defaults for anything missing or invalid. The blur is snapped to its grid. */
+void game_settings_load(const char *progress_path, GameSettings *s);
 
 /** Writes it there (creating the directory if needed). */
-bool game_settings_save_blur(const char *progress_path, int32_t blur);
+bool game_settings_save(const char *progress_path, const GameSettings *s);
 
 #ifdef __cplusplus
 }

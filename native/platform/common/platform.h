@@ -98,6 +98,15 @@ const char *platform_asset_prefix(void);
  * read-only; save data goes to ux0:). */
 bool platform_progress_path(char *buf, size_t buf_len);
 
+/** Whether this platform can vibrate its controller (the Settings screen
+ * only offers Vibration where it can). */
+bool platform_has_rumble(void);
+
+/** Vibrates the controller at `strength` (0..1) for about `ms` milliseconds,
+ * replacing any vibration still running; a no-op where there is none.
+ * platform_poll() ends it when the time is up. */
+void platform_rumble(float strength, uint32_t ms);
+
 #ifdef __cplusplus
 }
 #endif
