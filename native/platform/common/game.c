@@ -258,6 +258,18 @@ typedef enum {
 #define KEY_CONTINUE "CROSS"
 // clicknow()'s prompt; the original asks for a mouse click.
 #define KEY_START_PROMPT "Press CROSS to Start"
+#define KEY_ARRACE_HINT  "Press UP on the D-pad"
+#elif defined(NFM_TARGET_SWITCH)
+// The Switch's buttons as platform/switch/{platform,input}.c bind them: the
+// same names and places on the Joy-Cons (handheld or paired) and on the Pro
+// Controller, which libnx all reads as player 1.
+#define KEY_STEER    "ZR/ZL AND LEFT STICK"
+#define KEY_STUNT    "LEFT STICK"
+#define KEY_HANDB    "B"
+#define KEY_ARRACE   "PRESS UP ON THE D-PAD"
+#define KEY_CONTINUE "A"
+#define KEY_START_PROMPT "Press A to Start"
+#define KEY_ARRACE_HINT  "Press UP on the D-pad"
 #else
 #define KEY_STEER    "ARROW KEYS"
 #define KEY_STUNT    "ARROW KEYS"
@@ -265,6 +277,8 @@ typedef enum {
 #define KEY_ARRACE   "PRESS [ A ]"
 #define KEY_CONTINUE "ENTER"
 #define KEY_START_PROMPT "Click here to Start"
+// The stage cards' hint (stages 3 and 14), in their own sentence case.
+#define KEY_ARRACE_HINT  "Press [ A ]"
 #endif
 
 // The original's wide SPACEBAR key carries its label across its own face.
@@ -273,7 +287,7 @@ typedef enum {
 // keeping the wording rather than dropping it (the glyph says WHICH button,
 // the word says what it DOES). Zero on desktop, where the wide key is
 // still there to write on.
-#ifdef NFM_TARGET_VITA
+#if defined(NFM_TARGET_VITA) || defined(NFM_TARGET_SWITCH)
 #define KEYLBL_DX 4
 #define KEYLBL_DY 24
 #else
@@ -758,7 +772,7 @@ static void draw_trackbg(Graphics2D *gr, TrackBgState *s,
  * Compiled only into the Vita build, since that is the only caller today --
  * lift the guard the moment the desktop side needs a loose-file image too.
  */
-#ifdef NFM_TARGET_VITA
+#if defined(NFM_TARGET_VITA) || defined(NFM_TARGET_SWITCH)
 static HudImg load_menu_png_file(const char *path) {
   HudImg r = {-1, 0, 0};
   int32_t len = 0;
@@ -2950,7 +2964,16 @@ int game_run(void) {
       menu_km = load_menu_gif(&images_zip, "km.gif");
       menu_kn = load_menu_gif(&images_zip, "kn.gif");
       menu_ks = load_menu_gif(&images_zip, "ks.gif");
+#if defined(NFM_TARGET_VITA) || defined(NFM_TARGET_SWITCH)
+      // The Switch build swaps in its own set by the same names
+      // (tools/gen_switch_assets.py -> data/switch/sw_*.png): ZR/ZL and the
+      // stick for the drive cluster, B for the handbrake, A and Plus for
+      // ENTER, X / Y / Minus / D-pad down / the right stick for the rest.
 #ifdef NFM_TARGET_VITA
+#define PAD_ART(n) "data/vita/vita_" n ".png"
+#else
+#define PAD_ART(n) "data/switch/sw_" n ".png"
+#endif
       // Vita control art, drawn to the same footprints so every label the
       // Instructions pages place around these keeps its position: the
       // arrow-key cluster becomes a d-pad (81x62) and the SPACEBAR bar
@@ -2962,12 +2985,12 @@ int game_run(void) {
       // A missing file leaves the keyboard art in place rather than
       // blanking the page, since load_menu_png_file returns {-1,0,0}.
       {
-        HudImg vita_arrows = load_menu_png_file("data/vita/vita_arrows.png");
+        HudImg vita_arrows = load_menu_png_file(PAD_ART("arrows"));
         if (vita_arrows.tex >= 0) menu_arrows = vita_arrows;
         // Stunts are CROSS + the left stick here, so their diagrams show
         // the stick pushed four ways instead of the D-pad.
-        menu_stunt_arrows = load_menu_png_file("data/vita/vita_stick.png");
-        HudImg vita_space = load_menu_png_file("data/vita/vita_space.png");
+        menu_stunt_arrows = load_menu_png_file(PAD_ART("stick"));
+        HudImg vita_space = load_menu_png_file(PAD_ART("space"));
         if (vita_space.tex >= 0) menu_space = vita_space;
         // The "OTHER CONTROLS" page's seven individual key caps, each drawn
         // to its original's exact footprint (29x33, and 97x33 for ENTER).
@@ -2977,13 +3000,13 @@ int game_run(void) {
         // this page labels "navigate and pause" -- carries both Cross and
         // START, since those two took its two jobs.
         struct { HudImg *dst; const char *path; } vita_keys[] = {
-          { &menu_kz,     "data/vita/vita_kz.png" },
-          { &menu_kx,     "data/vita/vita_kx.png" },
-          { &menu_kv,     "data/vita/vita_kv.png" },
-          { &menu_km,     "data/vita/vita_km.png" },
-          { &menu_kn,     "data/vita/vita_kn.png" },
-          { &menu_ks,     "data/vita/vita_ks.png" },
-          { &menu_kenter, "data/vita/vita_kenter.png" },
+          { &menu_kz,     PAD_ART("kz") },
+          { &menu_kx,     PAD_ART("kx") },
+          { &menu_kv,     PAD_ART("kv") },
+          { &menu_km,     PAD_ART("km") },
+          { &menu_kn,     PAD_ART("kn") },
+          { &menu_ks,     PAD_ART("ks") },
+          { &menu_kenter, PAD_ART("kenter") },
         };
         for (size_t vi = 0; vi < sizeof(vita_keys)/sizeof(vita_keys[0]); vi++) {
           HudImg img = load_menu_png_file(vita_keys[vi].path);
@@ -6895,7 +6918,7 @@ int game_run(void) {
           [1] = {"Hey!  Don't forget, to complete a lap you must pass through", "all checkpoints in the track!"},
           [2] = {"Remember, the more power you have the faster your car will be!"},
           [3] = {"> Hint: its easier to waste the other cars then to race in this stage!",
-                 "Press [ A ] to make the guidance arrow point to cars instead of to", "the track."},
+                 KEY_ARRACE_HINT " to make the guidance arrow point to cars instead of to", "the track."},
           [4] = {"Remember, the better the stunt you perform the more power you get!"},
           [5] = {"Remember, the more power you have the stronger your car is!"},
           [10] = {"NOTE: Guidance Arrow is disabled in this stage!"},
@@ -6904,7 +6927,7 @@ int game_run(void) {
           [13] = {"Watch out!  Look out!  The policeman might be out to get you!",
                   "Don't upset him or you'll be arrested!", NULL, "Better run, run, run."},
           [14] = {"Don't waste your time.  Waste them instead!", "Try a taste of sweet revenge here (if you can)!", NULL,
-                  "Press [ A ] to make the guidance arrow point to cars instead of to", "the track."},
+                  KEY_ARRACE_HINT " to make the guidance arrow point to cars instead of to", "the track."},
           [17] = {"Welcome to the realm of the king...", NULL,
                   "The key word here is 'POWER'.  The more you have of it the faster", "and STRONGER you car will be!"},
           [18] = {"Watch out, EL KING is out to get you now!", "He seems to be seeking revenge?", NULL,

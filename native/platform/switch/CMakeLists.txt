@@ -28,10 +28,23 @@ if(NFM_SVCLOG)
 endif()
 
 # RomFS: the game's own asset folders, copied verbatim from the repo root.
+# The copy happens at configure time, so every asset is also a configure
+# dependency (an added or edited file reconfigures and recopies), and the
+# copies are tracked by an asset target the .nro depends on -- a plain folder
+# passed to nx_create_nro is not tracked, and a new file never reached the .nro.
+include(dkp-asset-folder)
+get_filename_component(NFM_ROOT "${PROJECT_SOURCE_DIR}/.." ABSOLUTE)
 set(NFM_ROMFS "${CMAKE_CURRENT_BINARY_DIR}/romfs")
+set(NFM_ROMFS_FILES "")
 foreach(dir data stages music mycars mystages)
-  file(COPY "${PROJECT_SOURCE_DIR}/../${dir}" DESTINATION "${NFM_ROMFS}")
+  file(GLOB_RECURSE files CONFIGURE_DEPENDS RELATIVE "${NFM_ROOT}" "${NFM_ROOT}/${dir}/*")
+  list(APPEND NFM_ROMFS_FILES ${files})
+  file(COPY "${NFM_ROOT}/${dir}" DESTINATION "${NFM_ROMFS}")
 endforeach()
+list(TRANSFORM NFM_ROMFS_FILES PREPEND "${NFM_ROOT}/" OUTPUT_VARIABLE NFM_ROMFS_SOURCES)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${NFM_ROMFS_SOURCES})
+dkp_add_asset_target(nfm_romfs "${NFM_ROMFS}")
+dkp_track_assets(nfm_romfs FILES ${NFM_ROMFS_FILES})
 
 nx_generate_nacp(nfm_switch.nacp
   NAME "Need for Madness"
@@ -41,4 +54,4 @@ nx_generate_nacp(nfm_switch.nacp
 nx_create_nro(nfm_switch
   NACP nfm_switch.nacp
   ICON "${CMAKE_CURRENT_SOURCE_DIR}/icon.jpg"
-  ROMFS "${NFM_ROMFS}")
+  ROMFS nfm_romfs)

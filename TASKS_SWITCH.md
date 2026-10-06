@@ -30,7 +30,7 @@ PC with `nxlink -s`.
    through the Album: the Album runs homebrew as an applet with much less memory.
 3. Pick *Need for Madness*. Progress is saved in `sdmc:/switch/nfm/`.
 
-## Controls (the Vita's scheme on the matching buttons)
+## Controls (the Vita's scheme on the matching buttons; Joy-Cons or Pro Controller)
 
 | Joy-Con | Action |
 |---|---|
@@ -62,8 +62,15 @@ PC with `nxlink -s`.
       `SDL_GL_CreateContext failed` or `GL function not available: ...` with
       nxlink and exits); the picture filling the 1280x720 screen; sound;
       that every button does what the table says; the save file appearing.
-- [ ] Instructions screen: Joy-Con labels and button art (`game.c` has the
-      Vita's under `NFM_TARGET_VITA`; Switch still names the keyboard's keys).
+- [x] Instructions screen in Switch buttons (checked in Eden): the help text
+      (`KEY_*` in `game.c`, `NFM_TARGET_SWITCH`) and the button art,
+      `data/switch/sw_*.png` from `tools/gen_switch_assets.py`, drawn to the
+      keyboard art's footprints like the Vita's. The stage cards' "Press [ A ]"
+      for the guidance arrow now says D-pad up (Vita too). The same names and
+      places hold on the Joy-Cons and on the Pro Controller.
+- [x] The .nro is rebuilt when an asset changes or is added (the RomFS copy is a
+      tracked devkitPro asset target; a plain folder was not, and new files
+      never reached the .nro).
 - [ ] Docked vs handheld: the window is a fixed 1280x720.
 - [ ] Touch screen in menus (taps as clicks), as the web port does.
 
