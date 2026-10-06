@@ -1674,6 +1674,68 @@ static void draw_pause_highlight(Graphics2D *g, int32_t x, int32_t y, int32_t w,
   gfx_draw_round_rect(g, x, y, w, h, 7, 20);
 }
 
+// Settings > Graphics > Smooth Frames -- ports web/main.js's INTERPOLATE.
+// The race ticks at 18.9Hz; to move at the display's rate, the cars and the
+// camera are captured before and after each tick, and every display frame
+// draws them blended between the two, then puts the tick's values back.
+// Nothing in the simulation ever sees a blended value.
+typedef struct { int32_t x, y, z, xz, xy, zy; } SmoothPose;
+typedef struct {
+  SmoothPose car[BOTS_MAX_PLAYERS];
+  int32_t x, y, z, xz, zy; // the camera
+} SmoothSnap;
+
+static void smooth_capture(SmoothSnap *s, const ContO *co, int32_t n, const Medium *m) {
+  for (int32_t i = 0; i < n; i++) {
+    s->car[i] = (SmoothPose){co[i].x, co[i].y, co[i].z, co[i].xz, co[i].xy, co[i].zy};
+  }
+  s->x = m->x; s->y = m->y; s->z = m->z; s->xz = m->xz; s->zy = m->zy;
+}
+
+/** Shortest-path angle blend, in degrees. */
+static float smooth_angle(int32_t a, int32_t b, float t) {
+  int32_t d = b - a;
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  return (float)a + (float)d * t;
+}
+
+static int32_t smooth_lerp(int32_t a, int32_t b, float t) {
+  return (int32_t)lroundf((float)a + (float)(b - a) * t);
+}
+
+// ponytail: car angles are whole degrees here (ContO's are ints all the way
+// into plane_d); only the camera, which the whole frame pivots on, keeps the
+// fraction (Medium.fxz/fzy). Thread a fraction through plane_d too if a car's
+// own turn ever looks steppy.
+static void smooth_apply(const SmoothSnap *a, const SmoothSnap *b, float t, ContO *co, int32_t n, Medium *m) {
+  for (int32_t i = 0; i < n; i++) {
+    const SmoothPose *p = &a->car[i], *c = &b->car[i];
+    co[i].x = smooth_lerp(p->x, c->x, t);
+    co[i].y = smooth_lerp(p->y, c->y, t);
+    co[i].z = smooth_lerp(p->z, c->z, t);
+    co[i].xz = (int32_t)lroundf(smooth_angle(p->xz, c->xz, t));
+    co[i].xy = (int32_t)lroundf(smooth_angle(p->xy, c->xy, t));
+    co[i].zy = (int32_t)lroundf(smooth_angle(p->zy, c->zy, t));
+  }
+  m->x = smooth_lerp(a->x, b->x, t);
+  m->y = smooth_lerp(a->y, b->y, t);
+  m->z = smooth_lerp(a->z, b->z, t);
+  const float xz = smooth_angle(a->xz, b->xz, t), zy = smooth_angle(a->zy, b->zy, t);
+  m->xz = (int32_t)floorf(xz); m->fxz = xz - (float)m->xz;
+  m->zy = (int32_t)floorf(zy); m->fzy = zy - (float)m->zy;
+}
+
+static void smooth_restore(const SmoothSnap *s, ContO *co, int32_t n, Medium *m) {
+  for (int32_t i = 0; i < n; i++) {
+    const SmoothPose *c = &s->car[i];
+    co[i].x = c->x; co[i].y = c->y; co[i].z = c->z;
+    co[i].xz = c->xz; co[i].xy = c->xy; co[i].zy = c->zy;
+  }
+  m->x = s->x; m->y = s->y; m->z = s->z; m->xz = s->xz; m->zy = s->zy;
+  m->fxz = m->fzy = 0.0f;
+}
+
 /**
  * The scene draw both replay fases share with racing: medium_d() for the
  * sky/ground, then every ContO painted back-to-front. `dist == 0` objects
@@ -2756,13 +2818,14 @@ static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
     {ROW_OPEN, "GAMEPLAY", SET_GAMEPLAY, 0, 0, 0, NULL, false},
     {ROW_RESET, "RESET TO DEFAULTS", 0, 0, 0, 0, NULL, false},
     {ROW_BACK, "BACK", 0, 0, 0, 0, NULL, false}}},
-  [SET_GRAPHICS] = {"SETTINGS - GRAPHICS", 7, {
+  [SET_GRAPHICS] = {"SETTINGS - GRAPHICS", 8, {
     {ROW_CHOICE, "IMAGE QUALITY", 0, SET_FIELD(graphics), 3, 1, kQualityNames, false},
     {ROW_CHOICE, "DRAW DISTANCE", 0, SET_FIELD(draw_dist), 3, 1, kDistNames, false},
     {ROW_CHOICE, "SCENERY DETAIL", 0, SET_FIELD(detail), 2, 1, kDetailNames, false},
     {ROW_CHOICE, "SHADOWS", 0, SET_FIELD(shadows), 2, 1, kOnOff, false},
     {ROW_CHOICE, "PARTICLES", 0, SET_FIELD(particles), 2, 1, kOnOff, false},
     {ROW_CHOICE, "MOTION BLUR", 0, SET_FIELD(blur), 6, 20, kBlurNames, false},
+    {ROW_CHOICE, "SMOOTH FRAMES", 0, SET_FIELD(smooth), 2, 1, kOnOff, false},
     {ROW_BACK, "BACK", 0, 0, 0, 0, NULL, false}}},
   [SET_AUDIO] = {"SETTINGS - AUDIO", 3, {
     {ROW_CHOICE, "MUSIC", 0, SET_FIELD(music_vol), 11, 10, NULL, false},
@@ -3461,6 +3524,10 @@ int game_run(void) {
   const char *screenshot_path = getenv("NFM_SCREENSHOT_PPM");
   const char *screenshot_frame_env = getenv("NFM_SCREENSHOT_FRAME");
   int32_t screenshot_frame = screenshot_frame_env ? atoi(screenshot_frame_env) : 0;
+  // NFM_SCREENSHOT_COUNT=n dumps n consecutive frames (path.0, path.1, ...),
+  // to see what happens between two race ticks.
+  const char *screenshot_count_env = getenv("NFM_SCREENSHOT_COUNT");
+  int32_t screenshot_count = screenshot_count_env ? atoi(screenshot_count_env) : 1;
   // NFM_SCREENSHOT_MENU=pausereplay picks Instant Replay at this frame
   // (default: 60 frames before the dump), so a run can dump any point of it.
   const char *hook_replay_env = getenv("NFM_HOOK_REPLAY_FRAME");
@@ -3917,6 +3984,17 @@ int game_run(void) {
   const double MAX_ACCUMULATOR_MS = TICK_MS * 3.0; // MAX_CATCHUP=3, clamped directly
   uint32_t last_ticks_ms = platform_ticks_ms();
   double accumulator_ms = 0.0;
+  // Smooth frames (see smooth_apply): the cars and camera before and after
+  // the latest tick, the HUD that tick drew (replayed on the frames between
+  // ticks -- its drawing advances per-draw timers), and each object's dist
+  // from that tick's draw (simulation reads it: checkstat's onscreen[]).
+  // smooth_ready: a tick has filled all of it with the setting on.
+  SmoothSnap smooth_prev, smooth_curr;
+  GfxClip hud_clip = {0};
+  int32_t *smooth_dist = NULL;
+  bool smooth_ready = false;
+  double race_frame_ms = TICK_MS; // this frame's length, for the trail
+  bool race_confirm_latch = false;
 
   int32_t frame = 0;
   // Whether the OTHER ping-pong target holds the previous frame's finished
@@ -4466,6 +4544,7 @@ int game_run(void) {
       free(visible_idx); visible_idx = NULL;
       free(rank); rank = NULL;
       free(order); order = NULL;
+      free(smooth_dist); smooth_dist = NULL;
       total_objs = 0;
     }
 
@@ -4746,6 +4825,9 @@ int game_run(void) {
       visible_idx = malloc(sizeof(int32_t) * (size_t)total_objs);
       rank = malloc(sizeof(int32_t) * (size_t)total_objs);
       order = malloc(sizeof(int32_t) * (size_t)total_objs);
+      smooth_dist = malloc(sizeof(int32_t) * (size_t)total_objs);
+      smooth_ready = false;
+      race_confirm_latch = false;
 
       last_ticks_ms = platform_ticks_ms();
       accumulator_ms = 0.0;
@@ -4757,7 +4839,8 @@ int game_run(void) {
       if (screenshot_menu && strcmp(screenshot_menu, "pausereplay") == 0) control[0].up = true;
 
       uint32_t now_ms = platform_ticks_ms();
-      accumulator_ms += (double)(now_ms - last_ticks_ms);
+      race_frame_ms = (double)(now_ms - last_ticks_ms);
+      accumulator_ms += race_frame_ms;
       last_ticks_ms = now_ms;
       if (accumulator_ms > MAX_ACCUMULATOR_MS) accumulator_ms = MAX_ACCUMULATOR_MS;
 
@@ -4801,8 +4884,13 @@ int game_run(void) {
       // treatment -- menus never tick, so leaving it false there keeps
       // their own animations running at frame rate, as they always have.
       bool ticked_this_frame = false;
+      // Confirm is read inside the tick (the hold card's continue, the
+      // fly-by skip); latched so a press on a frame without a tick -- two
+      // frames in three at 60Hz -- is not lost.
+      if (KEY_EDGE(BTN_CONFIRM)) race_confirm_latch = true;
       while (accumulator_ms >= TICK_MS) {
         ticked_this_frame = true;
+        smooth_capture(&smooth_prev, co, nplayers, &m);
         // Countdown tick -- Java xtGraphics.java:8010-8031. Decrement
         // starcnt every tick and update gocnt at the same thresholds.
         // Once starcnt hits 0 the countdown is done and never runs again.
@@ -5027,7 +5115,7 @@ int game_run(void) {
           // same convention every other menu-nav key in this file
           // already uses.
           race_holdcnt++;
-          if (KEY_EDGE(BTN_CONFIRM) || race_holdcnt > 250) {
+          if (race_confirm_latch || race_holdcnt > 250) {
             stop_all_sfx_loops(&audio, engine_channel, &last_engine_bank, &air_channel, &wasted_channel);
             game_progress_finish_stage(&progress, (GameMode)gmode, stage_num, race_winner);
             if (progress_path_ok) game_progress_save_to_disk(&progress, progress_path);
@@ -5132,8 +5220,93 @@ int game_run(void) {
             }
           }
         }
+        // The camera -- once per tick, after the cars move, as in the Java's
+        // loop. (It ran once per display frame, which ran the fly-by orbit,
+        // the orbit view and the camera's eases ~3x fast at 60Hz.)
+        // GameSparker.java:958-1017 -- while starcnt >= 38 (from the moment
+        // racing starts at starcnt==130 down through the whole pre-
+        // countdown window), the camera runs medium.around() -- a fast
+        // cinematic orbit around the player's own car sitting on the
+        // starting grid -- instead of the normal chase cam. This is the
+        // "preview of the cars before the countdown" the real Java shows;
+        // `n47` in the Java picks car index 3 in multiplayer or 0 in
+        // single-player -- always 0 here (single-player-only port), see
+        // medium_around()'s own doc comment. ENTER/handbrake (Java:
+        // `u[0].enter || u[0].handb`; KEY_EDGE(BTN_CONFIRM) substitutes for
+        // `enter` the same way race_holdit's advance-check above does,
+        // since control.enter is never populated by input_poll) skips
+        // straight to the starcnt==38 transition below.
+        if (starcnt >= 38) {
+          medium_around(&m, &co[0], true);
+          mvect = 80; // :976
+          if (!flyby_skip_armed && !control[0].handb && !race_confirm_latch) flyby_skip_armed = true;
+          if (flyby_skip_armed && (control[0].handb || race_confirm_latch)) {
+            starcnt = 38;
+            control[0].handb = false;
+          }
+          if (starcnt == 38) {
+            // :984-992 -- one-time reset back to the normal chase cam.
+            // Both medium_around() above and medium_follow() here run on
+            // this same tick, matching the Java exactly -- follow() simply
+            // overwrites around()'s camera position/heading right after.
+            m.vert = false;
+            m.adv = 900;
+            m.vxz = 180;
+            check_points_checkstat(&cp, mad_ptrs, co_ptrs, &rpd, nplayers, 0, 0);
+            medium_follow(&m, co[0].x, co[0].y, co[0].z, mad[0].cxz, 0);
+          }
+        } else if (race_view == 1) {
+          // :987-991 -- orbit camera. Fixed mvect, no shaka and no lmxz
+          // bookkeeping (Java's view==1 branch genuinely has neither).
+          medium_around(&m, &co[0], false);
+          mvect = 80;
+        } else if (race_view == 2) {
+          // :992-999 -- the fixed "watch" tripod, aimed with the car's raw
+          // movement heading (`mad.mxz`, not the smoothed `cxz` the chase
+          // cam uses). Shares view 0's mvect/lmxz smoothing but, like
+          // view 1, does no shaka.
+          medium_watch(&m, &co[0], mad[0].mxz);
+          mvect = 65 + (abs(lmxz - m.xz) / 5) * 100;
+          if (mvect > 90) mvect = 90;
+          lmxz = m.xz;
+        } else {
+          // JS: `medium.follow(array2[im], array3[im].cxz, this.u[im].lookback)`
+          // -- the chase camera tracks `mad.cxz` (a SMOOTHED heading Mad.drive()
+          // eases toward the car's actual movement direction, only adjusting
+          // significantly above ~30 speed -- see mad_drive()'s own cxz-smoothing
+          // block), not `contO.xz` (the car's own instantaneous heading) or
+          // `mad.mxz` (contO's raw movement-direction reading). Passing contO.xz
+          // here instead made the camera snap to match the car's heading every
+          // tick with no lag at all, so it never showed the car's side turning
+          // -- always dead-center behind it. `control.lookback` is the
+          // "look back over your shoulder" hold, now actually driven by the
+          // Z/X keys (shoulder triggers on Vita) -- see input.c.
+          medium_follow(&m, co[0].x, co[0].y, co[0].z, mad[0].cxz, control[0].lookback);
+
+          // GameSparker.java:973-983 -- runs in the exact same spot as
+          // medium.follow() above (both are inside the real Java's `view==0`
+          // branch, once per tick). Arms `shaka` from THIS tick's damage
+          // (outshakedam is check_points_checkstat's own copy-then-zero of
+          // mad->shakedam, already ported); `mvect` measures how far the
+          // camera's heading (m.xz) moved since last tick, matching Java's
+          // plain-int arithmetic exactly (no fr()/trunc() -- xz is already
+          // an int, so is the result).
+          if (mad[0].outshakedam > 0) {
+            shaka = mad[0].outshakedam / 20;
+            if (shaka > 25) shaka = 25;
+            // Settings > Vibration: the same crash felt in the controller, as
+            // strong and as long as the shake it arms (a no-op where the
+            // platform has no vibration, platform_rumble()).
+            if (settings.rumble) platform_rumble(0.25f + 0.75f * (float)shaka / 25.0f, 120u + 12u * (uint32_t)shaka);
+          }
+          mvect = 65 + (abs(lmxz - m.xz) / 5) * 100;
+          if (mvect > 90) mvect = 90;
+          lmxz = m.xz;
+        }
+        race_confirm_latch = false;
         accumulator_ms -= TICK_MS;
       }
+      if (ticked_this_frame) smooth_capture(&smooth_curr, co, nplayers, &m);
       // Mark this frame for the draw-phase effect guards -- see
       // ticked_this_frame's own comment above the loop. Set here rather
       // than at the draw site so it lands before ANY draw for this frame,
@@ -5214,86 +5387,6 @@ int game_run(void) {
         if (progress_path_ok) game_progress_save_to_disk(&progress, progress_path);
       }
 
-      // GameSparker.java:958-1017 -- while starcnt >= 38 (from the moment
-      // racing starts at starcnt==130 down through the whole pre-
-      // countdown window), the camera runs medium.around() -- a fast
-      // cinematic orbit around the player's own car sitting on the
-      // starting grid -- instead of the normal chase cam. This is the
-      // "preview of the cars before the countdown" the real Java shows;
-      // `n47` in the Java picks car index 3 in multiplayer or 0 in
-      // single-player -- always 0 here (single-player-only port), see
-      // medium_around()'s own doc comment. ENTER/handbrake (Java:
-      // `u[0].enter || u[0].handb`; KEY_EDGE(BTN_CONFIRM) substitutes for
-      // `enter` the same way race_holdit's advance-check above does,
-      // since control.enter is never populated by input_poll) skips
-      // straight to the starcnt==38 transition below.
-      if (starcnt >= 38) {
-        medium_around(&m, &co[0], true);
-        mvect = 80; // :976
-        if (!flyby_skip_armed && !control[0].handb && !KEY_EDGE(BTN_CONFIRM)) flyby_skip_armed = true;
-        if (flyby_skip_armed && (control[0].handb || KEY_EDGE(BTN_CONFIRM))) {
-          starcnt = 38;
-          control[0].handb = false;
-        }
-        if (starcnt == 38) {
-          // :984-992 -- one-time reset back to the normal chase cam.
-          // Both medium_around() above and medium_follow() here run on
-          // this same tick, matching the Java exactly -- follow() simply
-          // overwrites around()'s camera position/heading right after.
-          m.vert = false;
-          m.adv = 900;
-          m.vxz = 180;
-          check_points_checkstat(&cp, mad_ptrs, co_ptrs, &rpd, nplayers, 0, 0);
-          medium_follow(&m, co[0].x, co[0].y, co[0].z, mad[0].cxz, 0);
-        }
-      } else if (race_view == 1) {
-        // :987-991 -- orbit camera. Fixed mvect, no shaka and no lmxz
-        // bookkeeping (Java's view==1 branch genuinely has neither).
-        medium_around(&m, &co[0], false);
-        mvect = 80;
-      } else if (race_view == 2) {
-        // :992-999 -- the fixed "watch" tripod, aimed with the car's raw
-        // movement heading (`mad.mxz`, not the smoothed `cxz` the chase
-        // cam uses). Shares view 0's mvect/lmxz smoothing but, like
-        // view 1, does no shaka.
-        medium_watch(&m, &co[0], mad[0].mxz);
-        mvect = 65 + (abs(lmxz - m.xz) / 5) * 100;
-        if (mvect > 90) mvect = 90;
-        lmxz = m.xz;
-      } else {
-        // JS: `medium.follow(array2[im], array3[im].cxz, this.u[im].lookback)`
-        // -- the chase camera tracks `mad.cxz` (a SMOOTHED heading Mad.drive()
-        // eases toward the car's actual movement direction, only adjusting
-        // significantly above ~30 speed -- see mad_drive()'s own cxz-smoothing
-        // block), not `contO.xz` (the car's own instantaneous heading) or
-        // `mad.mxz` (contO's raw movement-direction reading). Passing contO.xz
-        // here instead made the camera snap to match the car's heading every
-        // tick with no lag at all, so it never showed the car's side turning
-        // -- always dead-center behind it. `control.lookback` is the
-        // "look back over your shoulder" hold, now actually driven by the
-        // Z/X keys (shoulder triggers on Vita) -- see input.c.
-        medium_follow(&m, co[0].x, co[0].y, co[0].z, mad[0].cxz, control[0].lookback);
-
-        // GameSparker.java:973-983 -- runs in the exact same spot as
-        // medium.follow() above (both are inside the real Java's `view==0`
-        // branch, once per tick). Arms `shaka` from THIS tick's damage
-        // (outshakedam is check_points_checkstat's own copy-then-zero of
-        // mad->shakedam, already ported); `mvect` measures how far the
-        // camera's heading (m.xz) moved since last tick, matching Java's
-        // plain-int arithmetic exactly (no fr()/trunc() -- xz is already
-        // an int, so is the result).
-        if (mad[0].outshakedam > 0) {
-          shaka = mad[0].outshakedam / 20;
-          if (shaka > 25) shaka = 25;
-          // Settings > Vibration: the same crash felt in the controller, as
-          // strong and as long as the shake it arms (a no-op where the
-          // platform has no vibration, platform_rumble()).
-          if (settings.rumble) platform_rumble(0.25f + 0.75f * (float)shaka / 25.0f, 120u + 12u * (uint32_t)shaka);
-        }
-        mvect = 65 + (abs(lmxz - m.xz) / 5) * 100;
-        if (mvect > 90) mvect = 90;
-        lmxz = m.xz;
-      }
     }
 
     // Every draw call below this point targets the offscreen render
@@ -5401,7 +5494,12 @@ int game_run(void) {
     }
     const bool paced_state = render_state == STATE_RACING || is_replay || is_paced_menu;
     const bool advanced = render_state == STATE_RACING ? race_ticked : paced_ticked;
-    const bool reuse_frame = use_rt && paced_state && !advanced &&
+    // Smooth frames: racing draws every display frame instead, the scene
+    // blended between the last two ticks (smooth_apply).
+    if (!settings.smooth) smooth_ready = false;
+    const bool smooth_on = use_rt && render_state == STATE_RACING && smooth_ready;
+    const bool smooth_between = smooth_on && !race_ticked; // a frame between two ticks
+    const bool reuse_frame = use_rt && paced_state && !advanced && !smooth_on &&
                              picture_state == (int32_t)render_state;
     if (reuse_frame) {
       // Nothing to draw; the composite presents the last picture.
@@ -5436,6 +5534,13 @@ int game_run(void) {
       // single car and no netplay to desync -- without it those draws
       // silently landed on the sim stream instead, one sim random per
       // dust/spark event.
+      if (smooth_on) {
+        if (smooth_between) {
+          for (int32_t i = 0; i < total_objs; i++) smooth_dist[i] = all_objs[i]->dist;
+        }
+        const double t = accumulator_ms / TICK_MS;
+        smooth_apply(&smooth_prev, &smooth_curr, (float)(t < 1.0 ? t : 1.0), co, nplayers, &m);
+      }
       nfm_set_draw_phase(true);
       medium_d(&m, &g); // ground/sky backdrop -- must run before any cont_o_d,
                          // which queues into m.nsp (medium_d zeroes it first)
@@ -5470,6 +5575,15 @@ int game_run(void) {
         cont_o_d(all_objs[visible_idx[order[i]]], &g);
       }
       nfm_set_draw_phase(false);
+      if (smooth_on) {
+        // The tick's own values back. A frame between ticks also puts back
+        // the dist its tick's draw left (the simulation reads it); a tick
+        // frame's draw is the authoritative one, so its dist stays.
+        smooth_restore(&smooth_curr, co, nplayers, &m);
+        if (smooth_between) {
+          for (int32_t i = 0; i < total_objs; i++) all_objs[i]->dist = smooth_dist[i];
+        }
+      }
 
       // GameSparker.java:958-963 -- a one-tick solid white flash painted
       // OVER the already-fully-rendered 3D scene above, the exact instant
@@ -5482,377 +5596,389 @@ int game_run(void) {
         gfx_fill_rect(&g, 0, 0, width, height);
       }
 
-      // Real HUD: ports the actual XtGraphics.js draw calls (JS lines
-      // ~1389-1401 for the panels/rank badge, ~2324-2339 for the
-      // speedometer) rather than the earlier vfont-only placeholder.
-      // Numbers (lap count, wasted count, speed) still use core/vfont.c
-      // for text, matching the ORIGINAL too -- XtGraphics.js draws
-      // these via plain `drawString` (system/canvas font), not a
-      // bitmap digit asset, so vfont here isn't a fidelity regression
-      // (see TASKS_NATIVE.md's "1:1 original assets" section). No
-      // draw-phase wrapper needed below (nothing here calls
-      // medium_random()).
+      if (smooth_between) {
+        // Between ticks: the HUD exactly as the last tick drew it. Drawing it
+        // again would advance its blink and banner timers per display frame.
+        gfx_clip_play(&g, &hud_clip);
+      } else {
+        gfx_flush(&g);
+        const GfxMark hud_mark = gfx_mark(&g);
+        // Real HUD: ports the actual XtGraphics.js draw calls (JS lines
+        // ~1389-1401 for the panels/rank badge, ~2324-2339 for the
+        // speedometer) rather than the earlier vfont-only placeholder.
+        // Numbers (lap count, wasted count, speed) still use core/vfont.c
+        // for text, matching the ORIGINAL too -- XtGraphics.js draws
+        // these via plain `drawString` (system/canvas font), not a
+        // bitmap digit asset, so vfont here isn't a fidelity regression
+        // (see TASKS_NATIVE.md's "1:1 original assets" section). No
+        // draw-phase wrapper needed below (nothing here calls
+        // medium_random()).
 
-      // Checkpoint arrow -- JS line 1315, drawn BEFORE the panel images
-      // (matches the original's own order, not just this port's habit of
-      // scene-then-HUD). Guarded exactly as xtGraphics.java:7917 guards
-      // its own `this.arrow(...)` call one line later (:7918): no arrow
-      // and no missed/wrong-way banner during the 3-2-1-GO countdown
-      // (starcnt != 0), behind the win/lose hold card (holdit), or on
-      // stage 10. `fase != -6` and `multion < 2` are structurally always
-      // true in this single-player port, so only these three survive.
-      // Both were previously drawn unconditionally -- the arrow kept
-      // pointing at the next checkpoint straight through the countdown
-      // and stayed on screen overlapping the You Won / You're Wasted
-      // card, neither of which the original ever shows.
-      // A-key sync -- xtGraphics.java:7892-7916. The latched xt.arrace is
-      // diffed against the live control[0].arrace so the announcement
-      // fires once per flip. `multion < 2` and the `multion == 1` radar
-      // auto-enable are multiplayer-only; nplayers != 1 is real and holds
-      // whenever bots are racing.
-      if (cp.stage != 10 && nplayers != 1 && xt.arrace != control[0].arrace) {
-        xt.arrace = control[0].arrace;
-        if (xt.arrace) {
-          xt.wasay = true;
-          snprintf(xt.say, sizeof(xt.say), " Arrow now pointing at >  CARS");
-          xt.tcnt = -5;
-        } else {
-          xt.wasay = false;
-          snprintf(xt.say, sizeof(xt.say), " Arrow now pointing at >  TRACK");
-          xt.tcnt = -5;
-          xt.cntan = 20;
-          xt.alocked = -1;
-        }
-      }
-      if (!race_holdit && starcnt == 0 && cp.stage != 10) {
-        draw_checkpoint_arrow(&g, &m, &xt, &cp, mad[0].point, mad[0].missedcp,
-                              xt.arrace, nplayers, sc);
-        // :7919 -- the missed/wrong-way banner is the `if (!this.arrace)`
-        // arm of the arrow call, so hunting cars suppresses it. The `else
-        // if (alocked != lalocked)` arm next to it announces a change of
-        // manually-locked car; both fields are permanently -1 here (only
-        // the unported mouse-hover branch assigns them, see
-        // xt_graphics.h), so that arm can never fire and is left out
-        // rather than written as unreachable code.
-        if (!xt.arrace) {
-          hud_wrongway_tick(&g, &m, &xt, &mad[0]);
-        }
-      }
-      // The wider `if (!this.holdit)` of :8009 -- everything from the
-      // `looped` reset through the say/asay banners and "Bad Landing!".
-      // Unlike the block above this one DOES keep running during the
-      // countdown (Java draws "Get Ready!"-era say text there).
-      if (!race_holdit) {
-        hud_messages_tick(&g, &m, &xt, &mad[0]);
-      }
-
-      // GameSparker.java:891-903 -- the single-player newcar rebuild.
-      // Wipes every damage dent/recolor by rebuilding the ContO fresh from
-      // its pristine base model, preserving position and orientation;
-      // single-player never uses the multiplayer newedcar/colorCar
-      // 10-tick "shiny repaint" variant (fase==7001 only, out of scope,
-      // no netplay). Deliberately runs AFTER hud_messages_tick() above,
-      // not before: in the real Java, this rebuild sits at the very top
-      // of the SAME per-frame block whose OWN tick-equivalent (drive(),
-      // :939-956) runs later and is what actually sets mad.newcar true --
-      // so the rebuild a given frame executes always consumes the PREVIOUS
-      // frame's flag, while stat()'s "Car Fixed" trigger (:958+, this
-      // port's hud_messages_tick) sees that SAME frame's fresh flag before
-      // it's cleared. This port's tick loop and draw pass are already
-      // separate (unlike Java's unified per-frame loop), so matching that
-      // exact same-frame ordering here means running the clear AFTER the
-      // message check within this one draw pass, not before -- otherwise
-      // the message trigger never observes newcar==true at all. This was
-      // previously believed unreachable entirely (a stale assumption that
-      // this port's CheckPoints has no real fix zones -- wrong:
-      // game_sparker.c's stage parser DOES populate cp->fx/fy/fz/roted
-      // from a real `fix(` stage command, and mad.c:1793 does set
-      // mad->newcar whenever a damaged car reaches one). Without this
-      // rebuild, mad->newcar never clears, so hud_messages_tick()'s
-      // "Car Fixed" trigger re-forces tcnt=0 EVERY frame forever (message
-      // never counts down/disappears) and the car keeps whatever damaged/
-      // recoloured planes it had at the moment it was fixed instead of
-      // the pristine paint a repaired car should show -- exactly the
-      // reported "Car Fixed never goes away, car turns all blue" bug.
-      for (int32_t i = 0; i < nplayers; i++) {
-        if (mad[i].newcar) {
-          int32_t saved_xz = co[i].xz, saved_xy = co[i].xy, saved_zy = co[i].zy;
-          ContO *pristine = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : &base_models[mad[i].cn];
-          cont_o_recopy(&co[i], pristine, co[i].x, co[i].y, co[i].z, 0);
-          co[i].xz = saved_xz;
-          co[i].xy = saved_xy;
-          co[i].zy = saved_zy;
-          mad[i].newcar = false;
-        }
-      }
-
-      // Dark-sky HUD backing -- xtGraphics.java:7971-7993, drawn directly
-      // BEFORE the five panel images below (:7994+) so it sits underneath
-      // them. The panel art (dmg/pwr/lap/pos) is mostly transparent with
-      // dark line work, and on a night/stormy stage that reads as
-      // invisible against the scene behind it, so the original lays down
-      // a solid plate first: the stage's own sky colour pushed to a fixed
-      // HSB brightness of 0.6, exactly the same recolour drawhi() uses
-      // for the win/lose card (:8521-8534, and this file's own hold-card
-      // block further down). The two drawLine() pairs flanking each
-      // fillRect are a hand-drawn 2px "rounded" bevel -- stepping the
-      // plate in by one pixel at each end -- which is why they are
-      // individual lines rather than a border rect. All fifteen calls,
-      // and every literal coordinate in them, are 1:1 with the source.
-      //
-      // Ported for completeness, NOT to fix an observed bug: measured
-      // across all 32 shipped stages/N.txt, m.darksky comes out false
-      // every time (the darkest csky any of them produces after
-      // medium_setsnap's tint is stage 32's, at HSB brightness ~0.77,
-      // well clear of medium.c:869's `< 0.6f` threshold), so with this
-      // asset set the branch never runs. Same reachability status as the
-      // hold-card's own `if (m.darksky)` sibling further down, which this
-      // port already carried -- both are kept because the condition is
-      // data-driven (a hand-written or later stage file could trip it),
-      // not structurally impossible.
-      if (m.darksky) {
-        float hsb_hud[3];
-        rgb_to_hsb(m.csky[0], m.csky[1], m.csky[2], hsb_hud);
-        hsb_hud[2] = 0.6f;
-        int32_t hud_rgb = hsb_to_rgb(hsb_hud[0], hsb_hud[1], hsb_hud[2]);
-        gfx_set_color(&g, (hud_rgb >> 16) & 0xff, (hud_rgb >> 8) & 0xff, hud_rgb & 0xff);
-        gfx_fill_rect(&g, 602, 9, 54, 14);   // :7977 -- behind dmg
-        gfx_draw_line(&g, 601, 10, 601, 21); // :7978
-        gfx_draw_line(&g, 600, 12, 600, 19); // :7979
-        gfx_fill_rect(&g, 607, 29, 49, 14);  // :7980 -- behind pwr
-        gfx_draw_line(&g, 606, 30, 606, 41); // :7981
-        gfx_draw_line(&g, 605, 32, 605, 39); // :7982
-        gfx_fill_rect(&g, 18, 6, 155, 14);   // :7983 -- behind lap + was
-        gfx_draw_line(&g, 17, 7, 17, 18);    // :7984
-        gfx_draw_line(&g, 16, 9, 16, 16);    // :7985
-        gfx_draw_line(&g, 173, 7, 173, 18);  // :7986
-        gfx_draw_line(&g, 174, 9, 174, 16);  // :7987
-        gfx_fill_rect(&g, 40, 26, 107, 21);  // :7988 -- behind pos + rank
-        gfx_draw_line(&g, 39, 27, 39, 45);   // :7989
-        gfx_draw_line(&g, 38, 29, 38, 43);   // :7990
-        gfx_draw_line(&g, 147, 27, 147, 45); // :7991
-        gfx_draw_line(&g, 148, 29, 148, 43); // :7992
-      }
-
-      draw_hud_img(&g, hud_images.dmg, 600, 7);
-      draw_hud_img(&g, hud_images.pwr, 600, 27);
-      draw_hud_img(&g, hud_images.lap, 19, 7);
-      gfx_set_color(&g, 0, 0, 100);
-      char hud[64];
-      snprintf(hud, sizeof(hud), "%d / %d", mad[0].nlaps + 1, cp.nlaps);
-      // JS drawString y is a BASELINE coord (Canvas convention). bitfont's
-      // y is TOP-left, so subtract the font's ~11px ascent to line up
-      // visually with the JS's own placement.
-      bitfont_draw_string(&g, hud, 51, 18 - 11);
-      draw_hud_img(&g, hud_images.was, 92, 7);
-      gfx_set_color(&g, 0, 0, 100);
-      snprintf(hud, sizeof(hud), "%d / %d", cp.wasted, nplayers - 1); // Java: checkPoints.wasted / (nplayers-1)
-      bitfont_draw_string(&g, hud, 150, 18 - 11);
-      draw_hud_img(&g, hud_images.pos, 42, 27);
-      if (cp.pos[0] >= 0 && cp.pos[0] < 8) draw_hud_img(&g, hud_images.rank[cp.pos[0]], 110, 28);
-
-      // Ports drawstat(maxmag, hitmag, newcar, power)'s own two
-      // fillPolygon bars (damage bar top, power bar bottom) -- JS lines
-      // 1812-1890. `newcar` is read by the JS signature but never
-      // actually used in its body (a real, harmless quirk of the
-      // original, not a mistranslation -- preserved as-is).
-      {
-        int32_t maxmag = cd.maxmag[mad[0].cn];
-        int32_t hitmag = mad[0].hitmag;
-        if (hitmag > maxmag) hitmag = maxmag;
-        float ratio = (float)hitmag / (float)maxmag; // fr(n2/n), case 1
-        int32_t n4 = jtrunc(98.0f * ratio);           // fr(98.0*ratio), case 1
-
-        int32_t bar_x[4] = {662, 662, 662 + n4, 662 + n4};
-        int32_t bar_y[4] = {11, 20, 20, 11};
-
-        int32_t n5 = 244, n6 = 244, n7 = 11;
-        if (n4 > 33) {
-          float x = (float)(n4 - 33);
-          float y = x / 65.0f;
-          float z = 233.0f * y;
-          n6 = jtrunc(244.0f - z);
-        }
-        if (n4 > 70) {
-          if (xt.dmcnt < 10) {
-            if (xt.dmflk) { n6 = 170; xt.dmflk = false; }
-            else xt.dmflk = true;
-          }
-          xt.dmcnt++;
-          if ((float)xt.dmcnt > 167.0f - (float)n4 * 1.5f) xt.dmcnt = 0;
-        }
-        int32_t snap_arr[3] = {m.snap[0], m.snap[1], m.snap[2]};
-        int32_t bar_rgb[3];
-        int32_t base[3] = {n5, n6, n7};
-        for (int32_t ch = 0; ch < 3; ch++) {
-          float snap_term = (float)snap_arr[ch] / 100.0f;
-          float term = (float)base[ch] * snap_term;
-          float sum = (float)base[ch] + term;
-          int32_t v = jtrunc(sum);
-          if (v > 255) v = 255;
-          if (v < 0) v = 0;
-          bar_rgb[ch] = v;
-        }
-        gfx_set_color(&g, bar_rgb[0], bar_rgb[1], bar_rgb[2]);
-        gfx_fill_polygon(&g, bar_x, bar_y, 4);
-
-        float power = mad[0].power;
-        int32_t n8 = 128;
-        if (power == 98.0f) n8 = 64;
-        int32_t n9 = jtrunc_d(190.0 + (double)power * 0.37); // no fr() in the original -- real double math
-        int32_t n10 = 244;
-        if (xt.auscnt < 45 && xt.aflk) { n8 = 128; n9 = 244; n10 = 244; }
-        int32_t power_x2 = jtrunc(662.0f + power); // fr(662.0+n3), case 1
-
-        int32_t bar2_x[4] = {662, 662, power_x2, power_x2};
-        int32_t bar2_y[4] = {31, 40, 40, 31};
-        int32_t base2[3] = {n8, n9, n10};
-        int32_t bar2_rgb[3];
-        for (int32_t ch = 0; ch < 3; ch++) {
-          float snap_term = (float)snap_arr[ch] / 100.0f;
-          float term = (float)base2[ch] * snap_term;
-          float sum = (float)base2[ch] + term;
-          int32_t v = jtrunc(sum);
-          if (v > 255) v = 255;
-          if (v < 0) v = 0;
-          bar2_rgb[ch] = v;
-        }
-        gfx_set_color(&g, bar2_rgb[0], bar2_rgb[1], bar2_rgb[2]);
-        gfx_fill_polygon(&g, bar2_x, bar2_y, 4);
-      }
-
-      // Radar overlay -- xtGraphics.java:8005-8007, the LAST thing the HUD
-      // block does, right after drawstat() above. The speedometer used to
-      // be drawn here unconditionally; it is not a base-HUD element at all
-      // in the original, but the tail of radarstat(), so it moved inside
-      // radar_stat() and now appears only while the radar is toggled on.
-      // See that function's own doc comment for the evidence (`this.sped`
-      // has exactly one draw site in the whole source, line 9067).
-      if (control[0].radar && cp.stage != 10) {
-        radar_stat(&g, &m, &xt, &mad[0], &co[0], &cp, control[0].arrace, nplayers,
-                   hud_images.sped);
-      }
-
-      // arrace leaderboard -- xtGraphics.java:3688's own gate. `starcnt <
-      // 38` keeps it off the grid before the countdown starts, and the
-      // `|| multion >= 2` arm beside it is multiplayer-only. The
-      // dested-clears-the-lock step at :3689-3692 runs here too, even
-      // though alocked never leaves -1 in this port (see xt_graphics.h),
-      // because it is the source's own first statement in this block.
-      if (control[0].arrace && starcnt < 38 && !race_holdit && cp.stage != 10) {
-        if (xt.alocked != -1 && cp.dested[xt.alocked] != 0) {
-          xt.alocked = -1;
-          xt.lalocked = -1;
-        }
-        draw_arrace_board(&g, &m, &cp, nplayers);
-      }
-
-      // Countdown 3-2-1-GO overlay -- Java xtGraphics.java:8050-8055. Only
-      // draws while starcnt is in (0, 35]; the 3/2/1 glyphs anchor at
-      // (385, 50), the GO glyph (gocnt==0, wider) shifts left to (363, 50)
-      // so it stays visually centred. cntdn[gocnt].tex<0 falls back to the
-      // vfont number so the countdown still tells the player it's holding.
-      // Also under the `!holdit` of :8009 (the countdown block :8010 is
-      // that gate's first statement) -- can't actually co-occur here, but
-      // kept explicit so the guard's extent matches the source's.
-      if (!race_holdit && starcnt > 0 && starcnt <= 35) {
-        // :8032-8044 -- which face. Mouth shut by default, open through a
-        // 5-tick window straddling each of 3/2/1, and the third face from
-        // GO onward. The windows are the source's own literals.
-        int32_t duds = 0;
-        if (starcnt <= 37 && starcnt > 32) duds = 1;
-        if (starcnt <= 26 && starcnt > 21) duds = 1;
-        if (starcnt <= 15 && starcnt > 10) duds = 1;
-        if (starcnt <= 4) duds = 2;
-        // :8045-8049 -- drawn BEFORE the glyph so the number sits on top,
-        // and at 30% alpha. `dudo != -1` is the source's own "no face this
-        // race" sentinel; musicomp() only ever sets 250 or 428, so the
-        // test cannot fail here, but it costs nothing to keep.
-        if (race_dudo != -1 && menu_dude[duds].tex >= 0) {
-          gfx_set_composite(&g, 0.3f);
-          gfx_draw_image(&g, menu_dude[duds].tex, race_dudo, 0,
-                          menu_dude[duds].w, menu_dude[duds].h);
-          gfx_set_composite(&g, 1.0f);
-        }
-        HudImg cd_img = hud_images.cntdn[gocnt];
-        int32_t x = (gocnt != 0) ? 385 : 363;
-        if (cd_img.tex >= 0) {
-          gfx_draw_image(&g, cd_img.tex, x, 50, cd_img.w, cd_img.h);
-        } else {
-          const char *fallback = (gocnt == 0) ? "GO" : (gocnt == 1) ? "1" : (gocnt == 2) ? "2" : "3";
-          gfx_set_color(&g, 255, 200, 0);
-          draw_centered(&g, fallback, 400, 50, 4);
-        }
-      }
-
-      // Win/lose hold-card -- Java xtGraphics.java:7683-7803 (drawhi(<card>,
-      // 70) + blinking message + "Press Enter to continue") shown over the
-      // frozen-in-place racing scene until the player presses ENTER or
-      // ~13.2s elapse (race_holdit/race_holdcnt, advanced in the tick loop
-      // above). race_end_kind (set by that same tick-loop scan) picks the
-      // card and text: youwastedem.gif + "You Won, all cars have been
-      // wasted!" (:7683-7690), yourwasted.gif + no blink message, just the
-      // continue prompt (:7708-7722), or the ordinary youwon.gif/youlost.gif
-      // + "You finished first, nice job!" / "<car> finished first, race
-      // over!" (:7742-7761, race_lost_car_name).
-      if (race_holdit) {
-        HudImg card;
-        switch (race_end_kind) {
-          case RACE_END_ALL_WASTED: card = hud_images.youwastedem; break;
-          case RACE_END_PLAYER_WASTED: card = hud_images.yourwasted; break;
-          default: card = race_winner ? hud_images.youwon : hud_images.youlost; break;
-        }
-        int32_t cy = 70;
-        if (card.tex >= 0) {
-          // Java drawhi():8521-8534 -- rounded card behind the glyph, only
-          // when the stage's sky is dark (m.darksky). No rounded-rect
-          // primitive in gfx.h (same simplification STATE_STAGE_LOADING's
-          // panel already makes) -- a plain rect in the same derived
-          // colour reads the same at this size.
-          if (m.darksky) {
-            float hsb[3];
-            rgb_to_hsb(m.csky[0], m.csky[1], m.csky[2], hsb);
-            hsb[2] = 0.6f;
-            int32_t rgb = hsb_to_rgb(hsb[0], hsb[1], hsb[2]);
-            int32_t cr = (rgb >> 16) & 0xff, cgg = (rgb >> 8) & 0xff, cb = rgb & 0xff;
-            gfx_set_color(&g, cr, cgg, cb);
-            gfx_fill_rect(&g, 390 - card.w / 2, cy - 2, card.w + 20, card.h + 2);
-            gfx_set_color(&g, (int32_t)(cr / 1.1f), (int32_t)(cgg / 1.1f), (int32_t)(cb / 1.1f));
-            gfx_draw_rect(&g, 390 - card.w / 2, cy - 2, card.w + 20, card.h + 2);
-          }
-          gfx_draw_image(&g, card.tex, 400 - card.w / 2, cy, card.w, card.h);
-        }
-        // Blinking message -- Java :7744-7749/:7686-7689 alternates
-        // (0,0,0)/(0,128,255) at y=120 each draw via the shared `aflk`
-        // field; race_hold_aflk is this block's own toggle so it doesn't
-        // fight the menu screens' mainmenu_aflk over the same variable.
-        // RACE_END_PLAYER_WASTED draws no blink message at all -- Java
-        // :7708-7722 has no drawcs(120, ...) call in that branch, unlike
-        // its two siblings.
-        if (race_end_kind != RACE_END_PLAYER_WASTED) {
-          if (race_hold_aflk) {
-            gfx_set_color(&g, 0, 0, 0);
+        // Checkpoint arrow -- JS line 1315, drawn BEFORE the panel images
+        // (matches the original's own order, not just this port's habit of
+        // scene-then-HUD). Guarded exactly as xtGraphics.java:7917 guards
+        // its own `this.arrow(...)` call one line later (:7918): no arrow
+        // and no missed/wrong-way banner during the 3-2-1-GO countdown
+        // (starcnt != 0), behind the win/lose hold card (holdit), or on
+        // stage 10. `fase != -6` and `multion < 2` are structurally always
+        // true in this single-player port, so only these three survive.
+        // Both were previously drawn unconditionally -- the arrow kept
+        // pointing at the next checkpoint straight through the countdown
+        // and stayed on screen overlapping the You Won / You're Wasted
+        // card, neither of which the original ever shows.
+        // A-key sync -- xtGraphics.java:7892-7916. The latched xt.arrace is
+        // diffed against the live control[0].arrace so the announcement
+        // fires once per flip. `multion < 2` and the `multion == 1` radar
+        // auto-enable are multiplayer-only; nplayers != 1 is real and holds
+        // whenever bots are racing.
+        if (cp.stage != 10 && nplayers != 1 && xt.arrace != control[0].arrace) {
+          xt.arrace = control[0].arrace;
+          if (xt.arrace) {
+            xt.wasay = true;
+            snprintf(xt.say, sizeof(xt.say), " Arrow now pointing at >  CARS");
+            xt.tcnt = -5;
           } else {
-            gfx_set_color(&g, 0, 128, 255);
-          }
-          race_hold_aflk = !race_hold_aflk;
-          if (race_end_kind == RACE_END_ALL_WASTED) {
-            draw_centered(&g, "You Won, all cars have been wasted!", width / 2, 120 - 6, 1);
-          } else if (race_winner) {
-            draw_centered(&g, "You finished first, nice job!", width / 2, 120 - 6, 1);
-          } else {
-            char lost_msg[64];
-            snprintf(lost_msg, sizeof(lost_msg), "%s finished first, race over!", race_lost_car_name);
-            draw_centered(&g, lost_msg, width / 2, 120 - 6, 1);
+            xt.wasay = false;
+            snprintf(xt.say, sizeof(xt.say), " Arrow now pointing at >  TRACK");
+            xt.tcnt = -5;
+            xt.cntan = 20;
+            xt.alocked = -1;
           }
         }
-        // "Press [ Enter ] to continue" -- Java :7690/:7721/:7788, drawn a
-        // fixed black (0,0,0), not blinking, at y=350 for every ending in
-        // this single-player path (the ordinary finish-line ending draws it
-        // too -- :7788 -- a real gap in this port before this change, see
-        // this block's own git history).
-        gfx_set_color(&g, 0, 0, 0);
-        draw_centered(&g, "Press  [ " KEY_CONTINUE " ]  to continue", width / 2, 350 - 6, 1);
+        if (!race_holdit && starcnt == 0 && cp.stage != 10) {
+          draw_checkpoint_arrow(&g, &m, &xt, &cp, mad[0].point, mad[0].missedcp,
+                                xt.arrace, nplayers, sc);
+          // :7919 -- the missed/wrong-way banner is the `if (!this.arrace)`
+          // arm of the arrow call, so hunting cars suppresses it. The `else
+          // if (alocked != lalocked)` arm next to it announces a change of
+          // manually-locked car; both fields are permanently -1 here (only
+          // the unported mouse-hover branch assigns them, see
+          // xt_graphics.h), so that arm can never fire and is left out
+          // rather than written as unreachable code.
+          if (!xt.arrace) {
+            hud_wrongway_tick(&g, &m, &xt, &mad[0]);
+          }
+        }
+        // The wider `if (!this.holdit)` of :8009 -- everything from the
+        // `looped` reset through the say/asay banners and "Bad Landing!".
+        // Unlike the block above this one DOES keep running during the
+        // countdown (Java draws "Get Ready!"-era say text there).
+        if (!race_holdit) {
+          hud_messages_tick(&g, &m, &xt, &mad[0]);
+        }
+
+        // GameSparker.java:891-903 -- the single-player newcar rebuild.
+        // Wipes every damage dent/recolor by rebuilding the ContO fresh from
+        // its pristine base model, preserving position and orientation;
+        // single-player never uses the multiplayer newedcar/colorCar
+        // 10-tick "shiny repaint" variant (fase==7001 only, out of scope,
+        // no netplay). Deliberately runs AFTER hud_messages_tick() above,
+        // not before: in the real Java, this rebuild sits at the very top
+        // of the SAME per-frame block whose OWN tick-equivalent (drive(),
+        // :939-956) runs later and is what actually sets mad.newcar true --
+        // so the rebuild a given frame executes always consumes the PREVIOUS
+        // frame's flag, while stat()'s "Car Fixed" trigger (:958+, this
+        // port's hud_messages_tick) sees that SAME frame's fresh flag before
+        // it's cleared. This port's tick loop and draw pass are already
+        // separate (unlike Java's unified per-frame loop), so matching that
+        // exact same-frame ordering here means running the clear AFTER the
+        // message check within this one draw pass, not before -- otherwise
+        // the message trigger never observes newcar==true at all. This was
+        // previously believed unreachable entirely (a stale assumption that
+        // this port's CheckPoints has no real fix zones -- wrong:
+        // game_sparker.c's stage parser DOES populate cp->fx/fy/fz/roted
+        // from a real `fix(` stage command, and mad.c:1793 does set
+        // mad->newcar whenever a damaged car reaches one). Without this
+        // rebuild, mad->newcar never clears, so hud_messages_tick()'s
+        // "Car Fixed" trigger re-forces tcnt=0 EVERY frame forever (message
+        // never counts down/disappears) and the car keeps whatever damaged/
+        // recoloured planes it had at the moment it was fixed instead of
+        // the pristine paint a repaired car should show -- exactly the
+        // reported "Car Fixed never goes away, car turns all blue" bug.
+        for (int32_t i = 0; i < nplayers; i++) {
+          if (mad[i].newcar) {
+            int32_t saved_xz = co[i].xz, saved_xy = co[i].xy, saved_zy = co[i].zy;
+            ContO *pristine = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : &base_models[mad[i].cn];
+            cont_o_recopy(&co[i], pristine, co[i].x, co[i].y, co[i].z, 0);
+            co[i].xz = saved_xz;
+            co[i].xy = saved_xy;
+            co[i].zy = saved_zy;
+            mad[i].newcar = false;
+          }
+        }
+
+        // Dark-sky HUD backing -- xtGraphics.java:7971-7993, drawn directly
+        // BEFORE the five panel images below (:7994+) so it sits underneath
+        // them. The panel art (dmg/pwr/lap/pos) is mostly transparent with
+        // dark line work, and on a night/stormy stage that reads as
+        // invisible against the scene behind it, so the original lays down
+        // a solid plate first: the stage's own sky colour pushed to a fixed
+        // HSB brightness of 0.6, exactly the same recolour drawhi() uses
+        // for the win/lose card (:8521-8534, and this file's own hold-card
+        // block further down). The two drawLine() pairs flanking each
+        // fillRect are a hand-drawn 2px "rounded" bevel -- stepping the
+        // plate in by one pixel at each end -- which is why they are
+        // individual lines rather than a border rect. All fifteen calls,
+        // and every literal coordinate in them, are 1:1 with the source.
+        //
+        // Ported for completeness, NOT to fix an observed bug: measured
+        // across all 32 shipped stages/N.txt, m.darksky comes out false
+        // every time (the darkest csky any of them produces after
+        // medium_setsnap's tint is stage 32's, at HSB brightness ~0.77,
+        // well clear of medium.c:869's `< 0.6f` threshold), so with this
+        // asset set the branch never runs. Same reachability status as the
+        // hold-card's own `if (m.darksky)` sibling further down, which this
+        // port already carried -- both are kept because the condition is
+        // data-driven (a hand-written or later stage file could trip it),
+        // not structurally impossible.
+        if (m.darksky) {
+          float hsb_hud[3];
+          rgb_to_hsb(m.csky[0], m.csky[1], m.csky[2], hsb_hud);
+          hsb_hud[2] = 0.6f;
+          int32_t hud_rgb = hsb_to_rgb(hsb_hud[0], hsb_hud[1], hsb_hud[2]);
+          gfx_set_color(&g, (hud_rgb >> 16) & 0xff, (hud_rgb >> 8) & 0xff, hud_rgb & 0xff);
+          gfx_fill_rect(&g, 602, 9, 54, 14);   // :7977 -- behind dmg
+          gfx_draw_line(&g, 601, 10, 601, 21); // :7978
+          gfx_draw_line(&g, 600, 12, 600, 19); // :7979
+          gfx_fill_rect(&g, 607, 29, 49, 14);  // :7980 -- behind pwr
+          gfx_draw_line(&g, 606, 30, 606, 41); // :7981
+          gfx_draw_line(&g, 605, 32, 605, 39); // :7982
+          gfx_fill_rect(&g, 18, 6, 155, 14);   // :7983 -- behind lap + was
+          gfx_draw_line(&g, 17, 7, 17, 18);    // :7984
+          gfx_draw_line(&g, 16, 9, 16, 16);    // :7985
+          gfx_draw_line(&g, 173, 7, 173, 18);  // :7986
+          gfx_draw_line(&g, 174, 9, 174, 16);  // :7987
+          gfx_fill_rect(&g, 40, 26, 107, 21);  // :7988 -- behind pos + rank
+          gfx_draw_line(&g, 39, 27, 39, 45);   // :7989
+          gfx_draw_line(&g, 38, 29, 38, 43);   // :7990
+          gfx_draw_line(&g, 147, 27, 147, 45); // :7991
+          gfx_draw_line(&g, 148, 29, 148, 43); // :7992
+        }
+
+        draw_hud_img(&g, hud_images.dmg, 600, 7);
+        draw_hud_img(&g, hud_images.pwr, 600, 27);
+        draw_hud_img(&g, hud_images.lap, 19, 7);
+        gfx_set_color(&g, 0, 0, 100);
+        char hud[64];
+        snprintf(hud, sizeof(hud), "%d / %d", mad[0].nlaps + 1, cp.nlaps);
+        // JS drawString y is a BASELINE coord (Canvas convention). bitfont's
+        // y is TOP-left, so subtract the font's ~11px ascent to line up
+        // visually with the JS's own placement.
+        bitfont_draw_string(&g, hud, 51, 18 - 11);
+        draw_hud_img(&g, hud_images.was, 92, 7);
+        gfx_set_color(&g, 0, 0, 100);
+        snprintf(hud, sizeof(hud), "%d / %d", cp.wasted, nplayers - 1); // Java: checkPoints.wasted / (nplayers-1)
+        bitfont_draw_string(&g, hud, 150, 18 - 11);
+        draw_hud_img(&g, hud_images.pos, 42, 27);
+        if (cp.pos[0] >= 0 && cp.pos[0] < 8) draw_hud_img(&g, hud_images.rank[cp.pos[0]], 110, 28);
+
+        // Ports drawstat(maxmag, hitmag, newcar, power)'s own two
+        // fillPolygon bars (damage bar top, power bar bottom) -- JS lines
+        // 1812-1890. `newcar` is read by the JS signature but never
+        // actually used in its body (a real, harmless quirk of the
+        // original, not a mistranslation -- preserved as-is).
+        {
+          int32_t maxmag = cd.maxmag[mad[0].cn];
+          int32_t hitmag = mad[0].hitmag;
+          if (hitmag > maxmag) hitmag = maxmag;
+          float ratio = (float)hitmag / (float)maxmag; // fr(n2/n), case 1
+          int32_t n4 = jtrunc(98.0f * ratio);           // fr(98.0*ratio), case 1
+
+          int32_t bar_x[4] = {662, 662, 662 + n4, 662 + n4};
+          int32_t bar_y[4] = {11, 20, 20, 11};
+
+          int32_t n5 = 244, n6 = 244, n7 = 11;
+          if (n4 > 33) {
+            float x = (float)(n4 - 33);
+            float y = x / 65.0f;
+            float z = 233.0f * y;
+            n6 = jtrunc(244.0f - z);
+          }
+          if (n4 > 70) {
+            if (xt.dmcnt < 10) {
+              if (xt.dmflk) { n6 = 170; xt.dmflk = false; }
+              else xt.dmflk = true;
+            }
+            xt.dmcnt++;
+            if ((float)xt.dmcnt > 167.0f - (float)n4 * 1.5f) xt.dmcnt = 0;
+          }
+          int32_t snap_arr[3] = {m.snap[0], m.snap[1], m.snap[2]};
+          int32_t bar_rgb[3];
+          int32_t base[3] = {n5, n6, n7};
+          for (int32_t ch = 0; ch < 3; ch++) {
+            float snap_term = (float)snap_arr[ch] / 100.0f;
+            float term = (float)base[ch] * snap_term;
+            float sum = (float)base[ch] + term;
+            int32_t v = jtrunc(sum);
+            if (v > 255) v = 255;
+            if (v < 0) v = 0;
+            bar_rgb[ch] = v;
+          }
+          gfx_set_color(&g, bar_rgb[0], bar_rgb[1], bar_rgb[2]);
+          gfx_fill_polygon(&g, bar_x, bar_y, 4);
+
+          float power = mad[0].power;
+          int32_t n8 = 128;
+          if (power == 98.0f) n8 = 64;
+          int32_t n9 = jtrunc_d(190.0 + (double)power * 0.37); // no fr() in the original -- real double math
+          int32_t n10 = 244;
+          if (xt.auscnt < 45 && xt.aflk) { n8 = 128; n9 = 244; n10 = 244; }
+          int32_t power_x2 = jtrunc(662.0f + power); // fr(662.0+n3), case 1
+
+          int32_t bar2_x[4] = {662, 662, power_x2, power_x2};
+          int32_t bar2_y[4] = {31, 40, 40, 31};
+          int32_t base2[3] = {n8, n9, n10};
+          int32_t bar2_rgb[3];
+          for (int32_t ch = 0; ch < 3; ch++) {
+            float snap_term = (float)snap_arr[ch] / 100.0f;
+            float term = (float)base2[ch] * snap_term;
+            float sum = (float)base2[ch] + term;
+            int32_t v = jtrunc(sum);
+            if (v > 255) v = 255;
+            if (v < 0) v = 0;
+            bar2_rgb[ch] = v;
+          }
+          gfx_set_color(&g, bar2_rgb[0], bar2_rgb[1], bar2_rgb[2]);
+          gfx_fill_polygon(&g, bar2_x, bar2_y, 4);
+        }
+
+        // Radar overlay -- xtGraphics.java:8005-8007, the LAST thing the HUD
+        // block does, right after drawstat() above. The speedometer used to
+        // be drawn here unconditionally; it is not a base-HUD element at all
+        // in the original, but the tail of radarstat(), so it moved inside
+        // radar_stat() and now appears only while the radar is toggled on.
+        // See that function's own doc comment for the evidence (`this.sped`
+        // has exactly one draw site in the whole source, line 9067).
+        if (control[0].radar && cp.stage != 10) {
+          radar_stat(&g, &m, &xt, &mad[0], &co[0], &cp, control[0].arrace, nplayers,
+                     hud_images.sped);
+        }
+
+        // arrace leaderboard -- xtGraphics.java:3688's own gate. `starcnt <
+        // 38` keeps it off the grid before the countdown starts, and the
+        // `|| multion >= 2` arm beside it is multiplayer-only. The
+        // dested-clears-the-lock step at :3689-3692 runs here too, even
+        // though alocked never leaves -1 in this port (see xt_graphics.h),
+        // because it is the source's own first statement in this block.
+        if (control[0].arrace && starcnt < 38 && !race_holdit && cp.stage != 10) {
+          if (xt.alocked != -1 && cp.dested[xt.alocked] != 0) {
+            xt.alocked = -1;
+            xt.lalocked = -1;
+          }
+          draw_arrace_board(&g, &m, &cp, nplayers);
+        }
+
+        // Countdown 3-2-1-GO overlay -- Java xtGraphics.java:8050-8055. Only
+        // draws while starcnt is in (0, 35]; the 3/2/1 glyphs anchor at
+        // (385, 50), the GO glyph (gocnt==0, wider) shifts left to (363, 50)
+        // so it stays visually centred. cntdn[gocnt].tex<0 falls back to the
+        // vfont number so the countdown still tells the player it's holding.
+        // Also under the `!holdit` of :8009 (the countdown block :8010 is
+        // that gate's first statement) -- can't actually co-occur here, but
+        // kept explicit so the guard's extent matches the source's.
+        if (!race_holdit && starcnt > 0 && starcnt <= 35) {
+          // :8032-8044 -- which face. Mouth shut by default, open through a
+          // 5-tick window straddling each of 3/2/1, and the third face from
+          // GO onward. The windows are the source's own literals.
+          int32_t duds = 0;
+          if (starcnt <= 37 && starcnt > 32) duds = 1;
+          if (starcnt <= 26 && starcnt > 21) duds = 1;
+          if (starcnt <= 15 && starcnt > 10) duds = 1;
+          if (starcnt <= 4) duds = 2;
+          // :8045-8049 -- drawn BEFORE the glyph so the number sits on top,
+          // and at 30% alpha. `dudo != -1` is the source's own "no face this
+          // race" sentinel; musicomp() only ever sets 250 or 428, so the
+          // test cannot fail here, but it costs nothing to keep.
+          if (race_dudo != -1 && menu_dude[duds].tex >= 0) {
+            gfx_set_composite(&g, 0.3f);
+            gfx_draw_image(&g, menu_dude[duds].tex, race_dudo, 0,
+                            menu_dude[duds].w, menu_dude[duds].h);
+            gfx_set_composite(&g, 1.0f);
+          }
+          HudImg cd_img = hud_images.cntdn[gocnt];
+          int32_t x = (gocnt != 0) ? 385 : 363;
+          if (cd_img.tex >= 0) {
+            gfx_draw_image(&g, cd_img.tex, x, 50, cd_img.w, cd_img.h);
+          } else {
+            const char *fallback = (gocnt == 0) ? "GO" : (gocnt == 1) ? "1" : (gocnt == 2) ? "2" : "3";
+            gfx_set_color(&g, 255, 200, 0);
+            draw_centered(&g, fallback, 400, 50, 4);
+          }
+        }
+
+        // Win/lose hold-card -- Java xtGraphics.java:7683-7803 (drawhi(<card>,
+        // 70) + blinking message + "Press Enter to continue") shown over the
+        // frozen-in-place racing scene until the player presses ENTER or
+        // ~13.2s elapse (race_holdit/race_holdcnt, advanced in the tick loop
+        // above). race_end_kind (set by that same tick-loop scan) picks the
+        // card and text: youwastedem.gif + "You Won, all cars have been
+        // wasted!" (:7683-7690), yourwasted.gif + no blink message, just the
+        // continue prompt (:7708-7722), or the ordinary youwon.gif/youlost.gif
+        // + "You finished first, nice job!" / "<car> finished first, race
+        // over!" (:7742-7761, race_lost_car_name).
+        if (race_holdit) {
+          HudImg card;
+          switch (race_end_kind) {
+            case RACE_END_ALL_WASTED: card = hud_images.youwastedem; break;
+            case RACE_END_PLAYER_WASTED: card = hud_images.yourwasted; break;
+            default: card = race_winner ? hud_images.youwon : hud_images.youlost; break;
+          }
+          int32_t cy = 70;
+          if (card.tex >= 0) {
+            // Java drawhi():8521-8534 -- rounded card behind the glyph, only
+            // when the stage's sky is dark (m.darksky). No rounded-rect
+            // primitive in gfx.h (same simplification STATE_STAGE_LOADING's
+            // panel already makes) -- a plain rect in the same derived
+            // colour reads the same at this size.
+            if (m.darksky) {
+              float hsb[3];
+              rgb_to_hsb(m.csky[0], m.csky[1], m.csky[2], hsb);
+              hsb[2] = 0.6f;
+              int32_t rgb = hsb_to_rgb(hsb[0], hsb[1], hsb[2]);
+              int32_t cr = (rgb >> 16) & 0xff, cgg = (rgb >> 8) & 0xff, cb = rgb & 0xff;
+              gfx_set_color(&g, cr, cgg, cb);
+              gfx_fill_rect(&g, 390 - card.w / 2, cy - 2, card.w + 20, card.h + 2);
+              gfx_set_color(&g, (int32_t)(cr / 1.1f), (int32_t)(cgg / 1.1f), (int32_t)(cb / 1.1f));
+              gfx_draw_rect(&g, 390 - card.w / 2, cy - 2, card.w + 20, card.h + 2);
+            }
+            gfx_draw_image(&g, card.tex, 400 - card.w / 2, cy, card.w, card.h);
+          }
+          // Blinking message -- Java :7744-7749/:7686-7689 alternates
+          // (0,0,0)/(0,128,255) at y=120 each draw via the shared `aflk`
+          // field; race_hold_aflk is this block's own toggle so it doesn't
+          // fight the menu screens' mainmenu_aflk over the same variable.
+          // RACE_END_PLAYER_WASTED draws no blink message at all -- Java
+          // :7708-7722 has no drawcs(120, ...) call in that branch, unlike
+          // its two siblings.
+          if (race_end_kind != RACE_END_PLAYER_WASTED) {
+            if (race_hold_aflk) {
+              gfx_set_color(&g, 0, 0, 0);
+            } else {
+              gfx_set_color(&g, 0, 128, 255);
+            }
+            race_hold_aflk = !race_hold_aflk;
+            if (race_end_kind == RACE_END_ALL_WASTED) {
+              draw_centered(&g, "You Won, all cars have been wasted!", width / 2, 120 - 6, 1);
+            } else if (race_winner) {
+              draw_centered(&g, "You finished first, nice job!", width / 2, 120 - 6, 1);
+            } else {
+              char lost_msg[64];
+              snprintf(lost_msg, sizeof(lost_msg), "%s finished first, race over!", race_lost_car_name);
+              draw_centered(&g, lost_msg, width / 2, 120 - 6, 1);
+            }
+          }
+          // "Press [ Enter ] to continue" -- Java :7690/:7721/:7788, drawn a
+          // fixed black (0,0,0), not blinking, at y=350 for every ending in
+          // this single-player path (the ordinary finish-line ending draws it
+          // too -- :7788 -- a real gap in this port before this change, see
+          // this block's own git history).
+          gfx_set_color(&g, 0, 0, 0);
+          draw_centered(&g, "Press  [ " KEY_CONTINUE " ]  to continue", width / 2, 350 - 6, 1);
+        }
+        if (use_rt && settings.smooth) {
+          gfx_clip_save(&hud_clip, &g, hud_mark);
+          smooth_ready = true;
+        }
       }
     } else if (state == STATE_REPLAY && !reuse_frame) {
       // REPLAY -- GameSparker.java fase==-3, :1388-1630. Reconstructs each
@@ -7370,7 +7496,11 @@ int game_run(void) {
       glEnable(GL_BLEND);
     } else if (use_rt) {
       float offset_x = 0.0f, offset_y = 0.0f;
-      if (shaka > 0) {
+      if (smooth_between) {
+        // The shake steps once per tick (and its randoms are the race's).
+        offset_x = race_present_dx;
+        offset_y = race_present_dy;
+      } else if (shaka > 0) {
         offset_x = (float)(int32_t)(shaka * 2.0 * nfm_random() - shaka);
         offset_y = (float)(int32_t)(shaka * 2.0 * nfm_random() - shaka);
         shaka--;
@@ -7396,8 +7526,12 @@ int game_run(void) {
       const int32_t mvect_eff = 100 - (100 - mvect) * settings.blur / 100;
       const bool trail_active = (mvect_eff < 100);
       if (trail_active && accum_valid) {
+        // The trail decays by its weight once per TICK; drawing every frame,
+        // each frame takes its share of that, by its length.
+        float keep = 1.0f - (float)mvect_eff / 100.0f;
+        if (smooth_on) keep = powf(keep, (float)(race_frame_ms / TICK_MS));
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
-        gfx_gl_render_target_blit(rt_pair[rt_cur ^ 1], 0.0f, 0.0f, 1.0f - (float)mvect_eff / 100.0f);
+        gfx_gl_render_target_blit(rt_pair[rt_cur ^ 1], 0.0f, 0.0f, keep);
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
       }
       accum_valid = trail_active;
@@ -7531,7 +7665,11 @@ int game_run(void) {
       platform_display_size(&shot_w, &shot_h);
       uint8_t *pixels = malloc((size_t)shot_w * shot_h * 3);
       glReadPixels(0, 0, shot_w, shot_h, GL_RGB, GL_UNSIGNED_BYTE, pixels);
-      FILE *f = fopen(screenshot_path, "wb");
+      char shot_file[1024];
+      if (screenshot_count > 1) snprintf(shot_file, sizeof(shot_file), "%s.%d", screenshot_path, frame - screenshot_frame);
+      else snprintf(shot_file, sizeof(shot_file), "%s", screenshot_path);
+      fprintf(stderr, "screenshot %s: ticked=%d t=%.2f\n", shot_file, (int)race_ticked, accumulator_ms / TICK_MS);
+      FILE *f = fopen(shot_file, "wb");
       if (f) {
         fprintf(f, "P6\n%d %d\n255\n", shot_w, shot_h);
         // glReadPixels' origin is bottom-left; PPM's is top-left.
@@ -7541,7 +7679,7 @@ int game_run(void) {
         fclose(f);
       }
       free(pixels);
-      running = false;
+      if (frame >= screenshot_frame + screenshot_count - 1) running = false;
     }
     prof_swap_start = platform_ticks_us();
     platform_swap_buffers();

@@ -313,11 +313,11 @@ static void test_settings_blur(void) {
   game_settings_load(prog, &s);
   CHECK(s.blur == GAME_SETTINGS_BLUR_DEFAULT && s.graphics == GFX_HD && s.shake && s.rumble,
         "no settings file -> defaults");
-  s.blur = 40; s.graphics = GFX_SMOOTH; s.shake = false; s.rumble = false;
+  s.blur = 40; s.graphics = GFX_SMOOTH; s.smooth = 0; s.shake = false; s.rumble = false;
   CHECK(game_settings_save(prog, &s), "settings save");
   GameSettings r = game_settings_defaults(GFX_ORIGINAL);
   game_settings_load(prog, &r);
-  CHECK(r.blur == 40 && r.graphics == GFX_SMOOTH && !r.shake && !r.rumble, "settings roundtrip");
+  CHECK(r.blur == 40 && r.graphics == GFX_SMOOTH && !r.smooth && !r.shake && !r.rumble, "settings roundtrip");
   FILE *f = fopen("/tmp/nfm_settings_test/settings.txt", "w");
   if (f) { fputs("motion_blur=57\ngraphics=9\n", f); fclose(f); }
   r = game_settings_defaults(GFX_ORIGINAL);
@@ -329,7 +329,7 @@ static void test_settings_blur(void) {
   if (f) { fputs("motion_blur=20\n", f); fclose(f); }
   r = game_settings_defaults(GFX_HD);
   game_settings_load(prog, &r);
-  CHECK(r.blur == 20 && r.graphics == GFX_HD && r.shake && r.rumble, "old file: new settings default");
+  CHECK(r.blur == 20 && r.graphics == GFX_HD && r.smooth && r.shake && r.rumble, "old file: new settings default");
   // The Graphics / Audio / Interface options.
   s = game_settings_defaults(GFX_HD);
   CHECK(s.draw_dist == 0 && s.detail == 0 && s.shadows && s.particles && s.music_vol == 100 &&

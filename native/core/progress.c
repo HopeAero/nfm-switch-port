@@ -213,6 +213,7 @@ GameSettings game_settings_defaults(int32_t graphics) {
   s.shadows = 1;
   s.particles = 1;
   s.blur = GAME_SETTINGS_BLUR_DEFAULT;
+  s.smooth = 1;
   s.music_vol = 100;
   s.sfx_vol = 100;
   s.show_fps = 0;
@@ -231,6 +232,7 @@ static const SettingKey kSettingKeys[] = {
   {"shadows", offsetof(GameSettings, shadows), 0, 1, 1},
   {"particles", offsetof(GameSettings, particles), 0, 1, 1},
   {"motion_blur", offsetof(GameSettings, blur), 0, 100, 20},
+  {"smooth_frames", offsetof(GameSettings, smooth), 0, 1, 1},
   {"music_volume", offsetof(GameSettings, music_vol), 0, 100, 10},
   {"effects_volume", offsetof(GameSettings, sfx_vol), 0, 100, 10},
   {"show_fps", offsetof(GameSettings, show_fps), 0, 2, 1},

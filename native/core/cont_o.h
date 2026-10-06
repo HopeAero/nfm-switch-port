@@ -263,7 +263,7 @@ static inline int32_t cont_o_ys(ContO *co, int32_t n, int32_t n2) {
 /** Rotate a point set about (n,n2) by n3 degrees -- identical math to
  * medium_rot/plane_rot (ContO.rot() calls this.m.cos/sin too), so this
  * just delegates rather than reimplementing it. */
-static inline void cont_o_rot(ContO *co, int32_t *array, int32_t *array2, int32_t n, int32_t n2, int32_t n3, int32_t n4) {
+static inline void cont_o_rot(ContO *co, int32_t *array, int32_t *array2, int32_t n, int32_t n2, float n3, int32_t n4) {
   medium_rot(co->m, array, array2, n, n2, n3, n4);
 }
 

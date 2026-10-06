@@ -453,10 +453,10 @@ void medium_groundpolys(Medium *m, Graphics2D *g) {
   int32_t *arr = NULL;
   if (rows > 0 && cols > 0) arr = calloc((size_t)rows * (size_t)cols, sizeof(int32_t));
 
-  float cos_xz = medium_cos(m, (float)m->xz);
-  float sin_xz = medium_sin(m, (float)m->xz);
-  float cos_zy = medium_cos(m, (float)m->zy);
-  float sin_zy = medium_sin(m, (float)m->zy);
+  float cos_xz = medium_cos(m, m->xz + m->fxz);
+  float sin_xz = medium_sin(m, m->xz + m->fxz);
+  float cos_zy = medium_cos(m, m->zy + m->fzy);
+  float sin_zy = medium_sin(m, m->zy + m->fzy);
 
   for (int32_t i = n; i < nrw; i++) {
     for (int32_t j = n2; j < ncl; j++) {
@@ -493,8 +493,8 @@ void medium_groundpolys(Medium *m, Graphics2D *g) {
             a3[k] = jtrunc_d((double)ogpz_pvr + (double)m->cgpz[n3] - (double)m->z);
             a4[k] = m->ground;
           }
-          medium_rot(m, a2, a3, m->cx, m->cz, m->xz, 8);
-          medium_rot(m, a4, a3, m->cy, m->cz, m->zy, 8);
+          medium_rot(m, a2, a3, m->cx, m->cz, m->xz + m->fxz, 8);
+          medium_rot(m, a4, a3, m->cy, m->cz, m->zy + m->fzy, 8);
           int32_t a5[8], a6[8];
           int32_t c1 = 0, c2 = 0, c3 = 0, c4 = 0;
           bool ok = true;
@@ -546,8 +546,8 @@ void medium_groundpolys(Medium *m, Graphics2D *g) {
           a8[k] = m->ogpz[n12][k] + m->cgpz[n12] - m->z;
           a9[k] = m->ground;
         }
-        medium_rot(m, a7, a8, m->cx, m->cz, m->xz, 8);
-        medium_rot(m, a9, a8, m->cy, m->cz, m->zy, 8);
+        medium_rot(m, a7, a8, m->cx, m->cz, m->xz + m->fxz, 8);
+        medium_rot(m, a9, a8, m->cy, m->cz, m->zy + m->fzy, 8);
         int32_t a10[8], a11[8];
         int32_t c1 = 0, c2 = 0, c3 = 0, c4 = 0;
         bool ok = true;
@@ -614,8 +614,8 @@ void medium_d(Medium *m, Graphics2D *g) {
   int32_t r = m->cgrnd[0], gg = m->cgrnd[1], bb = m->cgrnd[2];
   int32_t n = m->crgrnd[0], n2 = m->crgrnd[1], n3 = m->crgrnd[2];
   int32_t h = m->h;
-  float cos_zy = medium_cos(m, (float)m->zy);
-  float sin_zy = medium_sin(m, (float)m->zy);
+  float cos_zy = medium_cos(m, m->zy + m->fzy);
+  float sin_zy = medium_sin(m, m->zy + m->fzy);
   for (int32_t i = 0; i < 16; i++) {
     int32_t n4 = m->fade[i];
     int32_t ground_local = m->ground;

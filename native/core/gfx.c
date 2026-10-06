@@ -365,6 +365,49 @@ static GfxDrawCmd *push_cmd(Graphics2D *g) {
   return &g->cmds[g->cmd_count++];
 }
 
+void gfx_flush(Graphics2D *g) {
+  if (g->count > g->flushed) {
+    GfxDrawCmd *batch = push_cmd(g);
+    batch->vert_start = g->flushed;
+    batch->vert_count = g->count - g->flushed;
+    batch->image_id = -1;
+    g->flushed = g->count;
+  }
+}
+
+void gfx_clip_save(GfxClip *c, const Graphics2D *g, GfxMark from) {
+  c->nverts = g->count - from.count;
+  c->ncmds = g->cmd_count - from.cmd_count;
+  c->flushed = g->flushed - from.count;
+  if (c->nverts > c->vcap) {
+    c->vcap = c->nverts;
+    c->verts = realloc(c->verts, sizeof(GfxVert) * (size_t)c->vcap);
+  }
+  if (c->ncmds > c->ccap) {
+    c->ccap = c->ncmds;
+    c->cmds = realloc(c->cmds, sizeof(GfxDrawCmd) * (size_t)c->ccap);
+  }
+  memcpy(c->verts, g->verts + from.count, sizeof(GfxVert) * (size_t)c->nverts);
+  memcpy(c->cmds, g->cmds + from.cmd_count, sizeof(GfxDrawCmd) * (size_t)c->ncmds);
+  for (int32_t i = 0; i < c->ncmds; i++) {
+    if (c->cmds[i].vert_count > 0) c->cmds[i].vert_start -= from.count;
+  }
+}
+
+void gfx_clip_play(Graphics2D *g, const GfxClip *c) {
+  gfx_flush(g);
+  const int32_t base = g->count;
+  ensure_capacity(g, base + c->nverts);
+  memcpy(g->verts + base, c->verts, sizeof(GfxVert) * (size_t)c->nverts);
+  for (int32_t i = 0; i < c->ncmds; i++) {
+    GfxDrawCmd *d = push_cmd(g);
+    *d = c->cmds[i];
+    if (d->vert_count > 0) d->vert_start += base;
+  }
+  g->count = base + c->nverts;
+  g->flushed = base + c->flushed;
+}
+
 void gfx_draw_image(Graphics2D *g, int32_t image_id, int32_t x, int32_t y, int32_t w, int32_t h) {
   gfx_draw_image_sub(g, image_id, x, y, w, h, 0, 0, w, h, w, h);
 }
@@ -373,13 +416,7 @@ void gfx_draw_image_sub(Graphics2D *g, int32_t image_id, int32_t dst_x, int32_t 
                          int32_t dst_w, int32_t dst_h,
                          int32_t src_x, int32_t src_y, int32_t src_w, int32_t src_h,
                          int32_t image_w, int32_t image_h) {
-  if (g->count > g->flushed) {
-    GfxDrawCmd *batch = push_cmd(g);
-    batch->vert_start = g->flushed;
-    batch->vert_count = g->count - g->flushed;
-    batch->image_id = -1;
-    g->flushed = g->count;
-  }
+  gfx_flush(g);
   GfxDrawCmd *img = push_cmd(g);
   img->vert_start = 0;
   img->vert_count = 0;

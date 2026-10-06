@@ -81,6 +81,11 @@ typedef struct Medium {
   bool crs;
   int32_t cx, cy, cz;
   int32_t xz, zy;
+  // Fractional part added to xz/zy by the draw code only: non-zero just
+  // while a smooth-frames pass draws a camera blended between two ticks
+  // (the angles are whole degrees in the game; a whole-degree step on a
+  // turn is ~13px of yaw). Zero leaves every draw bit-identical.
+  float fxz, fzy;
   int32_t x, y, z;
   int32_t iw, ih;
   int32_t w, h;
@@ -200,7 +205,7 @@ static inline float medium_sin(Medium *m, float i) {
 }
 
 // Rotate a point set about (n, n2) by n3 degrees, in place.
-static inline void medium_rot(Medium *m, int32_t *array, int32_t *array2, int32_t n, int32_t n2, int32_t n3, int32_t n4) {
+static inline void medium_rot(Medium *m, int32_t *array, int32_t *array2, int32_t n, int32_t n2, float n3, int32_t n4) {
   if (n3 != 0) {
     float cos = medium_cos(m, (float)n3);
     float sin = medium_sin(m, (float)n3);

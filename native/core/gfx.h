@@ -165,6 +165,23 @@ typedef struct { int32_t count, cmd_count, flushed; } GfxMark;
 GfxMark gfx_mark(const Graphics2D *g);
 void gfx_rewind(Graphics2D *g, GfxMark mark);
 
+/** Closes the pending flat-triangle run into its own command, so a mark
+ * taken next starts on a command boundary (what gfx_clip_save needs). */
+void gfx_flush(Graphics2D *g);
+
+/** A copy of what was drawn between a mark and now, to draw again in a
+ * later frame -- the race HUD on a smooth-frames pass, whose drawing code
+ * advances blink and banner timers and so runs once per tick only. */
+typedef struct {
+  GfxVert *verts;
+  GfxDrawCmd *cmds;
+  int32_t nverts, ncmds, vcap, ccap;
+  int32_t flushed; // g->flushed relative to the mark when saved
+} GfxClip;
+/** `from` must be taken right after gfx_flush(). */
+void gfx_clip_save(GfxClip *c, const Graphics2D *g, GfxMark from);
+void gfx_clip_play(Graphics2D *g, const GfxClip *c);
+
 // --- introspection, for tests -- mirrors web/graphics.js's vertexAt/colorAt.
 void gfx_vertex_at(const Graphics2D *g, int32_t i, float *x, float *y);
 void gfx_color_at(const Graphics2D *g, int32_t i, int32_t *r, int32_t *gg, int32_t *b, int32_t *a);

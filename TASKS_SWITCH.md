@@ -104,9 +104,25 @@ PC with `nxlink -s`.
       - *Gameplay*: Screen Shake, Vibration. Plus Reset to Defaults.
       Drawing randoms are a separate stream (`nfm_set_draw_phase`), so drawing more
       or fewer objects never changes the race.
-- [ ] Missing vs the web port: smooth frames (interpolation; this port draws once
-      per 53 ms tick), clouds / mountains / stars (`medium.c`: not ported), the
-      stages' `fadefrom(`, the Arial font, custom cars, Rivals.
+- [x] **Smooth Frames** (Graphics row, default on; `smooth_frames=`), the web
+      port's INTERPOLATE: the race still ticks at 18.9 Hz, but every display frame
+      draws the cars and camera blended between the two latest ticks
+      (`smooth_capture/apply/restore` in game.c), then puts the tick's values back.
+      The camera keeps the angle's fraction (`Medium.fxz/fzy`, zero otherwise, so
+      off is bit-identical); car angles stay whole degrees. Between ticks the HUD
+      is the last tick's draw list replayed (`GfxClip`: its drawing advances blink
+      and banner timers), the shake holds (its randoms are the race's), the trail
+      decays by frame length (`keep^(dt/53ms)`), and every object's `dist` is put
+      back (checkstat reads it). Checked headless (Linux/Xvfb, frames between ticks
+      show the replayed HUD); not yet on hardware.
+- [x] The camera ran once per display frame, outside the tick loop: the fly-by
+      orbit, the orbit view and the camera eases ran ~3x fast at 60 Hz. It runs
+      in the tick now, as in the Java. Confirm inside the tick (hold card's
+      continue, fly-by skip) is latched, so a press between ticks is not lost.
+- [x] `NFM_SCREENSHOT_COUNT=n`: the screenshot hook dumps n consecutive frames
+      (`path.0`, `path.1`, ...) and logs whether each one ticked.
+- [ ] Missing vs the web port: clouds / mountains / stars (`medium.c`: not
+      ported), the stages' `fadefrom(`, the Arial font, custom cars, Rivals.
 - [x] **Settings from the main menu too**: a fourth row, *Settings*, in the slot
       the original's own fourth row used (y=351). Its label is options.png's style
       redrawn -- the Adventure face at 18 px, the size that gives the original

@@ -313,8 +313,8 @@ static void cont_o_lowshadow(ContO *co, struct Graphics2D *g, int32_t n) {
     }
   }
 
-  cont_o_rot(co, array, array3, m->cx, m->cz, m->xz, 4);
-  cont_o_rot(co, array2, array3, m->cy, m->cz, m->zy, 4);
+  cont_o_rot(co, array, array3, m->cx, m->cz, m->xz + m->fxz, 4);
+  cont_o_rot(co, array2, array3, m->cy, m->cz, m->zy + m->fzy, 4);
   bool ok = true;
   int32_t n8 = 0, n9 = 0, n10 = 0, n11 = 0;
   for (int32_t n12 = 0; n12 < 4; n12++) {
@@ -497,8 +497,8 @@ void cont_o_electrify(ContO *co, struct Graphics2D *g) {
     if (co->roted) {
       cont_o_rot(co, arr, arr3, co->x - m->x, co->z - m->z, 90, 8);
     }
-    cont_o_rot(co, arr, arr3, m->cx, m->cz, m->xz, 8);
-    cont_o_rot(co, arr2, arr3, m->cy, m->cz, m->zy, 8);
+    cont_o_rot(co, arr, arr3, m->cx, m->cz, m->xz + m->fxz, 8);
+    cont_o_rot(co, arr2, arr3, m->cy, m->cz, m->zy + m->fzy, 8);
 
     bool b = true;
     int32_t n5 = 0, n6 = 0, n7 = 0, n8 = 0;
@@ -630,8 +630,8 @@ void cont_o_fixit(ContO *co, struct Graphics2D *g) {
     // and getting this "wrong" on purpose only matches the real applet.
     cont_o_rot(co, array2, array3, co->y - m->y, co->z - m->y, co->zy, 4);
     cont_o_rot(co, array, array3, co->x - m->x, co->z - m->z, co->xz, 4);
-    cont_o_rot(co, array, array3, m->cx, m->cz, m->xz, 4);
-    cont_o_rot(co, array2, array3, m->cy, m->cz, m->zy, 4);
+    cont_o_rot(co, array, array3, m->cx, m->cz, m->xz + m->fxz, 4);
+    cont_o_rot(co, array2, array3, m->cy, m->cz, m->zy + m->fzy, 4);
 
     int32_t absx = 0, absy = 0, py = 0;
     for (int32_t n = 0; n < 4; n++) {
@@ -648,10 +648,10 @@ void cont_o_fixit(ContO *co, struct Graphics2D *g) {
     if (absx < n3) absx = n3;
     if (absy < n3) absy = n3;
 
-    float cosXZ = medium_cos(m, (float)m->xz), sinXZ = medium_sin(m, (float)m->xz);
+    float cosXZ = medium_cos(m, m->xz + m->fxz), sinXZ = medium_sin(m, m->xz + m->fxz);
     int32_t n4 = m->cx + jtrunc((float)(co->x - m->x - m->cx) * cosXZ - (float)(co->z - m->z - m->cz) * sinXZ);
     int32_t n5 = m->cz + jtrunc((float)(co->x - m->x - m->cx) * sinXZ + (float)(co->z - m->z - m->cz) * cosXZ);
-    float cosZY = medium_cos(m, (float)m->zy), sinZY = medium_sin(m, (float)m->zy);
+    float cosZY = medium_cos(m, m->zy + m->fzy), sinZY = medium_sin(m, m->zy + m->fzy);
     int32_t n6 = m->cy + jtrunc((float)(co->y - m->y - m->cy) * cosZY - (float)(n5 - m->cz) * sinZY);
     int32_t n7 = m->cz + jtrunc((float)(co->y - m->y - m->cy) * sinZY + (float)(n5 - m->cz) * cosZY);
 
@@ -832,10 +832,10 @@ void cont_o_pdust(ContO *co, int32_t n, struct Graphics2D *g, bool b) {
       co->smag[n][6] = co->smag[n][7];
     }
 
-    float cosXZ = medium_cos(m, (float)m->xz), sinXZ = medium_sin(m, (float)m->xz);
+    float cosXZ = medium_cos(m, m->xz + m->fxz), sinXZ = medium_sin(m, m->xz + m->fxz);
     int32_t n8 = m->cx + jtrunc((float)(co->sx[n] - m->x - m->cx) * cosXZ - (float)(co->sz[n] - m->z - m->cz) * sinXZ);
     int32_t n9 = m->cz + jtrunc((float)(co->sx[n] - m->x - m->cx) * sinXZ + (float)(co->sz[n] - m->z - m->cz) * cosXZ);
-    float cosZY = medium_cos(m, (float)m->zy), sinZY = medium_sin(m, (float)m->zy);
+    float cosZY = medium_cos(m, m->zy + m->fzy), sinZY = medium_sin(m, m->zy + m->fzy);
     // ContO.java:2029-2030 -- `smag[n][7]` is subtracted BEFORE the
     // multiply by cos/sin (one float value, one multiply each), not
     // subtracted as a separately-multiplied term after -- mathematically
@@ -1042,11 +1042,11 @@ static void cont_o_dsprk(ContO *co, struct Graphics2D *g, bool b) {
       // (cy,cz) by zy, same reasoning.
       int32_t rxz[1] = { co->rx[j] - m->x };
       int32_t rzz[1] = { co->rz[j] - m->z };
-      cont_o_rot(co, rxz, rzz, m->cx, m->cz, m->xz, 1);
+      cont_o_rot(co, rxz, rzz, m->cx, m->cz, m->xz + m->fxz, 1);
       int32_t n10 = rxz[0], n11 = rzz[0];
       int32_t ryy[1] = { co->ry[j] - m->y };
       int32_t rzz2[1] = { n11 };
-      cont_o_rot(co, ryy, rzz2, m->cy, m->cz, m->zy, 1);
+      cont_o_rot(co, ryy, rzz2, m->cy, m->cz, m->zy + m->fzy, 1);
       int32_t n12 = ryy[0], n13 = rzz2[0];
 
       // n14/n15: same rotation, but the point is (rx[j]-x-cx+vrx[j],
@@ -1058,8 +1058,8 @@ static void cont_o_dsprk(ContO *co, struct Graphics2D *g, bool b) {
       // floats).
       double sumX14 = (double)(co->rx[j] - m->x - m->cx) + (double)co->vrx[j];
       double sumZ14 = (double)(co->rz[j] - m->z - m->cz) + (double)co->vrz[j];
-      float cosXZ = medium_cos(m, (float)m->xz);
-      float sinXZ = medium_sin(m, (float)m->xz);
+      float cosXZ = medium_cos(m, m->xz + m->fxz);
+      float sinXZ = medium_sin(m, m->xz + m->fxz);
       float termX14cos = (float)(sumX14 * (double)cosXZ);
       float termZ14sin = (float)(sumZ14 * (double)sinXZ);
       int32_t n14 = m->cx + jtrunc(termX14cos - termZ14sin);
@@ -1071,8 +1071,8 @@ static void cont_o_dsprk(ContO *co, struct Graphics2D *g, bool b) {
       // zy. First term is the same float-sum case-2 shape as n14/n15;
       // second term is pure int (n15-cz), case 1.
       double sumY16 = (double)(co->ry[j] - m->y - m->cy) + (double)co->vry[j];
-      float cosZY = medium_cos(m, (float)m->zy);
-      float sinZY = medium_sin(m, (float)m->zy);
+      float cosZY = medium_cos(m, m->zy + m->fzy);
+      float sinZY = medium_sin(m, m->zy + m->fzy);
       float termY16cos = (float)(sumY16 * (double)cosZY);
       float termZ16sin = (float)(n15 - m->cz) * sinZY; // case 1
       int32_t n16 = m->cy + jtrunc(termY16cos - termZ16sin);
@@ -1126,7 +1126,7 @@ void cont_o_d(ContO *co, struct Graphics2D *g) {
   // groundpolys for the same rotate-then-add-center idiom).
   int32_t rx[1] = { co->x - m->x };
   int32_t rz[1] = { co->z - m->z };
-  medium_rot(m, rx, rz, m->cx, m->cz, m->xz, 1);
+  medium_rot(m, rx, rz, m->cx, m->cz, m->xz + m->fxz, 1);
   int32_t n = rx[0];
   int32_t n2 = rz[0];
 
@@ -1136,7 +1136,7 @@ void cont_o_d(ContO *co, struct Graphics2D *g) {
   // hoisting both out of one rotation is the same result, not a shortcut).
   int32_t ry[1] = { co->y - m->y };
   int32_t rz2[1] = { n2 };
-  medium_rot(m, ry, rz2, m->cy, m->cz, m->zy, 1);
+  medium_rot(m, ry, rz2, m->cy, m->cz, m->zy + m->fzy, 1);
   int32_t n8 = ry[0];
   int32_t n3 = rz2[0];
 
@@ -1178,7 +1178,7 @@ void cont_o_d(ContO *co, struct Graphics2D *g) {
           } else {
             int32_t gy[1] = { m->ground };
             int32_t gz[1] = { n2 };
-            medium_rot(m, gy, gz, m->cy, m->cz, m->zy, 1);
+            medium_rot(m, gy, gz, m->cy, m->cz, m->zy + m->fzy, 1);
             int32_t n6 = gy[0];
             int32_t n7 = gz[0];
             if (cont_o_ys(co, n6 + co->maxR, n7) > 0 && cont_o_ys(co, n6 - co->maxR, n7) < m->h) {

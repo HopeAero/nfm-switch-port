@@ -248,8 +248,8 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
       plane_rot(p, array, array3, n, n2, n4, p->n);
       plane_rot(p, array3, array2, n2, n3, n5, p->n);
       plane_rot(p, array, array2, n, n3, cxz, p->n);
-      plane_rot(p, array, array2, p->m->cx, p->m->cz, p->m->xz, p->n);
-      plane_rot(p, array3, array2, p->m->cy, p->m->cz, p->m->zy, p->n);
+      plane_rot(p, array, array2, p->m->cx, p->m->cz, p->m->xz + p->m->fxz, p->n);
+      plane_rot(p, array3, array2, p->m->cy, p->m->cz, p->m->zy + p->m->fzy, p->n);
       int32_t array4[PLANE_MAX_N];
       int32_t array5[PLANE_MAX_N];
       for (int32_t l = 0; l < p->n; l++) {
@@ -327,8 +327,8 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
       plane_rot(p, array, array3, n, n2, n4, 3);
       plane_rot(p, array3, array2, n2, n3, n5, 3);
       plane_rot(p, array, array2, n, n3, cxz, 3);
-      plane_rot(p, array, array2, p->m->cx, p->m->cz, p->m->xz, 3);
-      plane_rot(p, array3, array2, p->m->cy, p->m->cz, p->m->zy, 3);
+      plane_rot(p, array, array2, p->m->cx, p->m->cz, p->m->xz + p->m->fxz, 3);
+      plane_rot(p, array3, array2, p->m->cy, p->m->cz, p->m->zy + p->m->fzy, 3);
       for (int32_t i = 0; i < 3; i++) {
         array6[i] = plane_xs(p, array[i], array2[i]);
         array7[i] = plane_ys(p, array3[i], array2[i]);
@@ -368,8 +368,8 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
       plane_rot(p, array, array3, n, n2, n4, 3);
       plane_rot(p, array3, array2, n2, n3, n5, 3);
       plane_rot(p, array, array2, n, n3, cxz, 3);
-      plane_rot(p, array, array2, p->m->cx, p->m->cz, p->m->xz, 3);
-      plane_rot(p, array3, array2, p->m->cy, p->m->cz, p->m->zy, 3);
+      plane_rot(p, array, array2, p->m->cx, p->m->cz, p->m->xz + p->m->fxz, 3);
+      plane_rot(p, array3, array2, p->m->cy, p->m->cz, p->m->zy + p->m->fzy, 3);
       for (int32_t i = 0; i < 3; i++) {
         array6[i] = plane_xs(p, array[i], array2[i]);
         array7[i] = plane_ys(p, array3[i], array2[i]);
@@ -482,8 +482,8 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
       p->vy = p->vy + 7;
       if (array18[0] > p->m->ground) p->chip = 19;
     }
-    plane_rot(p, array16, array17, p->m->cx, p->m->cz, p->m->xz, 3);
-    plane_rot(p, array18, array17, p->m->cy, p->m->cz, p->m->zy, 3);
+    plane_rot(p, array16, array17, p->m->cx, p->m->cz, p->m->xz + p->m->fxz, 3);
+    plane_rot(p, array18, array17, p->m->cy, p->m->cz, p->m->zy + p->m->fzy, 3);
     int32_t array22[3], array23[3];
     for (int32_t i32 = 0; i32 < 3; i32++) {
       array22[i32] = plane_xs(p, array16[i32], array17[i32]);
@@ -521,7 +521,7 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
     }
     p->projf = p->projf / 3.0f;
   }
-  plane_rot(p, array, array2, p->m->cx, p->m->cz, p->m->xz, p->n);
+  plane_rot(p, array, array2, p->m->cx, p->m->cz, p->m->xz + p->m->fxz, p->n);
 
   bool b4 = false;
   int32_t array24[PLANE_MAX_N];
@@ -557,7 +557,7 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
     if (n43 == p->n && array3[0] > p->m->cy) b4 = false;
   }
 
-  plane_rot(p, array3, array2, p->m->cy, p->m->cz, p->m->zy, p->n);
+  plane_rot(p, array3, array2, p->m->cy, p->m->cz, p->m->zy + p->m->fzy, p->n);
   int32_t n45 = 1;
   int32_t array26[PLANE_MAX_N];
   int32_t array27[PLANE_MAX_N];
@@ -949,8 +949,8 @@ void plane_s(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
     }
   }
   if (n24 != 0) {
-    plane_rot(p, array, array2, p->m->cx, p->m->cz, p->m->xz, p->n);
-    plane_rot(p, array3, array2, p->m->cy, p->m->cz, p->m->zy, p->n);
+    plane_rot(p, array, array2, p->m->cx, p->m->cz, p->m->xz + p->m->fxz, p->n);
+    plane_rot(p, array3, array2, p->m->cy, p->m->cz, p->m->zy + p->m->fzy, p->n);
     int32_t n27 = 0, n28 = 0, n29 = 0, n30 = 0;
     for (int32_t n31 = 0; n31 < p->n; n31++) {
       array6[n31] = plane_xs(p, array[n31], array2[n31]);

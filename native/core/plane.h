@@ -92,7 +92,7 @@ void plane_loadprojf(Plane *p);
 /** Rotate a point set about (n,n2) by n3 degrees -- identical math to
  * medium_rot (Plane.rot() calls this.m.cos/sin, same as Medium's own rot()
  * does), so this just delegates rather than reimplementing it. */
-static inline void plane_rot(Plane *p, int32_t *array, int32_t *array2, int32_t n, int32_t n2, int32_t n3, int32_t n4) {
+static inline void plane_rot(Plane *p, int32_t *array, int32_t *array2, int32_t n, int32_t n2, float n3, int32_t n4) {
   medium_rot(p->m, array, array2, n, n2, n3, n4);
 }
 

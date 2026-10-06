@@ -186,6 +186,7 @@ typedef struct {
   int32_t shadows;      // 0/1
   int32_t particles;    // 0/1 -- dust and sparks
   int32_t blur;         // 0..100, step 20
+  int32_t smooth;       // 0/1: draw every display frame, blending the two latest ticks
   // Audio
   int32_t music_vol;    // 0..100, step 10
   int32_t sfx_vol;      // 0..100, step 10
