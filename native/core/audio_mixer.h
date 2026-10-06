@@ -89,6 +89,9 @@ void audio_mixer_stop(AudioMixer *mx, int32_t channel);
  */
 void audio_mixer_render(AudioMixer *mx, int16_t *out, int32_t out_frames);
 
+/** Settings > Audio > Effects: every voice's volume times this (0..1, default 1). */
+extern float audio_sfx_gain;
+
 #ifdef __cplusplus
 }
 #endif

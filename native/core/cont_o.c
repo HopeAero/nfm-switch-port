@@ -12,6 +12,9 @@
 #include <math.h>
 #include <stdio.h>
 
+bool cont_o_shadows = true;
+bool cont_o_particles = true;
+
 static bool starts_with(const char *s, const char *prefix) {
   return strncmp(s, prefix, strlen(prefix)) == 0;
 }
@@ -1145,6 +1148,7 @@ void cont_o_d(ContO *co, struct Graphics2D *g) {
       (n4 > co->disp || m->trk != 0) &&
       (!co->decor || (m->resdown != 2 && m->trk != 1))) {
     g->objDrawn++;
+    const GfxMark shadow_mark = gfx_mark(g);
     if (co->shadow) {
       if (!m->crs) {
         if (n3 < 2000) {
@@ -1194,6 +1198,7 @@ void cont_o_d(ContO *co, struct Graphics2D *g) {
         }
       }
     }
+    if (!cont_o_shadows) gfx_rewind(g, shadow_mark);   // Settings > Shadows off
 
     int32_t n8_center = m->cy + n8; // JS: n8 = this.m.cy + trunc(...)
     if (cont_o_ys(co, n8_center + co->maxR, n3) > m->ih && cont_o_ys(co, n8_center - co->maxR, n3) < m->h) {
@@ -1212,10 +1217,12 @@ void cont_o_d(ContO *co, struct Graphics2D *g) {
         int32_t dy0 = m->y + m->cy - co->y;
         int32_t sumsq0 = dx0 * dx0 + dz0 * dz0 + dy0 * dy0;
         co->dist = jtrunc_d(sqrt((double)sumsq0));
+        const GfxMark dust_mark = gfx_mark(g);
         for (int32_t n9 = 0; n9 < 20; n9++) {
           if (co->stg[n9] != 0) cont_o_pdust(co, n9, g, true);
         }
         cont_o_dsprk(co, g, true);
+        if (!cont_o_particles) gfx_rewind(g, dust_mark);   // Settings > Particles off
       }
 
       // Back-to-front face order. The source ranks every face against
@@ -1257,10 +1264,12 @@ void cont_o_d(ContO *co, struct Graphics2D *g) {
       }
 
       if (co->shadow) {
+        const GfxMark dust_mark = gfx_mark(g);
         for (int32_t n18 = 0; n18 < 20; n18++) {
           if (co->stg[n18] != 0) cont_o_pdust(co, n18, g, false);
         }
         cont_o_dsprk(co, g, false);
+        if (!cont_o_particles) gfx_rewind(g, dust_mark);
       }
 
       // Unconditional on co->shadow -- the JS's second `this.dist = ...`

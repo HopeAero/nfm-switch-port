@@ -1,5 +1,6 @@
 #include "progress.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -204,28 +205,62 @@ static void settings_path_for(const char *progress_path, char *out, size_t out_l
 }
 
 GameSettings game_settings_defaults(int32_t graphics) {
-  GameSettings s = {GAME_SETTINGS_BLUR_DEFAULT, graphics, true, true};
+  GameSettings s;
+  memset(&s, 0, sizeof(s));
+  s.graphics = graphics;
+  s.draw_dist = 0;
+  s.detail = 0;
+  s.shadows = 1;
+  s.particles = 1;
+  s.blur = GAME_SETTINGS_BLUR_DEFAULT;
+  s.music_vol = 100;
+  s.sfx_vol = 100;
+  s.show_fps = 0;
+  s.shake = 1;
+  s.rumble = 1;
   return s;
 }
+
+// settings.txt's keys, each with its field and allowed range; values off the
+// range keep what is there, and `step` snaps to the slider's grid.
+typedef struct { const char *key; size_t off; int32_t lo, hi, step; } SettingKey;
+static const SettingKey kSettingKeys[] = {
+  {"graphics", offsetof(GameSettings, graphics), 0, GFX_QUALITY_COUNT - 1, 1},
+  {"draw_distance", offsetof(GameSettings, draw_dist), 0, 2, 1},
+  {"scenery_detail", offsetof(GameSettings, detail), 0, 1, 1},
+  {"shadows", offsetof(GameSettings, shadows), 0, 1, 1},
+  {"particles", offsetof(GameSettings, particles), 0, 1, 1},
+  {"motion_blur", offsetof(GameSettings, blur), 0, 100, 20},
+  {"music_volume", offsetof(GameSettings, music_vol), 0, 100, 10},
+  {"effects_volume", offsetof(GameSettings, sfx_vol), 0, 100, 10},
+  {"show_fps", offsetof(GameSettings, show_fps), 0, 2, 1},
+  {"screen_shake", offsetof(GameSettings, shake), 0, 1, 1},
+  {"vibration", offsetof(GameSettings, rumble), 0, 1, 1},
+};
 
 void game_settings_load(const char *progress_path, GameSettings *s) {
   char path[1024];
   settings_path_for(progress_path, path, sizeof(path));
   FILE *f = fopen(path, "r");
   if (!f) return;
-  char line[64];
+  char line[96];
   while (fgets(line, sizeof(line), f)) {
+    char key[48];
     int v;
-    if (sscanf(line, "motion_blur=%d", &v) == 1) {
-      if (v < 0) v = 0;
-      if (v > 100) v = 100;
-      s->blur = (int32_t)(((v + 10) / 20) * 20);
-    } else if (sscanf(line, "graphics=%d", &v) == 1) {
-      if (v >= 0 && v < GFX_QUALITY_COUNT) s->graphics = v;
-    } else if (sscanf(line, "screen_shake=%d", &v) == 1) {
-      s->shake = v != 0;
-    } else if (sscanf(line, "vibration=%d", &v) == 1) {
-      s->rumble = v != 0;
+    if (sscanf(line, "%47[^=]=%d", key, &v) != 2) continue;
+    for (size_t k = 0; k < sizeof(kSettingKeys) / sizeof(kSettingKeys[0]); k++) {
+      const SettingKey *sk = &kSettingKeys[k];
+      if (strcmp(key, sk->key) != 0) continue;
+      if (sk->step > 1) {
+        // A slider: clamped, then snapped to its grid.
+        if (v < sk->lo) v = sk->lo;
+        if (v > sk->hi) v = sk->hi;
+        v = ((v + sk->step / 2) / sk->step) * sk->step;
+      } else if (v < sk->lo || v > sk->hi) {
+        break;   // a choice off its list keeps the default
+      }
+      *(int32_t *)((char *)s + sk->off) = v;
+      break;
     }
   }
   fclose(f);
@@ -237,8 +272,9 @@ bool game_settings_save(const char *progress_path, const GameSettings *s) {
   ensure_parent_dir(path);
   FILE *f = fopen(path, "w");
   if (!f) return false;
-  fprintf(f, "motion_blur=%d\ngraphics=%d\nscreen_shake=%d\nvibration=%d\n",
-          (int)s->blur, (int)s->graphics, s->shake ? 1 : 0, s->rumble ? 1 : 0);
+  for (size_t k = 0; k < sizeof(kSettingKeys) / sizeof(kSettingKeys[0]); k++) {
+    fprintf(f, "%s=%d\n", kSettingKeys[k].key, (int)*(const int32_t *)((const char *)s + kSettingKeys[k].off));
+  }
   return fclose(f) == 0;
 }
 

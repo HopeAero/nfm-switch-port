@@ -342,6 +342,17 @@ void gfx_clear_rect(Graphics2D *g, int32_t x, int32_t y, int32_t w, int32_t h) {
   g->r = r; g->g = gg; g->b = b; g->a = a;
 }
 
+GfxMark gfx_mark(const Graphics2D *g) {
+  GfxMark k = {g->count, g->cmd_count, g->flushed};
+  return k;
+}
+
+void gfx_rewind(Graphics2D *g, GfxMark mark) {
+  g->count = mark.count;
+  g->cmd_count = mark.cmd_count;
+  g->flushed = mark.flushed;
+}
+
 void gfx_set_rendering_hint(Graphics2D *g) {
   (void)g;
 }

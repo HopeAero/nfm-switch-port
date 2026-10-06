@@ -48,6 +48,7 @@
 #include "platform.h"
 #include "gl_include.h"
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -153,6 +154,12 @@ static void stage_read_name(int32_t stage_num, char *out, size_t outsz) {
  * comment. Only the stage-select call site needs them (to arm the 3D
  * preview's camera); the racing transition passes NULL/NULL.
  */
+// Settings > Graphics > Scenery Detail as Medium.resdown: 0 is the original's
+// full detail, 2 its own low-detail mode (no decoration objects, half the
+// clouds and mountains, no extra sky bands). 1 is only a step of the
+// original's automatic drop and looks like 0, so it is not offered.
+static int32_t g_resdown_setting = 0;
+
 static bool load_stage_objects(ContO **objects_ptr, int32_t *count_ptr, int32_t previous_count,
                                 ContO *base_models, Medium *m, Trackers *t, CheckPoints *cp,
                                 int32_t stage_num, int32_t *out_center_x, int32_t *out_center_z) {
@@ -171,6 +178,9 @@ static bool load_stage_objects(ContO **objects_ptr, int32_t *count_ptr, int32_t 
                                     base_models, m, t, cp, stage_text, out_center_x, out_center_z);
   free(stage_text);
   check_points_calprox(cp);
+  // loadstage resets resdown to the original's full detail; Settings >
+  // Scenery Detail puts it back (see apply_settings()).
+  m->resdown = g_resdown_setting;
   return ok;
 }
 
@@ -256,6 +266,7 @@ typedef enum {
 #define KEY_HANDB    "CROSS"
 #define KEY_ARRACE   "PRESS UP ON THE D-PAD"
 #define KEY_CONTINUE "CROSS"
+#define KEY_BACK     "CIRCLE"
 // clicknow()'s prompt; the original asks for a mouse click.
 #define KEY_START_PROMPT "Press CROSS to Start"
 #define KEY_ARRACE_HINT  "Press UP on the D-pad"
@@ -268,6 +279,7 @@ typedef enum {
 #define KEY_HANDB    "B"
 #define KEY_ARRACE   "PRESS UP ON THE D-PAD"
 #define KEY_CONTINUE "A"
+#define KEY_BACK     "B"
 #define KEY_START_PROMPT "Press A to Start"
 #define KEY_ARRACE_HINT  "Press UP on the D-pad"
 #else
@@ -276,6 +288,7 @@ typedef enum {
 #define KEY_HANDB    "SPACEBAR"
 #define KEY_ARRACE   "PRESS [ A ]"
 #define KEY_CONTINUE "ENTER"
+#define KEY_BACK     "ESC"
 #define KEY_START_PROMPT "Click here to Start"
 // The stage cards' hint (stages 3 and 14), in their own sentence case.
 #define KEY_ARRACE_HINT  "Press [ A ]"
@@ -2704,6 +2717,238 @@ static bool scene_targets_build(GfxGlRenderTarget *scene, GfxGlRenderTarget *acc
   return true;
 }
 
+// ---- Settings screen ---------------------------------------------------------
+//
+// Reached from the main menu and from the pause menu. Pages of rows, laid out
+// like the launcher's own menus (beige stripes, black-bordered rows, the
+// selected one black with yellow text and a hazard stripe). Each row is data:
+// a page to open, a GameSettings field with its list of values, Reset or
+// Back -- adding an option is one line in kSettingsPages.
+
+typedef enum { SET_MAIN, SET_GRAPHICS, SET_AUDIO, SET_INTERFACE, SET_GAMEPLAY, SET_PAGE_COUNT } SettingsPageId;
+typedef enum { ROW_OPEN, ROW_CHOICE, ROW_RESET, ROW_BACK } SettingsRowKind;
+
+typedef struct {
+  SettingsRowKind kind;
+  const char *label;
+  int32_t page;              // ROW_OPEN: the page it opens
+  size_t off;                // ROW_CHOICE: the GameSettings field...
+  int32_t count, step;       // ...which takes 0, step, ..., (count - 1) * step
+  const char *const *names;  // the values' names (NULL: the number itself)
+  bool needs_rumble;         // shown only where the platform can vibrate
+} SettingsRow;
+
+typedef struct { const char *title; int32_t nrows; SettingsRow rows[8]; } SettingsPage;
+
+static const char *const kOnOff[] = {"OFF", "ON"};
+static const char *const kQualityNames[] = {"ORIGINAL", "SMOOTH", "HD"};
+static const char *const kDistNames[] = {"ORIGINAL", "FAR", "MAX"};
+static const char *const kDetailNames[] = {"HIGH", "LOW"};
+static const char *const kBlurNames[] = {"OFF", "20", "40", "60", "80", "100"};
+static const char *const kFpsNames[] = {"OFF", "FPS", "DETAILED"};
+
+#define SET_FIELD(f) offsetof(GameSettings, f)
+static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
+  [SET_MAIN] = {"SETTINGS", 6, {
+    {ROW_OPEN, "GRAPHICS", SET_GRAPHICS, 0, 0, 0, NULL, false},
+    {ROW_OPEN, "AUDIO", SET_AUDIO, 0, 0, 0, NULL, false},
+    {ROW_OPEN, "INTERFACE", SET_INTERFACE, 0, 0, 0, NULL, false},
+    {ROW_OPEN, "GAMEPLAY", SET_GAMEPLAY, 0, 0, 0, NULL, false},
+    {ROW_RESET, "RESET TO DEFAULTS", 0, 0, 0, 0, NULL, false},
+    {ROW_BACK, "BACK", 0, 0, 0, 0, NULL, false}}},
+  [SET_GRAPHICS] = {"SETTINGS - GRAPHICS", 7, {
+    {ROW_CHOICE, "IMAGE QUALITY", 0, SET_FIELD(graphics), 3, 1, kQualityNames, false},
+    {ROW_CHOICE, "DRAW DISTANCE", 0, SET_FIELD(draw_dist), 3, 1, kDistNames, false},
+    {ROW_CHOICE, "SCENERY DETAIL", 0, SET_FIELD(detail), 2, 1, kDetailNames, false},
+    {ROW_CHOICE, "SHADOWS", 0, SET_FIELD(shadows), 2, 1, kOnOff, false},
+    {ROW_CHOICE, "PARTICLES", 0, SET_FIELD(particles), 2, 1, kOnOff, false},
+    {ROW_CHOICE, "MOTION BLUR", 0, SET_FIELD(blur), 6, 20, kBlurNames, false},
+    {ROW_BACK, "BACK", 0, 0, 0, 0, NULL, false}}},
+  [SET_AUDIO] = {"SETTINGS - AUDIO", 3, {
+    {ROW_CHOICE, "MUSIC", 0, SET_FIELD(music_vol), 11, 10, NULL, false},
+    {ROW_CHOICE, "EFFECTS", 0, SET_FIELD(sfx_vol), 11, 10, NULL, false},
+    {ROW_BACK, "BACK", 0, 0, 0, 0, NULL, false}}},
+  [SET_INTERFACE] = {"SETTINGS - INTERFACE", 2, {
+    {ROW_CHOICE, "SHOW FPS", 0, SET_FIELD(show_fps), 3, 1, kFpsNames, false},
+    {ROW_BACK, "BACK", 0, 0, 0, 0, NULL, false}}},
+  [SET_GAMEPLAY] = {"SETTINGS - GAMEPLAY", 3, {
+    {ROW_CHOICE, "SCREEN SHAKE", 0, SET_FIELD(shake), 2, 1, kOnOff, false},
+    {ROW_CHOICE, "VIBRATION", 0, SET_FIELD(rumble), 2, 1, kOnOff, true},
+    {ROW_BACK, "BACK", 0, 0, 0, 0, NULL, false}}},
+};
+#undef SET_FIELD
+
+typedef struct { int32_t page, row; } SettingsUi;
+typedef enum { SETTINGS_STAY, SETTINGS_EXIT } SettingsAction;
+
+static int32_t *settings_field(GameSettings *s, const SettingsRow *r) {
+  return (int32_t *)((char *)s + r->off);
+}
+
+static bool settings_row_shown(const SettingsRow *r, bool has_rumble) {
+  return !r->needs_rumble || has_rumble;
+}
+
+/** One frame of Settings input. Changes go straight into `s`; the caller
+ * applies them (apply_settings) and saves on SETTINGS_EXIT. */
+static SettingsAction settings_screen_input(SettingsUi *ui, GameSettings *s, int32_t default_graphics,
+                                            bool up, bool down, bool left, bool right, bool ok, bool back,
+                                            bool has_rumble) {
+  const SettingsPage *pg = &kSettingsPages[ui->page];
+  const int32_t n = pg->nrows;
+  if (down || up) {
+    int32_t r = ui->row;
+    do { r = (r + (down ? 1 : n - 1)) % n; } while (!settings_row_shown(&pg->rows[r], has_rumble));
+    ui->row = r;
+  }
+  const SettingsRow *row = &pg->rows[ui->row];
+  if (row->kind == ROW_CHOICE && (left || right)) {
+    int32_t *v = settings_field(s, row);
+    int32_t i = *v / row->step + (right ? 1 : -1);
+    if (i >= 0 && i < row->count) *v = i * row->step;
+  }
+  if (ok) {
+    if (row->kind == ROW_OPEN) {
+      ui->page = row->page;
+      ui->row = 0;
+    } else if (row->kind == ROW_RESET) {
+      *s = game_settings_defaults(default_graphics);
+    } else if (row->kind == ROW_BACK) {
+      back = true;
+    }
+  }
+  if (back) {
+    if (ui->page == SET_MAIN) return SETTINGS_EXIT;
+    // Back to the main page, on the row that opened this one.
+    const SettingsPage *main_pg = &kSettingsPages[SET_MAIN];
+    for (int32_t r = 0; r < main_pg->nrows; r++) {
+      if (main_pg->rows[r].kind == ROW_OPEN && main_pg->rows[r].page == ui->page) ui->row = r;
+    }
+    ui->page = SET_MAIN;
+  }
+  return SETTINGS_STAY;
+}
+
+// The launcher's palette.
+#define SET_BG       232, 228, 216
+#define SET_BG_DARK  217, 213, 201
+#define SET_INK      40, 40, 40
+#define SET_YELLOW   245, 208, 0
+
+/** `poly` (n points) clipped to xmin <= x <= xmax; writes to out, returns its size. */
+static int32_t clip_poly_x(const int32_t *px, const int32_t *py, int32_t n, int32_t xmin, int32_t xmax,
+                           int32_t *ox, int32_t *oy) {
+  int32_t ax[16], ay[16], an = 0;
+  for (int32_t pass = 0; pass < 2; pass++) {
+    const int32_t *ix = pass ? ax : px, *iy = pass ? ay : py;
+    int32_t in = pass ? an : n, cnt = 0;
+    int32_t *wx = pass ? ox : ax, *wy = pass ? oy : ay;
+    for (int32_t i = 0; i < in; i++) {
+      const int32_t x0 = ix[i], y0 = iy[i], x1 = ix[(i + 1) % in], y1 = iy[(i + 1) % in];
+      const bool in0 = pass ? x0 <= xmax : x0 >= xmin, in1 = pass ? x1 <= xmax : x1 >= xmin;
+      const int32_t edge = pass ? xmax : xmin;
+      if (in0) { wx[cnt] = x0; wy[cnt] = y0; cnt++; }
+      if (in0 != in1 && x1 != x0) {
+        wx[cnt] = edge;
+        wy[cnt] = y0 + (y1 - y0) * (edge - x0) / (x1 - x0);
+        cnt++;
+      }
+    }
+    if (pass) return cnt;
+    an = cnt;
+  }
+  return 0;
+}
+
+/** The yellow-and-black hazard stripe in (x, y, w, h). */
+static void draw_hazard(Graphics2D *g, int32_t x, int32_t y, int32_t w, int32_t h) {
+  gfx_set_color(g, SET_YELLOW);
+  gfx_fill_rect(g, x, y, w, h);
+  gfx_set_color(g, 17, 17, 17);
+  for (int32_t k = -h; k < w; k += 12) {
+    const int32_t px[4] = {x + k, x + k + 6, x + k + 6 + h, x + k + h};
+    const int32_t py[4] = {y + h, y + h, y, y};
+    int32_t cx[16], cy[16];
+    const int32_t cn = clip_poly_x(px, py, 4, x, x + w, cx, cy);
+    if (cn >= 3) gfx_fill_polygon(g, cx, cy, cn);
+  }
+}
+
+static void draw_settings_arrow(Graphics2D *g, int32_t x, int32_t cy, bool right, bool lit, bool selected) {
+  if (!lit) gfx_set_color(g, 150, 146, 136);
+  else if (selected) gfx_set_color(g, SET_YELLOW);
+  else gfx_set_color(g, SET_INK);
+  const int32_t xs[3] = {x, right ? x + 9 : x - 9, x};
+  const int32_t ys[3] = {cy - 6, cy, cy + 6};
+  gfx_fill_polygon(g, xs, ys, 3);
+}
+
+static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const GameSettings *s, bool has_rumble) {
+  // Beige with darker vertical stripes, over the whole 800x450.
+  gfx_set_color(g, SET_BG);
+  gfx_fill_rect(g, 0, 0, 800, 450);
+  gfx_set_color(g, SET_BG_DARK);
+  for (int32_t x = 60; x < 800; x += 120) gfx_fill_rect(g, x, 0, 60, 450);
+
+  const SettingsPage *pg = &kSettingsPages[ui->page];
+  gfx_set_color(g, 17, 17, 17);
+  gfx_fill_rect(g, 120, 22, 560, 32);
+  gfx_set_color(g, SET_YELLOW);
+  draw_centered(g, pg->title, 400, 38 - 7, 2);
+
+  const int32_t x0 = 120, w = 560, h = 34, gap = 6;
+  int32_t y = 68;
+  for (int32_t r = 0; r < pg->nrows; r++) {
+    const SettingsRow *row = &pg->rows[r];
+    if (!settings_row_shown(row, has_rumble)) continue;
+    const bool sel = r == ui->row;
+    gfx_set_color(g, 17, 17, 17);
+    gfx_fill_rect(g, x0, y, w, h);                       // the 3px black border...
+    if (!sel) {
+      gfx_set_color(g, SET_BG);
+      gfx_fill_rect(g, x0 + 3, y + 3, w - 6, h - 6);     // ...around a beige face
+    } else {
+      draw_hazard(g, x0 + 3, y + 3, 18, h - 6);
+    }
+    const int32_t cy = y + h / 2;
+    if (sel) gfx_set_color(g, SET_YELLOW); else gfx_set_color(g, SET_INK);
+    vfont_draw_string(g, row->label, x0 + 34, cy - 7, 2, 2.0f);
+    if (row->kind == ROW_OPEN) {
+      draw_settings_arrow(g, x0 + w - 26, cy, true, true, sel);
+    } else if (row->kind == ROW_CHOICE) {
+      const int32_t v = *(const int32_t *)((const char *)s + row->off);
+      const int32_t i = v / row->step;
+      char num[16];
+      const char *name = row->names ? row->names[i] : (snprintf(num, sizeof(num), "%d", (int)v), num);
+      const int32_t tw = vfont_text_width(name, 2);
+      const int32_t right_x = x0 + w - 26;
+      if (sel) gfx_set_color(g, SET_YELLOW); else gfx_set_color(g, SET_INK);
+      vfont_draw_string(g, name, right_x - 14 - tw, cy - 7, 2, 2.0f);
+      draw_settings_arrow(g, right_x - 22 - tw, cy, false, i > 0, sel);
+      draw_settings_arrow(g, right_x, cy, true, i < row->count - 1, sel);
+    }
+    y += h + gap;
+  }
+
+  gfx_set_color(g, 90, 88, 80);
+  char hint[96];
+  snprintf(hint, sizeof(hint), "LEFT/RIGHT: CHANGE    %s: SELECT    %s: BACK", KEY_CONTINUE, KEY_BACK);
+  draw_centered(g, hint, 400, 424 - 6, 1);
+}
+
+/** Puts the Settings that act on the engine into effect (Image Quality is
+ * done by the caller: it rebuilds the render targets). */
+static void apply_settings(const GameSettings *s, Medium *m) {
+  static const int32_t kDistPercent[3] = {100, 150, 200};
+  medium_draw_distance(m, kDistPercent[s->draw_dist]);
+  g_resdown_setting = s->detail ? 2 : 0;
+  m->resdown = g_resdown_setting;
+  cont_o_shadows = s->shadows != 0;
+  cont_o_particles = s->particles != 0;
+  audio_sfx_gain = (float)s->sfx_vol / 100.0f;
+  radical_music_gain = (float)s->music_vol / 100.0f;
+}
+
 /** 800x450 RGBA from a `w`x`h` glReadPixels frame (both bottom-up), nearest. */
 static void downsample_to_game(const uint8_t *src, int32_t w, int32_t h, uint8_t *dst) {
   for (int32_t y = 0; y < 450; y++) {
@@ -3422,7 +3667,7 @@ int game_run(void) {
   char progress_path[1024];
   bool progress_path_ok = platform_progress_path(progress_path, sizeof(progress_path));
   // Settings screen (pause menu -> Settings): motion-blur intensity 0..100
-  // in steps of 20, persisted beside the progress file. settings_row is
+  // in steps of 20, persisted beside the progress file. the screen state is
   // the highlighted row (0 = Motion Blur slider, 1 = Back).
   // Also Graphics (see scene_targets_build), Screen Shake and Vibration.
   GameSettings settings = game_settings_defaults(NFM_DEFAULT_GRAPHICS);
@@ -3430,7 +3675,8 @@ int game_run(void) {
   if (settings.graphics != GFX_ORIGINAL) {
     motion_blur_ok = scene_targets_build(&scene_rt, &accum_rt, motion_blur_ok, width, height, settings.graphics);
   }
-  int32_t settings_row = 0;
+  apply_settings(&settings, &m);
+  SettingsUi settings_ui = {SET_MAIN, 0};
   // Where Back leaves Settings: the pause menu or the main menu.
   GameState settings_return = STATE_PAUSED;
   if (progress_path_ok) {
@@ -3704,7 +3950,6 @@ int game_run(void) {
   int32_t paced_state_now = -1;
   bool replay_confirm_latch = false;
   bool running = true;
-#ifdef NFM_SHOW_FPS
   // Frame-phase breakdown for the FPS overlay (microseconds, summed over
   // the current one-second window): logic = input, menu state and the
   // physics ticks; build = assembling this frame's geometry on the CPU;
@@ -3713,11 +3958,8 @@ int game_run(void) {
   uint64_t prof_frame_start = 0, prof_render_start = 0, prof_submit_start = 0, prof_swap_start = 0;
   uint64_t prof_sum[4] = {0, 0, 0, 0};
   int32_t prof_avg_tenths[4] = {0, 0, 0, 0}; // last window's per-frame mean, 0.1ms units
-#endif
   while (running) {
-#ifdef NFM_SHOW_FPS
     prof_frame_start = platform_ticks_us();
-#endif
     bool held[BTN_COUNT];
     bool race_ticked = false; // this frame consumed at least one physics tick
     running = platform_poll(held);
@@ -3737,7 +3979,11 @@ int game_run(void) {
       // NFM_SCREENSHOT_MENU=mainsettings: open Settings from here, headless.
       if (screenshot_menu && strcmp(screenshot_menu, "mainsettings") == 0 && frame == screenshot_frame - 3) {
         mainmenu_opselect = 3;
-        settings_row = 0;
+        settings_ui = (SettingsUi){SET_MAIN, 0};
+        // NFM_SETTINGS_PAGE=n (and NFM_SETTINGS_ROW=n) open a section directly.
+        const char *page_env = getenv("NFM_SETTINGS_PAGE"), *row_env = getenv("NFM_SETTINGS_ROW");
+        if (page_env && atoi(page_env) >= 0 && atoi(page_env) < SET_PAGE_COUNT) settings_ui.page = atoi(page_env);
+        if (row_env) settings_ui.row = atoi(row_env);
         settings_return = STATE_MAIN_MENU;
         state = STATE_SETTINGS;
       }
@@ -3791,7 +4037,7 @@ int game_run(void) {
             break;
           case 2: state = STATE_CREDITS; break;
           case 3:
-            settings_row = 0;
+            settings_ui = (SettingsUi){SET_MAIN, 0};
             settings_return = STATE_MAIN_MENU;
             state = STATE_SETTINGS;
             break;
@@ -4100,7 +4346,7 @@ int game_run(void) {
       if (hook_replay) pause_opselect = 1;
       // NFM_SCREENSHOT_MENU=settings: open the Settings screen headless.
       if (screenshot_menu && strcmp(screenshot_menu, "settings") == 0 && frame == screenshot_frame - 3) {
-        settings_row = 0;
+        settings_ui = (SettingsUi){SET_MAIN, 0};
         settings_return = STATE_PAUSED;
         state = STATE_SETTINGS;
       }
@@ -4125,7 +4371,7 @@ int game_run(void) {
             state = STATE_CANTREPLY;
           }
         } else if (pause_opselect == 4) {
-          settings_row = 0;
+          settings_ui = (SettingsUi){SET_MAIN, 0};
           settings_return = STATE_PAUSED;
           state = STATE_SETTINGS;
         } else if (pause_opselect == 2) {
@@ -4158,42 +4404,23 @@ int game_run(void) {
         state = STATE_PAUSED;
       }
     } else if (state == STATE_SETTINGS) {
-      // Up/down picks the row, left/right moves the slider in steps of 20,
-      // Back (or cancel from anywhere) saves and returns to the pause menu.
-      // Rows: 0 Motion Blur, 1 Graphics, 2 Screen Shake, 3 Vibration (only
-      // where the platform can vibrate), 4 Back.
-      const bool has_rumble = platform_has_rumble();
-      if (KEY_EDGE(BTN_DOWN)) {
-        settings_row = settings_row == 4 ? 0 : settings_row + 1;
-        if (settings_row == 3 && !has_rumble) settings_row = 4;
-      }
-      if (KEY_EDGE(BTN_UP)) {
-        settings_row = settings_row == 0 ? 4 : settings_row - 1;
-        if (settings_row == 3 && !has_rumble) settings_row = 2;
-      }
-      const int32_t step = KEY_EDGE(BTN_RIGHT) ? 1 : KEY_EDGE(BTN_LEFT) ? -1 : 0;
-      if (step != 0) {
-        if (settings_row == 0) {
-          settings.blur += step * 20;
-          if (settings.blur < 0) settings.blur = 0;
-          if (settings.blur > 100) settings.blur = 100;
-        } else if (settings_row == 1) {
-          int32_t q = settings.graphics + step;
-          if (q >= 0 && q < GFX_QUALITY_COUNT && q != settings.graphics) {
-            settings.graphics = q;
-            // Applied at once: the next frame draws at the new size (the
-            // trail restarts; the paused frame behind this screen is kept).
-            motion_blur_ok = scene_targets_build(&scene_rt, &accum_rt, motion_blur_ok, width, height, q);
-            accum_valid = false;
-          }
-        } else if (settings_row == 2) {
-          settings.shake = !settings.shake;
-        } else if (settings_row == 3) {
-          settings.rumble = !settings.rumble;
-          if (settings.rumble) platform_rumble(0.6f, 200);   // a taste of it
+      const GameSettings before = settings;
+      const SettingsAction act = settings_screen_input(
+          &settings_ui, &settings, NFM_DEFAULT_GRAPHICS, KEY_EDGE(BTN_UP), KEY_EDGE(BTN_DOWN),
+          KEY_EDGE(BTN_LEFT), KEY_EDGE(BTN_RIGHT), KEY_EDGE(BTN_CONFIRM), KEY_EDGE(BTN_CANCEL),
+          platform_has_rumble());
+      if (memcmp(&settings, &before, sizeof(settings)) != 0) {
+        // Everything applies at once. Image Quality rebuilds the targets the
+        // frame is drawn into (the trail restarts).
+        if (settings.graphics != before.graphics) {
+          motion_blur_ok = scene_targets_build(&scene_rt, &accum_rt, motion_blur_ok, width, height,
+                                               settings.graphics);
+          accum_valid = false;
         }
+        apply_settings(&settings, &m);
+        if (settings.rumble && !before.rumble) platform_rumble(0.6f, 200);   // a taste of it
       }
-      if ((settings_row == 4 && KEY_EDGE(BTN_CONFIRM)) || KEY_EDGE(BTN_CANCEL)) {
+      if (act == SETTINGS_EXIT) {
         if (progress_path_ok) game_settings_save(progress_path, &settings);
         state = settings_return;
       }
@@ -5085,15 +5312,12 @@ int game_run(void) {
     // and the replays it can be taken from). Every other screen draws
     // straight to the display -- one full-screen pass and one render-
     // target switch fewer per frame on the Vita.
-#ifdef NFM_SHOW_FPS
     prof_render_start = platform_ticks_us();
-#endif
     const GameState render_state = state;
     const bool letterboxed = render_state != STATE_RACING && render_state != STATE_REPLAY &&
                              render_state != STATE_PAUSED && render_state != STATE_PAUSE_REPLAY &&
                              render_state != STATE_CANTREPLY && render_state != STATE_BOOT_CLICK &&
-                             // Settings is letterboxed like the menu it was opened from.
-                             !(render_state == STATE_SETTINGS && settings_return != STATE_MAIN_MENU);
+                             render_state != STATE_SETTINGS;
     const bool use_rt = motion_blur_ok &&
                         (render_state == STATE_RACING || render_state == STATE_REPLAY ||
                          render_state == STATE_PAUSE_REPLAY || render_state == STATE_CAR_SELECT ||
@@ -5886,89 +6110,8 @@ int game_run(void) {
       // looked like it did nothing.
       medium_around(&m, &co[0], false);
     } else if (state == STATE_SETTINGS) {
-      // From the main menu the screen is drawn like the menu, letterboxed
-      // (the 670x400 interior at (65,25) fills the display), so the panel
-      // moves down into that interior.
-      const int32_t sdy = settings_return == STATE_MAIN_MENU ? 40 : 0;
-      // Settings, over the same grey pauseimage() backdrop as the pause menu --
-      // or, opened from the main menu, over the menu's own background.
-      if (settings_return == STATE_MAIN_MENU) {
-        draw_menu_common_bg(&g, menu_bgmain, menu_logomadbg, menu_logomadnes, menu_dude[0],
-                            menu_logocars, menu_opback, mainbg_bgmy, &mainmenu_flkat,
-                            &mainmenu_gxdu, &mainmenu_gydu, &mainmenu_movly);
-      } else if (pause_flex_tex >= 0) {
-        gfx_draw_image(&g, pause_flex_tex, 0, 0, 800, 450);
-      } else {
-        draw_race_scene(&g, &m, all_objs, total_objs, visible_idx, rank, order);
-      }
-      // Covers the whole blue-tinted panel pauseimage() baked into the backdrop
-      // (281..518 x 8..196), so none of it shows around the plate.
-      draw_pause_plate(&g, 231, 8 + sdy, 338, 300);
-      gfx_set_color(&g, 160, 196, 255);
-      draw_centered(&g, "Settings", 400, 30 - 9 + sdy, 2);
-
-      // Row 0: Motion Blur, a slider of six stops (0, 20, ... 100).
-      if (settings_row == 0) draw_pause_highlight(&g, 251, 60 + sdy, 298, 72);
-      gfx_set_color(&g, 255, 255, 255);
-      draw_centered(&g, "Motion Blur", 400, 76 - 9 + sdy, 2);
-      const int32_t track_x = 290, track_w = 200, track_y = 102 + sdy;
-      gfx_set_color(&g, 30, 50, 80);
-      gfx_fill_rect(&g, track_x, track_y - 2, track_w, 4);
-      for (int32_t k = 0; k <= 5; k++) {
-        int32_t sx = track_x + k * track_w / 5;
-        gfx_fill_rect(&g, sx - 1, track_y - 6, 2, 12);
-      }
-      int32_t knob_x = track_x + settings.blur * track_w / 100;
-      gfx_set_color(&g, 255, 255, 255);
-      gfx_fill_round_rect(&g, knob_x - 6, track_y - 9, 12, 18, 6, 6);
-      gfx_set_color(&g, 0, 89, 223);
-      gfx_draw_round_rect(&g, knob_x - 6, track_y - 9, 12, 18, 6, 6);
-      char blur_label[16];
-      snprintf(blur_label, sizeof(blur_label), "%d", settings.blur);
-      gfx_set_color(&g, 255, 255, 255);
-      draw_centered(&g, blur_label, 400, 120 - 6 + sdy, 1);
-      // Left/right arrows (vfont has no < > glyphs), dimmed at the ends.
-      {
-        int32_t lx[3] = {track_x - 26, track_x - 16, track_x - 16};
-        int32_t ly[3] = {track_y, track_y - 7, track_y + 7};
-        int32_t rx[3] = {track_x + track_w + 26, track_x + track_w + 16, track_x + track_w + 16};
-        if (settings.blur > 0) gfx_set_color(&g, 255, 255, 255); else gfx_set_color(&g, 30, 50, 80);
-        gfx_fill_polygon(&g, lx, ly, 3);
-        if (settings.blur < 100) gfx_set_color(&g, 255, 255, 255); else gfx_set_color(&g, 30, 50, 80);
-        gfx_fill_polygon(&g, rx, ly, 3);
-      }
-
-      // Rows 1-3: a name and its value between arrows (dimmed at the ends of
-      // Graphics; the two switches just flip). Vibration only where the
-      // platform has it.
-      {
-        static const char *const kQuality[GFX_QUALITY_COUNT] = {"Original", "Smooth", "HD"};
-        struct { int32_t row; const char *name; const char *value; bool can_l, can_r; } rows[3] = {
-          {1, "Graphics", kQuality[settings.graphics], settings.graphics > 0, settings.graphics < GFX_QUALITY_COUNT - 1},
-          {2, "Screen Shake", settings.shake ? "On" : "Off", true, true},
-          {3, "Vibration", settings.rumble ? "On" : "Off", true, true},
-        };
-        const int32_t nrows = platform_has_rumble() ? 3 : 2;
-        for (int32_t i = 0; i < nrows; i++) {
-          const int32_t y = 150 + i * 36 + sdy;
-          if (settings_row == rows[i].row) draw_pause_highlight(&g, 251, y - 12, 298, 28);
-          char label[48];
-          snprintf(label, sizeof(label), "%s: %s", rows[i].name, rows[i].value);
-          gfx_set_color(&g, 255, 255, 255);
-          draw_centered(&g, label, 400, y - 6, 1);
-          int32_t lx[3] = {268, 278, 278}, rx[3] = {532, 522, 522};
-          int32_t ly[3] = {y + 2, y - 5, y + 9};
-          if (rows[i].can_l) gfx_set_color(&g, 255, 255, 255); else gfx_set_color(&g, 30, 50, 80);
-          gfx_fill_polygon(&g, lx, ly, 3);
-          if (rows[i].can_r) gfx_set_color(&g, 255, 255, 255); else gfx_set_color(&g, 30, 50, 80);
-          gfx_fill_polygon(&g, rx, ly, 3);
-        }
-      }
-
-      // Row 4: Back.
-      if (settings_row == 4) draw_pause_highlight(&g, 345, 268 + sdy, 110, 22);
-      gfx_set_color(&g, 255, 255, 255);
-      draw_centered(&g, "Back", 400, 279 - 9 + sdy, 2);
+      // Opaque, the whole 800x450 (see settings_screen_draw()).
+      settings_screen_draw(&g, &settings_ui, &settings, platform_has_rumble());
     } else if (state == STATE_PAUSED || state == STATE_CANTREPLY) {
       // PAUSE MENU -- fase -7, pausedgame() (xtGraphics.java:4695-4807),
       // and the fase -8 banner that sits on top of it.
@@ -7171,9 +7314,7 @@ int game_run(void) {
       if (step) intro_frame++;
     }
 
-#ifdef NFM_SHOW_FPS
     prof_submit_start = platform_ticks_us();
-#endif
     gfx_submit_gl(&g);
 
     // GameSparker.java's own paint() (decompilation/java-src/
@@ -7296,29 +7437,10 @@ int game_run(void) {
       if (letterboxed) set_game_projection(0.0, (double)width, (double)height, 0.0);
     }
 
-    if (screenshot_path && frame >= screenshot_frame) {
-      glFinish();
-      // The whole display as presented (on desktop the same 800x450 window).
-      int32_t shot_w, shot_h;
-      platform_display_size(&shot_w, &shot_h);
-      uint8_t *pixels = malloc((size_t)shot_w * shot_h * 3);
-      glReadPixels(0, 0, shot_w, shot_h, GL_RGB, GL_UNSIGNED_BYTE, pixels);
-      FILE *f = fopen(screenshot_path, "wb");
-      if (f) {
-        fprintf(f, "P6\n%d %d\n255\n", shot_w, shot_h);
-        // glReadPixels' origin is bottom-left; PPM's is top-left.
-        for (int row = shot_h - 1; row >= 0; row--) {
-          fwrite(pixels + (size_t)row * shot_w * 3, 1, (size_t)shot_w * 3, f);
-        }
-        fclose(f);
-      }
-      free(pixels);
-      running = false;
-    }
 
-#ifdef NFM_SHOW_FPS
-    // Diagnostic overlay, compiled in only with -DNFM_SHOW_FPS=ON, off in
-    // every normal build. Drawn HERE, after the composite blit above and
+    // FPS overlay: Settings > Interface > Show FPS -- FPS is the frame rate,
+    // DETAILED adds the worst frame and where a frame's time went (the
+    // measuring always runs, it is a few clock reads). Drawn HERE, after the composite blit above and
     // in its own 2D pass, rather than alongside the HUD: everything
     // submitted before that blit goes through the motion-blur render
     // target and comes out ghosted, and a smeared number is useless for
@@ -7354,6 +7476,21 @@ int game_run(void) {
         fps_worst = 0; // spike window resets with the average it sits next to
       }
 
+      if (settings.show_fps == 1) {
+        // The frame rate alone, top right, clear of the race HUD's panels.
+        int32_t fps_dw, fps_dh;
+        platform_display_size(&fps_dw, &fps_dh);
+        glViewport(0, 0, fps_dw, fps_dh);
+        gfx_begin(&g);
+        char fps_txt[24];
+        snprintf(fps_txt, sizeof(fps_txt), "%d FPS", fps_value);
+        const int32_t tw = vfont_text_width(fps_txt, 2);
+        gfx_set_color(&g, 0, 0, 0);
+        gfx_fill_rect(&g, 800 - tw - 18, 428, tw + 12, 18);
+        gfx_set_color(&g, 255, 255, 0);
+        vfont_draw_string(&g, fps_txt, 800 - tw - 12, 430, 2, 2.0f);
+        gfx_submit_gl(&g);
+      } else if (settings.show_fps == 2) {
       // Same viewport the composite blit uses, so the overlay lands in
       // the same place whether or not the blur path ran this frame.
       int32_t fps_dw, fps_dh;
@@ -7382,16 +7519,33 @@ int game_run(void) {
                prof_avg_tenths[3] / 10, prof_avg_tenths[3] % 10);
       bitfont_draw_string(&g, prof_buf, 4, height - 20);
       gfx_submit_gl(&g);
+      }
     }
-#endif
 
-#ifdef NFM_SHOW_FPS
+    // The headless screenshot hook, after every overlay so the dump is what
+    // the screen shows.
+    if (screenshot_path && frame >= screenshot_frame) {
+      glFinish();
+      // The whole display as presented (on desktop the same 800x450 window).
+      int32_t shot_w, shot_h;
+      platform_display_size(&shot_w, &shot_h);
+      uint8_t *pixels = malloc((size_t)shot_w * shot_h * 3);
+      glReadPixels(0, 0, shot_w, shot_h, GL_RGB, GL_UNSIGNED_BYTE, pixels);
+      FILE *f = fopen(screenshot_path, "wb");
+      if (f) {
+        fprintf(f, "P6\n%d %d\n255\n", shot_w, shot_h);
+        // glReadPixels' origin is bottom-left; PPM's is top-left.
+        for (int row = shot_h - 1; row >= 0; row--) {
+          fwrite(pixels + (size_t)row * shot_w * 3, 1, (size_t)shot_w * 3, f);
+        }
+        fclose(f);
+      }
+      free(pixels);
+      running = false;
+    }
     prof_swap_start = platform_ticks_us();
-#endif
     platform_swap_buffers();
-#ifdef NFM_SHOW_FPS
     prof_sum[3] += platform_ticks_us() - prof_swap_start;
-#endif
     platform_delay_ms(16);
     frame++;
     // Snapshot this frame's buttons as "previous" for the next frame's

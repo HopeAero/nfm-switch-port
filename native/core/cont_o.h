@@ -67,6 +67,13 @@
 extern "C" {
 #endif
 
+/** Settings > Graphics: draw cars' and objects' shadows / dust and sparks.
+ * Off still runs the code that draws them (it advances particle state, and
+ * the shadow pass sits beside the depth-sort distance); only what it drew is
+ * dropped (gfx_rewind), so nothing but the picture changes. Default true. */
+extern bool cont_o_shadows;
+extern bool cont_o_particles;
+
 #define CONT_O_MAX_PLANES 286 // 210 body panels (guarded in the parser) + 4*19 wheel planes
 
 typedef struct ContO {

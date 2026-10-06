@@ -330,6 +330,21 @@ static void test_settings_blur(void) {
   r = game_settings_defaults(GFX_HD);
   game_settings_load(prog, &r);
   CHECK(r.blur == 20 && r.graphics == GFX_HD && r.shake && r.rumble, "old file: new settings default");
+  // The Graphics / Audio / Interface options.
+  s = game_settings_defaults(GFX_HD);
+  CHECK(s.draw_dist == 0 && s.detail == 0 && s.shadows && s.particles && s.music_vol == 100 &&
+        s.sfx_vol == 100 && s.show_fps == 0, "new options default to the original");
+  s.draw_dist = 2; s.detail = 1; s.shadows = 0; s.particles = 0; s.music_vol = 30; s.sfx_vol = 70; s.show_fps = 2;
+  CHECK(game_settings_save(prog, &s), "settings save (all options)");
+  r = game_settings_defaults(GFX_ORIGINAL);
+  game_settings_load(prog, &r);
+  CHECK(memcmp(&r, &s, sizeof(r)) == 0, "every option roundtrips");
+  f = fopen("/tmp/nfm_settings_test/settings.txt", "w");
+  if (f) { fputs("draw_distance=7\nmusic_volume=44\n", f); fclose(f); }
+  r = game_settings_defaults(GFX_HD);
+  game_settings_load(prog, &r);
+  CHECK(r.draw_dist == 0, "a choice off its list keeps the default");
+  CHECK(r.music_vol == 40, "a volume snaps to its step of 10");
   remove("/tmp/nfm_settings_test/settings.txt");
 }
 

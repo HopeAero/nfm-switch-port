@@ -179,10 +179,21 @@ typedef enum { GFX_ORIGINAL = 0, GFX_SMOOTH = 1, GFX_HD = 2, GFX_QUALITY_COUNT }
 
 /** The Settings screen's values, saved beside the progress file. */
 typedef struct {
-  int32_t blur;         // 0..100, step 20
+  // Graphics
   int32_t graphics;     // GfxQuality
-  bool shake;           // the screen shake on a crash (the original's `shaka`)
-  bool rumble;          // controller vibration on a crash, where the platform has it
+  int32_t draw_dist;    // 0 original, 1 far (150%), 2 max (200%) -- medium_draw_distance
+  int32_t detail;       // 0 high (the original's), 1 low (its own resdown 2 mode)
+  int32_t shadows;      // 0/1
+  int32_t particles;    // 0/1 -- dust and sparks
+  int32_t blur;         // 0..100, step 20
+  // Audio
+  int32_t music_vol;    // 0..100, step 10
+  int32_t sfx_vol;      // 0..100, step 10
+  // Interface
+  int32_t show_fps;     // 0 off, 1 the frame rate, 2 plus the frame-time breakdown
+  // Gameplay
+  int32_t shake;        // 0/1: the screen shake on a crash (the original's `shaka`)
+  int32_t rumble;       // 0/1: controller vibration on a crash, where the platform has it
 } GameSettings;
 
 /** Defaults: the original's trail and shake, vibration on, and `graphics`

@@ -83,6 +83,10 @@ int16_t radical_player_next_frame(RadicalPlayer *p);
 // the platform callback renders the effects first, then this on top.
 void radical_player_render(RadicalPlayer *p, int16_t *out, int32_t frames);
 
+/** Settings > Audio > Music: the track's samples times this (0..1, default 1;
+ * at 1 the output is the original's, bit for bit). */
+extern float radical_music_gain;
+
 #ifdef __cplusplus
 }
 #endif

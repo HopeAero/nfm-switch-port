@@ -157,6 +157,14 @@ void gfx_draw_image_sub(Graphics2D *g, int32_t image_id, int32_t dst_x, int32_t 
  * port as a direct, harmless call rather than being special-cased away. */
 void gfx_set_rendering_hint(Graphics2D *g);
 
+/** A point in the draw list, and a rewind to it: everything drawn since
+ * gfx_mark() is dropped. For the Settings screen's Shadows / Particles off --
+ * the code that draws them still runs (it advances particle state), only
+ * what it drew is discarded. */
+typedef struct { int32_t count, cmd_count, flushed; } GfxMark;
+GfxMark gfx_mark(const Graphics2D *g);
+void gfx_rewind(Graphics2D *g, GfxMark mark);
+
 // --- introspection, for tests -- mirrors web/graphics.js's vertexAt/colorAt.
 void gfx_vertex_at(const Graphics2D *g, int32_t i, float *x, float *y);
 void gfx_color_at(const Graphics2D *g, int32_t i, int32_t *r, int32_t *gg, int32_t *b, int32_t *a);

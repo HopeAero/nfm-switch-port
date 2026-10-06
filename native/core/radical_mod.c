@@ -692,11 +692,13 @@ void radical_player_start(RadicalPlayer *p, const RadicalTrack *t, int32_t outpu
   p->next = radical_player_next_frame(p);
 }
 
+float radical_music_gain = 1.0f;
+
 void radical_player_render(RadicalPlayer *p, int16_t *out, int32_t frames) {
   if (!p->track) return;
   for (int32_t f = 0; f < frames; f++) {
     const int32_t s0 = p->cur, s1 = p->next;
-    const int32_t v = s0 + (int32_t)(((int64_t)(s1 - s0) * (int64_t)(p->frac & 0xffffffffu)) >> 32);
+    const int32_t v = (int32_t)((float)(s0 + (int32_t)(((int64_t)(s1 - s0) * (int64_t)(p->frac & 0xffffffffu)) >> 32)) * radical_music_gain);
     for (int32_t c = 0; c < 2; c++) {
       int32_t m = out[f * 2 + c] + v;
       if (m > 32767) m = 32767; else if (m < -32768) m = -32768;

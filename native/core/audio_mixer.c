@@ -42,6 +42,8 @@ void audio_mixer_stop(AudioMixer *mx, int32_t channel) {
   mx->channels[channel].active = false;
 }
 
+float audio_sfx_gain = 1.0f;
+
 void audio_mixer_render(AudioMixer *mx, int16_t *out, int32_t out_frames) {
   memset(out, 0, (size_t)out_frames * 2 * sizeof(int16_t));
 
@@ -70,7 +72,7 @@ void audio_mixer_render(AudioMixer *mx, int16_t *out, int32_t out_frames) {
       int32_t s1 = ch->samples[next_i];
       uint32_t frac = (uint32_t)(ch->pos_fixed & 0xffffffffu); // Q0.32
       int32_t sample = s0 + (int32_t)(((int64_t)(s1 - s0) * frac) >> 32);
-      int32_t scaled = (int32_t)((float)sample * ch->volume);
+      int32_t scaled = (int32_t)((float)sample * ch->volume * audio_sfx_gain);
 
       int32_t mixed_l = out[f * 2 + 0] + scaled;
       int32_t mixed_r = out[f * 2 + 1] + scaled;

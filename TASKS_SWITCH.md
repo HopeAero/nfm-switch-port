@@ -87,6 +87,26 @@ PC with `nxlink -s`.
       paired) and the Pro Controller, as strong and long as the crash shake;
       `platform_rumble()` is a no-op on Linux/Vita, which do not show the row.
       Saved in `settings.txt` (`graphics=`, `screen_shake=`, `vibration=`).
+- [x] **Settings redesigned** (2026-10-06, checked in Eden), in the launcher's look
+      (beige stripes, black-bordered rows, the selected one black/yellow with a
+      hazard stripe), pages of rows as data (`kSettingsPages` in game.c):
+      - *Graphics*: Image Quality, **Draw Distance** (Original/Far/Max: the fog
+        bands, and where objects stop drawing, at 100/150/200% --
+        `medium_draw_distance`), **Scenery Detail** (High/Low: the original's own
+        low-detail mode, `resdown` 2, re-applied after every stage load), **Shadows**,
+        **Particles** (dust and sparks), Motion Blur (now a row like the rest).
+        Shadows/Particles off still run their draw code (it advances particle
+        state) and drop what it drew (`gfx_mark`/`gfx_rewind`).
+      - *Audio*: **Music** and **Effects** volume, 0-100 (`radical_music_gain`,
+        `audio_sfx_gain`; at 100 the music is bit-identical).
+      - *Interface*: **Show FPS** Off / FPS / Detailed (the old `-DNFM_SHOW_FPS`
+        overlay, now always measured; the screenshot hook dumps after it).
+      - *Gameplay*: Screen Shake, Vibration. Plus Reset to Defaults.
+      Drawing randoms are a separate stream (`nfm_set_draw_phase`), so drawing more
+      or fewer objects never changes the race.
+- [ ] Missing vs the web port: smooth frames (interpolation; this port draws once
+      per 53 ms tick), clouds / mountains / stars (`medium.c`: not ported), the
+      stages' `fadefrom(`, the Arial font, custom cars, Rivals.
 - [x] **Settings from the main menu too**: a fourth row, *Settings*, in the slot
       the original's own fourth row used (y=351). Its label is options.png's style
       redrawn -- the Adventure face at 18 px, the size that gives the original

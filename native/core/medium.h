@@ -323,6 +323,11 @@ void medium_setexture(Medium *m, int32_t n, int32_t n2, int32_t n3, int32_t n4);
 void medium_setpolys(Medium *m, int32_t n, int32_t n2, int32_t n3);
 void medium_setfade(Medium *m, int32_t n, int32_t n2, int32_t n3);
 
+/** Settings > Graphics > Draw Distance: the fog bands (and with them where
+ * objects stop being drawn) at `percent` of the original's distances --
+ * 100 is the original. Drawing only: nothing in the simulation reads fade. */
+void medium_draw_distance(Medium *m, int32_t percent);
+
 #ifdef __cplusplus
 }
 #endif

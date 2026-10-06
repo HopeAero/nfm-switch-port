@@ -24,14 +24,21 @@
 #include <stdlib.h>
 #include <string.h>
 
+// The 16 fog bands' distances (Medium.java's `fade` initializer). Objects past
+// fade[disline] are not drawn, and colours fade toward the fog by band.
+static const int32_t fade_init[16] = {3000, 4500, 6000, 7500, 9000, 10500, 12000, 13500,
+                                      15000, 16500, 18000, 19500, 21000, 22500, 24000, 25500};
+
+void medium_draw_distance(Medium *m, int32_t percent) {
+  for (int32_t i = 0; i < 16; i++) m->fade[i] = fade_init[i] * percent / 100;
+}
+
 void medium_init(Medium *m) {
   memset(m, 0, sizeof(*m));
 
   m->focus_point = 400;
   m->ground = 250;
   m->skyline = -300;
-  static const int32_t fade_init[16] = {3000, 4500, 6000, 7500, 9000, 10500, 12000, 13500,
-                                         15000, 16500, 18000, 19500, 21000, 22500, 24000, 25500};
   memcpy(m->fade, fade_init, sizeof(fade_init));
   static const int32_t cldd_init[5] = {210, 210, 210, 1, -1000};
   memcpy(m->cldd, cldd_init, sizeof(cldd_init));
