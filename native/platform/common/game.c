@@ -47,6 +47,7 @@
 #include "game.h"
 #include "platform.h"
 #include "gl_include.h"
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -244,6 +245,7 @@ typedef enum {
   STATE_SETTINGS,        // this port's own Settings screen, reached from the pause menu
   STATE_STAGE_INTRO,     // fase 5 + 6 -- loadmusic()/musicomp() (xtGraphics.java:2935, :3105), the
                          //   stage's presentation card: hint, music playing, "Press Start to begin"
+  STATE_BENCH_RESULT,    // this port's Performance Test summary (Settings > Performance Test)
 } GameState;
 
 // On-screen names for the physical controls, so the help text can say
@@ -2788,7 +2790,7 @@ static bool scene_targets_build(GfxGlRenderTarget *scene, GfxGlRenderTarget *acc
 // Back -- adding an option is one line in kSettingsPages.
 
 typedef enum { SET_MAIN, SET_GRAPHICS, SET_AUDIO, SET_INTERFACE, SET_GAMEPLAY, SET_PAGE_COUNT } SettingsPageId;
-typedef enum { ROW_OPEN, ROW_CHOICE, ROW_RESET, ROW_BACK } SettingsRowKind;
+typedef enum { ROW_OPEN, ROW_CHOICE, ROW_RESET, ROW_BACK, ROW_BENCH } SettingsRowKind;
 
 typedef struct {
   SettingsRowKind kind;
@@ -2811,11 +2813,12 @@ static const char *const kFpsNames[] = {"OFF", "FPS", "DETAILED"};
 
 #define SET_FIELD(f) offsetof(GameSettings, f)
 static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
-  [SET_MAIN] = {"SETTINGS", 6, {
+  [SET_MAIN] = {"SETTINGS", 7, {
     {ROW_OPEN, "GRAPHICS", SET_GRAPHICS, 0, 0, 0, NULL, false},
     {ROW_OPEN, "AUDIO", SET_AUDIO, 0, 0, 0, NULL, false},
     {ROW_OPEN, "INTERFACE", SET_INTERFACE, 0, 0, 0, NULL, false},
     {ROW_OPEN, "GAMEPLAY", SET_GAMEPLAY, 0, 0, 0, NULL, false},
+    {ROW_BENCH, "PERFORMANCE TEST", 0, 0, 0, 0, NULL, false},
     {ROW_RESET, "RESET TO DEFAULTS", 0, 0, 0, 0, NULL, false},
     {ROW_BACK, "BACK", 0, 0, 0, 0, NULL, false}}},
   [SET_GRAPHICS] = {"SETTINGS - GRAPHICS", 8, {
@@ -2842,13 +2845,18 @@ static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
 #undef SET_FIELD
 
 typedef struct { int32_t page, row; } SettingsUi;
-typedef enum { SETTINGS_STAY, SETTINGS_EXIT } SettingsAction;
+typedef enum { SETTINGS_STAY, SETTINGS_EXIT, SETTINGS_BENCH } SettingsAction;
 
 static int32_t *settings_field(GameSettings *s, const SettingsRow *r) {
   return (int32_t *)((char *)s + r->off);
 }
 
+// Settings opened from the pause menu: the Performance Test (a race of its
+// own) is not offered there.
+static bool g_settings_in_race;
+
 static bool settings_row_shown(const SettingsRow *r, bool has_rumble) {
+  if (r->kind == ROW_BENCH && g_settings_in_race) return false;
   return !r->needs_rumble || has_rumble;
 }
 
@@ -2878,6 +2886,8 @@ static SettingsAction settings_screen_input(SettingsUi *ui, GameSettings *s, int
       *s = game_settings_defaults(default_graphics);
     } else if (row->kind == ROW_BACK) {
       back = true;
+    } else if (row->kind == ROW_BENCH) {
+      return SETTINGS_BENCH;
     }
   }
   if (back) {
@@ -2976,7 +2986,7 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
     const int32_t cy = y + h / 2;
     if (sel) gfx_set_color(g, SET_YELLOW); else gfx_set_color(g, SET_INK);
     vfont_draw_string(g, row->label, x0 + 34, cy - 7, 2, 2.0f);
-    if (row->kind == ROW_OPEN) {
+    if (row->kind == ROW_OPEN || row->kind == ROW_BENCH) {
       draw_settings_arrow(g, x0 + w - 26, cy, true, true, sel);
     } else if (row->kind == ROW_CHOICE) {
       const int32_t v = *(const int32_t *)((const char *)s + row->off);
@@ -2997,6 +3007,189 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
   char hint[96];
   snprintf(hint, sizeof(hint), "LEFT/RIGHT: CHANGE    %s: SELECT    %s: BACK", KEY_CONTINUE, KEY_BACK);
   draw_centered(g, hint, 400, 424 - 6, 1);
+}
+
+// --- Settings > Performance Test ---------------------------------------
+// A fixed race the AI drives for you (same stage, car and seed every run,
+// so two reports compare), measured for BENCH_SECONDS from the green
+// light: every frame's length and where its time went. The summary is
+// shown at the end and the full report written beside the save, to be
+// read on a PC.
+#define BENCH_STAGE 9          // a big stage; the whole field is in view at the start
+#define BENCH_CAR 15           // Dr Monstaa: hard to wreck, so the race runs the full time
+#define BENCH_SEED 9001
+#define BENCH_SECONDS 60
+#define BENCH_MAX_FRAMES 8192  // 60 s at 120 fps
+
+typedef struct {
+  uint32_t interval_us;                      // this frame start to the next
+  uint32_t update_us, draw_us, submit_us, swap_us;
+  int32_t objs, faces, verts;
+} BenchFrame;
+
+typedef struct {
+  bool active;      // the test race is on (loading, intro, racing)
+  bool measuring;   // past the green light
+  uint64_t start_us, last_us;
+  int32_t n;
+  BenchFrame *f;
+  bool ended_early; // the race ended (wasted / finished) before the time was up
+  char lines[14][80];
+  int32_t nlines;
+  char path[1024];
+  bool saved;
+} Bench;
+
+static int cmp_u32(const void *a, const void *b) {
+  const uint32_t x = *(const uint32_t *)a, y = *(const uint32_t *)b;
+  return x < y ? -1 : x > y;
+}
+
+static void bench_line(FILE *f, const char *fmt, ...) {
+  char buf[160];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  if (f) fprintf(f, "%s\n", buf);
+}
+
+/** The numbers, to the report file and (the headline ones) to b->lines. */
+static void bench_report(Bench *b, const GameSettings *s, int32_t disp_w, int32_t disp_h,
+                         int32_t px_w, int32_t px_h, const char *stage_name, const char *progress_path) {
+  b->nlines = 0;
+  b->saved = false;
+  const int32_t n = b->n;
+  if (n < 2) {
+    snprintf(b->lines[b->nlines++], 80, "NOT ENOUGH FRAMES MEASURED");
+    return;
+  }
+  uint32_t *iv = malloc(sizeof(uint32_t) * (size_t)n);
+  double sum = 0, su = 0, sd = 0, ss = 0, sw = 0, so = 0, sf = 0, sv = 0;
+  int32_t over17 = 0, over33 = 0, maxv = 0;
+  for (int32_t i = 0; i < n; i++) {
+    const BenchFrame *fr = &b->f[i];
+    iv[i] = fr->interval_us;
+    sum += fr->interval_us;
+    su += fr->update_us; sd += fr->draw_us; ss += fr->submit_us; sw += fr->swap_us;
+    so += fr->objs; sf += fr->faces; sv += fr->verts;
+    if (fr->verts > maxv) maxv = fr->verts;
+    if (fr->interval_us > 20000) over17++;
+    if (fr->interval_us > 33400) over33++;
+  }
+  qsort(iv, (size_t)n, sizeof(uint32_t), cmp_u32);
+  const double avg_fps = (double)n * 1e6 / sum;
+  // 1% low: the frame rate of the slowest 1% of frames.
+  const int32_t k = n / 100 > 0 ? n / 100 : 1;
+  double worst_sum = 0;
+  for (int32_t i = n - k; i < n; i++) worst_sum += iv[i];
+  const double low1 = (double)k * 1e6 / worst_sum;
+  const double p50 = iv[n / 2] / 1000.0, p95 = iv[n * 95 / 100] / 1000.0, p99 = iv[n * 99 / 100] / 1000.0,
+               pmax = iv[n - 1] / 1000.0;
+  const double work = (su + sd + ss + sw) / n / 1000.0;
+
+  // The report file, beside the save.
+  snprintf(b->path, sizeof(b->path), "%s", progress_path ? progress_path : "benchmark.txt");
+  char *slash = strrchr(b->path, '/');
+  if (slash) snprintf(slash + 1, sizeof(b->path) - (size_t)(slash + 1 - b->path), "benchmark.txt");
+  else snprintf(b->path, sizeof(b->path), "benchmark.txt");
+  if (progress_path) game_settings_save(progress_path, s); // creates the directory if it is missing
+  FILE *f = progress_path ? fopen(b->path, "w") : NULL;
+  b->saved = f != NULL;
+
+  static const char *const kOnOffR[] = {"off", "on"};
+  bench_line(f, "NFM performance report (build %s %s)", __DATE__, __TIME__);
+  bench_line(f, "display %dx%d, drawn at %dx%d", disp_w, disp_h, px_w, px_h);
+  bench_line(f, "settings: image %s, draw distance %s, scenery %s, shadows %s, particles %s, blur %d, smooth frames %s",
+             kQualityNames[s->graphics], kDistNames[s->draw_dist], kDetailNames[s->detail], kOnOffR[s->shadows],
+             kOnOffR[s->particles], s->blur, kOnOffR[s->smooth]);
+  bench_line(f, "stage %d (%s), car %d, seed %d", BENCH_STAGE, stage_name, BENCH_CAR, BENCH_SEED);
+  bench_line(f, "measured %.1f s, %d frames%s", sum / 1e6, n, b->ended_early ? " (race ended early)" : "");
+  bench_line(f, "");
+  bench_line(f, "fps: average %.1f, 1%% low %.1f", avg_fps, low1);
+  bench_line(f, "frame ms: median %.2f, p95 %.2f, p99 %.2f, worst %.2f", p50, p95, p99, pmax);
+  bench_line(f, "late frames (over 20 ms): %d (%.1f%%), over 33.4 ms (a 30 fps frame): %d", over17, 100.0 * over17 / n, over33);
+  bench_line(f, "work ms per frame (avg): logic %.2f, draw %.2f, gl %.2f, swap %.2f = %.2f",
+             su / n / 1000.0, sd / n / 1000.0, ss / n / 1000.0, sw / n / 1000.0, work);
+  bench_line(f, "scene per frame (avg): %.0f objects, %.0f faces, %.0f vertices (max %d)", so / n, sf / n, sv / n, maxv);
+  bench_line(f, "");
+  bench_line(f, "per second (fps/worst ms):");
+  {
+    char row[256] = "";
+    double t = 0;
+    int32_t frames = 0, sec = 0;
+    uint32_t worst = 0;
+    for (int32_t i = 0; i < n; i++) {
+      t += b->f[i].interval_us;
+      frames++;
+      if (b->f[i].interval_us > worst) worst = b->f[i].interval_us;
+      if (t >= (sec + 1) * 1e6 || i == n - 1) {
+        char cell[24];
+        snprintf(cell, sizeof(cell), " %d/%.0f", frames, worst / 1000.0);
+        strncat(row, cell, sizeof(row) - strlen(row) - 1);
+        frames = 0;
+        worst = 0;
+        if (++sec % 10 == 0 || i == n - 1) {
+          bench_line(f, " %3ds:%s", (sec - 1) / 10 * 10, row);
+          row[0] = 0;
+        }
+      }
+    }
+  }
+  bench_line(f, "");
+  bench_line(f, "slowest frames (total = logic + draw + gl + swap ms, faces / vertices, when):");
+  {
+    bool *used = calloc((size_t)n, sizeof(bool));
+    for (int32_t w = 0; w < 8 && w < n; w++) {
+      int32_t wi = -1;
+      for (int32_t i = 0; i < n; i++) {
+        if (!used[i] && (wi < 0 || b->f[i].interval_us > b->f[wi].interval_us)) wi = i;
+      }
+      used[wi] = true;
+      double t = 0;
+      for (int32_t i = 0; i < wi; i++) t += b->f[i].interval_us;
+      const BenchFrame *fr = &b->f[wi];
+      bench_line(f, "  %.2f = %.2f + %.2f + %.2f + %.2f, %d / %d, at %.1f s", fr->interval_us / 1000.0,
+                 fr->update_us / 1000.0, fr->draw_us / 1000.0, fr->submit_us / 1000.0, fr->swap_us / 1000.0,
+                 fr->faces, fr->verts, t / 1e6);
+    }
+    free(used);
+  }
+  if (f) fclose(f);
+
+  snprintf(b->lines[b->nlines++], 80, "AVERAGE %.1f FPS   1%% LOW %.1f FPS", avg_fps, low1);
+  snprintf(b->lines[b->nlines++], 80, "FRAME MS  MEDIAN %.1f  P99 %.1f  WORST %.1f", p50, p99, pmax);
+  snprintf(b->lines[b->nlines++], 80, "LATE FRAMES  OVER 20 MS %d (%.1f%%)  OVER 33 MS %d", over17, 100.0 * over17 / n, over33);
+  snprintf(b->lines[b->nlines++], 80, "WORK MS  LOGIC %.1f  DRAW %.1f  GL %.1f  SWAP %.1f", su / n / 1000.0, sd / n / 1000.0,
+           ss / n / 1000.0, sw / n / 1000.0);
+  snprintf(b->lines[b->nlines++], 80, "SCENE  %.0f FACES  %.0f VERTICES", sf / n, sv / n);
+  snprintf(b->lines[b->nlines++], 80, "%dX%d  %.0f S  %d FRAMES%s", px_w, px_h, sum / 1e6, n, b->ended_early ? "  (RACE ENDED)" : "");
+  free(iv);
+}
+
+static void bench_result_draw(Graphics2D *g, const Bench *b) {
+  gfx_set_color(g, SET_BG);
+  gfx_fill_rect(g, 0, 0, 800, 450);
+  gfx_set_color(g, SET_BG_DARK);
+  for (int32_t x = 60; x < 800; x += 120) gfx_fill_rect(g, x, 0, 60, 450);
+  gfx_set_color(g, 17, 17, 17);
+  gfx_fill_rect(g, 80, 22, 640, 32);
+  gfx_set_color(g, SET_YELLOW);
+  draw_centered(g, "PERFORMANCE TEST", 400, 38 - 7, 2);
+  gfx_set_color(g, 17, 17, 17);
+  gfx_fill_rect(g, 80, 70, 640, 34 * b->nlines + 20);
+  gfx_set_color(g, SET_BG);
+  gfx_fill_rect(g, 83, 73, 634, 34 * b->nlines + 14);
+  for (int32_t i = 0; i < b->nlines; i++) {
+    gfx_set_color(g, SET_INK);
+    draw_centered(g, b->lines[i], 400, 82 + 34 * i, 2);
+  }
+  gfx_set_color(g, 90, 88, 80);
+  char hint[1100];
+  if (b->saved) snprintf(hint, sizeof(hint), "FULL REPORT: %s", b->path);
+  else snprintf(hint, sizeof(hint), "THE REPORT FILE COULD NOT BE WRITTEN");
+  draw_centered(g, hint, 400, 380, 1);
+  draw_centered(g, KEY_CONTINUE ": BACK TO THE MENU", 400, 418, 1);
 }
 
 /** Puts the Settings that act on the engine into effect (Image Quality is
@@ -3551,6 +3744,7 @@ int game_run(void) {
   bool preview_race_lose = false;
   if (screenshot_menu && strcmp(screenshot_menu, "main") == 0) state = STATE_MAIN_MENU;
   else if (screenshot_menu && strcmp(screenshot_menu, "mainsettings") == 0) state = STATE_MAIN_MENU;
+  else if (screenshot_menu && strcmp(screenshot_menu, "bench") == 0) state = STATE_MAIN_MENU;
   else if (screenshot_menu && strcmp(screenshot_menu, "gamemode") == 0) state = STATE_GAMEMODE_MENU;
   else if (screenshot_menu && strcmp(screenshot_menu, "instructions") == 0) state = STATE_INSTRUCTIONS;
   else if (screenshot_menu && strcmp(screenshot_menu, "credits") == 0) state = STATE_CREDITS;
@@ -3994,11 +4188,15 @@ int game_run(void) {
   // ticks -- its drawing advances per-draw timers), and each object's dist
   // from that tick's draw (simulation reads it: checkstat's onscreen[]).
   // smooth_ready: a tick has filled all of it with the setting on.
-  SmoothSnap smooth_prev, smooth_curr;
+  SmoothSnap smooth_prev = {0}, smooth_curr = {0};
   GfxClip hud_clip = {0};
   int32_t *smooth_dist = NULL;
   bool smooth_ready = false;
   bool smooth_captured = false; // smooth_curr holds a tick of THIS race
+  Bench bench = {0};            // Settings > Performance Test
+  bool bench_start = false;
+  const char *bench_seconds_env = getenv("NFM_BENCH_SECONDS");
+  const int32_t bench_seconds = bench_seconds_env ? atoi(bench_seconds_env) : BENCH_SECONDS;
   double race_frame_ms = TICK_MS; // this frame's length, for the trail
   bool race_confirm_latch = false;
 
@@ -4371,7 +4569,7 @@ int game_run(void) {
       }
       // musicomp() (:3105-3155): handbrake or enter starts the race, with
       // the full-canvas viewport and the default camera projection.
-      if (intro_frame >= 1 && KEY_EDGE(BTN_CONFIRM)) {
+      if (intro_frame >= 1 && (KEY_EDGE(BTN_CONFIRM) || (bench.active && intro_frame >= 40))) {
         m.trk = 0;
         m.crs = false;
         m.ih = 0;
@@ -4488,6 +4686,7 @@ int game_run(void) {
         state = STATE_PAUSED;
       }
     } else if (state == STATE_SETTINGS) {
+      g_settings_in_race = settings_return != STATE_MAIN_MENU;
       const GameSettings before = settings;
       const SettingsAction act = settings_screen_input(
           &settings_ui, &settings, NFM_DEFAULT_GRAPHICS, KEY_EDGE(BTN_UP), KEY_EDGE(BTN_DOWN),
@@ -4507,6 +4706,33 @@ int game_run(void) {
       if (act == SETTINGS_EXIT) {
         if (progress_path_ok) game_settings_save(progress_path, &settings);
         state = settings_return;
+      } else if (act == SETTINGS_BENCH) {
+        if (progress_path_ok) game_settings_save(progress_path, &settings);
+        bench_start = true;
+      }
+    } else if (state == STATE_BENCH_RESULT) {
+      if (KEY_EDGE(BTN_CONFIRM) || KEY_EDGE(BTN_CANCEL)) state = STATE_MAIN_MENU;
+    }
+
+    // The Performance Test: Free Play on a fixed stage and car, from a fixed
+    // seed, through the normal loading and intro. NFM_SCREENSHOT_MENU=bench
+    // starts it headless (NFM_BENCH_SECONDS shortens it).
+    if (screenshot_menu && strcmp(screenshot_menu, "bench") == 0 && frame == 1) bench_start = true;
+    if (bench_start) {
+      bench_start = false;
+      if (!bench.f) bench.f = malloc(sizeof(BenchFrame) * BENCH_MAX_FRAMES);
+      if (bench.f) {
+        bench.active = true;
+        bench.measuring = false;
+        bench.n = 0;
+        bench.ended_early = false;
+        gmode = GMODE_FREE_PLAY;
+        stage_num = BENCH_STAGE;
+        car_index = BENCH_CAR;
+        stage_read_name(stage_num, stage_name_buf, sizeof(stage_name_buf));
+        nfm_set_seed(BENCH_SEED);
+        state = STATE_STAGE_LOADING;
+        stage_loadcnt = 30;
       }
     }
 
@@ -4552,6 +4778,7 @@ int game_run(void) {
       free(order); order = NULL;
       free(smooth_dist); smooth_dist = NULL;
       total_objs = 0;
+      bench.active = false; // a test quit from the pause menu ends here
     }
 
     if ((state == STATE_RACING || state == STATE_STAGE_INTRO) && !all_objs) {
@@ -4841,7 +5068,8 @@ int game_run(void) {
     }
 
     if (state == STATE_RACING) {
-      input_poll(&control[0]);
+      // The Performance Test's car drives itself (control_preform below).
+      if (!bench.active) input_poll(&control[0]);
       // Headless replay hook: hold the throttle so there is motion to replay.
       if (screenshot_menu && strcmp(screenshot_menu, "pausereplay") == 0) control[0].up = true;
 
@@ -4942,7 +5170,7 @@ int game_run(void) {
           // turns every direction into a stunt until landing. Tell the
           // input layer, so on the Vita only CROSS + stick reach the car
           // then and the throttle/brake triggers cannot loop it.
-          input_set_stunting(&control[0], mad[0].loop == 2 || (control[0].handb && !mad[0].wtouch));
+          if (!bench.active) input_set_stunting(&control[0], mad[0].loop == 2 || (control[0].handb && !mad[0].wtouch));
           for (int32_t i = 0; i < nplayers; i++) {
             mad_drive(&mad[i], &control[i], &co[i], &t, &cp);
           }
@@ -5084,7 +5312,7 @@ int game_run(void) {
           // GameSparker.java:954-956 -- bots react to what checkstat just
           // computed, setting up their input for the NEXT tick's drive().
           // Skips index 0 (the human).
-          for (int32_t i = 1; i < nplayers; i++) {
+          for (int32_t i = bench.active ? 0 : 1; i < nplayers; i++) {
             control_preform(&control[i], &mad[i], &co[i], &cp, &t);
           }
 
@@ -5421,7 +5649,7 @@ int game_run(void) {
     const bool letterboxed = render_state != STATE_RACING && render_state != STATE_REPLAY &&
                              render_state != STATE_PAUSED && render_state != STATE_PAUSE_REPLAY &&
                              render_state != STATE_CANTREPLY && render_state != STATE_BOOT_CLICK &&
-                             render_state != STATE_SETTINGS;
+                             render_state != STATE_SETTINGS && render_state != STATE_BENCH_RESULT;
     const bool use_rt = motion_blur_ok &&
                         (render_state == STATE_RACING || render_state == STATE_REPLAY ||
                          render_state == STATE_PAUSE_REPLAY || render_state == STATE_CAR_SELECT ||
@@ -6258,6 +6486,8 @@ int game_run(void) {
     } else if (state == STATE_SETTINGS) {
       // Opaque, the whole 800x450 (see settings_screen_draw()).
       settings_screen_draw(&g, &settings_ui, &settings, platform_has_rumble());
+    } else if (state == STATE_BENCH_RESULT) {
+      bench_result_draw(&g, &bench);
     } else if (state == STATE_PAUSED || state == STATE_CANTREPLY) {
       // PAUSE MENU -- fase -7, pausedgame() (xtGraphics.java:4695-4807),
       // and the fase -8 banner that sits on top of it.
@@ -7619,6 +7849,66 @@ int game_run(void) {
       prof_sum[1] += prof_submit_start - prof_render_start;
       prof_sum[2] += prof_now - prof_submit_start;
       // prof_sum[3] (swap) is added after platform_swap_buffers below.
+
+      // The Performance Test: one record per raced frame from the green
+      // light (the swap is filled in after the swap), then the report.
+      if (bench.active && render_state == STATE_RACING) {
+        if (!bench.measuring && starcnt == 0) {
+          bench.measuring = true;
+          bench.start_us = prof_now;
+          bench.last_us = 0;
+        }
+        if (bench.measuring) {
+          if (bench.last_us != 0 && bench.n < BENCH_MAX_FRAMES) {
+            BenchFrame *fr = &bench.f[bench.n++];
+            fr->interval_us = (uint32_t)(prof_now - bench.last_us);
+            fr->update_us = (uint32_t)(prof_render_start - prof_frame_start);
+            fr->draw_us = (uint32_t)(prof_submit_start - prof_render_start);
+            fr->submit_us = (uint32_t)(prof_now - prof_submit_start);
+            fr->swap_us = 0;
+            fr->objs = g.objDrawn;
+            fr->faces = g.faceCalls;
+            fr->verts = g.count;
+          }
+          bench.last_us = prof_now;
+          if (prof_now - bench.start_us >= (uint64_t)bench_seconds * 1000000u || bench.n >= BENCH_MAX_FRAMES ||
+              race_holdit) {
+            bench.ended_early = race_holdit;
+            fprintf(stderr, "bench end: holdit=%d kind=%d wasted=%d dest0=%d clear0=%d n=%d\n", (int)race_holdit,
+                    (int)race_end_kind, cp.wasted, (int)mad[0].dest, cp.clear[0], bench.n);
+            int32_t bdw, bdh;
+            platform_display_size(&bdw, &bdh);
+            bench_report(&bench, &settings, bdw, bdh, scene_rt.px_w, scene_rt.px_h, stage_name_buf,
+                         progress_path_ok ? progress_path : NULL);
+            bench.active = false;
+            stop_all_sfx_loops(&audio, engine_channel, &last_engine_bank, &air_channel, &wasted_channel);
+            audio_stop_music(&audio);
+            state = STATE_BENCH_RESULT;
+          }
+        }
+      } else if (bench.active) {
+        bench.last_us = 0; // paused: the gap is not a frame
+      }
+      if (bench.active && render_state == STATE_RACING) {
+        // What is running, and for how long yet.
+        int32_t bdw, bdh;
+        platform_display_size(&bdw, &bdh);
+        glViewport(0, 0, bdw, bdh);
+        gfx_begin(&g);
+        char btxt[48];
+        if (bench.measuring) {
+          snprintf(btxt, sizeof(btxt), "PERFORMANCE TEST  %d S",
+                   bench_seconds - (int32_t)((prof_now - bench.start_us) / 1000000u));
+        } else {
+          snprintf(btxt, sizeof(btxt), "PERFORMANCE TEST");
+        }
+        const int32_t tw = vfont_text_width(btxt, 2);
+        gfx_set_color(&g, 0, 0, 0);
+        gfx_fill_rect(&g, 400 - tw / 2 - 8, 62, tw + 16, 20);
+        gfx_set_color(&g, 255, 255, 0);
+        vfont_draw_string(&g, btxt, 400 - tw / 2, 65, 2, 2.0f);
+        gfx_submit_gl(&g);
+      }
       if (now - fps_window_start >= 1000) {
         for (int32_t k = 0; k < 4; k++) {
           prof_avg_tenths[k] = (int32_t)(prof_sum[k] / (uint64_t)(100 * fps_frames));
@@ -7707,6 +7997,9 @@ int game_run(void) {
     prof_swap_start = platform_ticks_us();
     platform_swap_buffers();
     prof_sum[3] += platform_ticks_us() - prof_swap_start;
+    if (bench.active && bench.measuring && bench.n > 0 && bench.f[bench.n - 1].swap_us == 0) {
+      bench.f[bench.n - 1].swap_us = (uint32_t)(platform_ticks_us() - prof_swap_start);
+    }
     // Pace to 60 Hz: sleep only what is left of this frame's 16.7 ms. A flat
     // 16 ms sleep on top of the frame's own work held the Switch at ~47 fps
     // with ~6 ms of work a frame (its swap does not wait for vsync). Where

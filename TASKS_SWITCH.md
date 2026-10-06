@@ -154,6 +154,14 @@ PC with `nxlink -s`.
         first tick turned smooth frames on with the LAST race's snapshots and
         restored those positions into the cars. Smooth frames wait for a tick
         of the current race (`smooth_captured`).
+- [x] **Settings > Performance Test** (main-menu Settings only): Free Play on
+      stage 9 with Dr Monstaa (hard to wreck), seed 9001, the AI driving your
+      car, measured for 60 s from the green light. Summary on screen; full report
+      in `benchmark.txt` beside the save (`sdmc:/switch/nfm/benchmark.txt`):
+      settings and resolution, average / 1% low fps, median / p95 / p99 / worst
+      frame, late frames (over 20 ms, over 33 ms), work per frame split logic /
+      draw / gl / swap, faces and vertices, fps per second, the 8 slowest frames.
+      Headless: `NFM_SCREENSHOT_MENU=bench NFM_BENCH_SECONDS=15`.
 - [ ] Missing vs the web port: the Arial font, custom cars, Rivals.
 - [ ] Performance not measured on hardware. The web port's known heavy item is
       the per-plane ground shadow (`Plane.s` for every plane of a nearby car);
