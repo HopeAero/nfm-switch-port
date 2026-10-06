@@ -1,4 +1,10 @@
-# Need for Madness — native port for PS Vita and Linux
+# Need for Madness — native port for Nintendo Switch, PS Vita and Linux
+
+> **This repository is the Switch port.** It starts from the PS Vita / Linux
+> native port below (imported unchanged in the first commit) and adds
+> `native/platform/switch/`. How to build, install and play it, and what is
+> left: [`TASKS_SWITCH.md`](TASKS_SWITCH.md).
+
 
 ![icon](data/icon.png)
 
