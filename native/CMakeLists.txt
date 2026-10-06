@@ -56,8 +56,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 add_compile_options(-Wall -Wextra -fwrapv) # -fwrapv: see core/java_compat.c
 
-set(NFM_PLATFORM "linux" CACHE STRING "Target platform: linux or vita")
-set_property(CACHE NFM_PLATFORM PROPERTY STRINGS linux vita)
+set(NFM_PLATFORM "linux" CACHE STRING "Target platform: linux, vita or switch")
+set_property(CACHE NFM_PLATFORM PROPERTY STRINGS linux vita switch)
 
 # core/vfs.c's zip reader (data/models.zip) uses zlib's raw inflate.
 # VitaSDK ships a zlib portlib, so this is assumed to resolve there too via
@@ -133,6 +133,11 @@ elseif(NFM_PLATFORM STREQUAL "vita")
   # byte-identical between the two builds.
   target_compile_definitions(nfm_game PUBLIC NFM_TARGET_VITA=1)
   add_subdirectory(platform/vita)
+elseif(NFM_PLATFORM STREQUAL "switch")
+  # Nintendo Switch homebrew (.nro). The Instructions screen still names the
+  # keyboard's keys here (Joy-Con labels: TASKS_SWITCH.md).
+  target_compile_definitions(nfm_game PUBLIC NFM_TARGET_SWITCH=1)
+  add_subdirectory(platform/switch)
 else()
-  message(FATAL_ERROR "Unknown NFM_PLATFORM '${NFM_PLATFORM}' -- expected 'linux' or 'vita'")
+  message(FATAL_ERROR "Unknown NFM_PLATFORM '${NFM_PLATFORM}' -- expected 'linux', 'vita' or 'switch'")
 endif()
