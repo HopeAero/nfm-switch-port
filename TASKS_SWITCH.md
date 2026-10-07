@@ -242,6 +242,9 @@ PC with `nxlink -s`.
 - [x] Settings > Interface > Names in Standings (off by default): the arrace
       board's plnames slot, blank in the original's single player, shows the
       car names (black, centred on 730 but kept right of x=700).
+- [x] "X has been wasted!" / "You wasted X!" (xtGraphics.java:8341-8356):
+      the HUD diffs CheckPoints.dested against its own copy (hud_dested) and
+      announces each wasting once. The Vita port had left the loop out.
 - [ ] Batch 3: visual-only low detail (not `resdown=2`, which drops scenery
       collisions) and the web's lightweight intro; draw distance keeps cars'
       `dist` neutral.

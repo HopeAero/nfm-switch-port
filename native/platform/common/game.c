@@ -1531,7 +1531,8 @@ static void hud_wrongway_tick(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad 
  * starcnt==0 and stage!=10. Kept as two functions rather than one with
  * flags precisely because the two gates genuinely differ.
  */
-static void hud_messages_tick(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad *mad) {
+static void hud_messages_tick(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad *mad,
+                              const CheckPoints *cp, int32_t nplayers, const int32_t *sc) {
   // 1463-1465 -- looped resets the instant a fresh trick attempt starts
   // (mad->loop reaching 2, the "armed" state -- see mad.c's own loop
   // state machine), so the "Please read the Game Instructions!" escalated
@@ -1606,6 +1607,18 @@ static void hud_messages_tick(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad 
     // comment on crashup, the crash-sound sibling of the stunt
     // announcer's skidup (Part 15), both toggled by this SAME trigger.
     xt->crashup = !xt->crashup;
+  }
+  // :8341-8356 -- a car just wasted: by another car (dested 1) or by you (2).
+  for (int32_t n9 = 0; n9 < nplayers; n9++) {
+    if (xt->hud_dested[n9] == cp->dested[n9] || n9 == xt->im) continue;
+    xt->hud_dested[n9] = cp->dested[n9];
+    const char *name = (sc[n9] >= 0 && sc[n9] < 16) ? CAR_DISPLAY_NAMES[sc[n9]] : "Simple Car";
+    if (xt->hud_dested[n9] == 1) snprintf(xt->say, sizeof(xt->say), "%s has been wasted!", name);
+    if (xt->hud_dested[n9] == 2) snprintf(xt->say, sizeof(xt->say), "You wasted %s!", name);
+    if (xt->hud_dested[n9] == 1 || xt->hud_dested[n9] == 2) {
+      xt->wasay = true;
+      xt->tcnt = -15;
+    }
   }
   if (xt->hud_clear != mad->clear && mad->clear != 0) {
     if (!xt->wasay) { strncpy(xt->say, "Checkpoint!", sizeof(xt->say) - 1); xt->tcnt = 15; }
@@ -5988,7 +6001,7 @@ int game_run(void) {
         // Unlike the block above this one DOES keep running during the
         // countdown (Java draws "Get Ready!"-era say text there).
         if (!race_holdit) {
-          hud_messages_tick(&g, &m, &xt, &mad[0]);
+          hud_messages_tick(&g, &m, &xt, &mad[0], &cp, nplayers, sc);
         }
 
         // GameSparker.java:891-903 -- the single-player newcar rebuild.

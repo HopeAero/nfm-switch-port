@@ -117,6 +117,9 @@ typedef struct {
   bool tflk;
   int32_t cntovn;
   int32_t hud_clear;
+  // xtGraphics.dested[]: the HUD's last-seen CheckPoints.dested, so a car's
+  // wasting is announced once, the tick it changes.
+  int32_t hud_dested[8];
 
   // Stunt announcer state -- XtGraphics.js's own `loop`/`spin`/`asay`/
   // `looped`/`pwcnt`/`pwflk`/`skidup` (see main.c's hud_stunt_detect()/
