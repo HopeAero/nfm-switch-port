@@ -93,11 +93,20 @@ fixes for many cars in view (trackgrid, archive loading) are reused.
 
 ## Phase 3 -- Extended's content
 
-- [ ] Extended's 23 cars (models.radq + stats), car select for 39.
-- [ ] Extended stage parser and directives (float, fade, fire, colour
-      outlines, special checkpoints, fake walls, igmax, setpoint...),
-      old-model renumbering (stagecompat), collision without the sector grid
-      (trackgrid).
+- [x] Extended's 23 cars as this port's 16-38: models from ext_models[0-22]
+      (CAR_MODEL), stats in car_define_extended (turn/push float; Extended's
+      double wheel angle in mad.c), names, specials, car-select bars
+      (Extended's Defence table, Control from grip); Free Play offers all 39;
+      the custom car moved to 39.
+- [x] Extended's model table (ext_stage.c ext_loadbase: 129 models, 6
+      wheels, firedam, sfactor 6 for 78-119) and stage loader (ext_loadstage:
+      every set/chk/fix/wall directive, old-model renumbering, faded pieces,
+      glow lines, fire), limits (2000 checkpoints, 50 fixes, 20000 trackers,
+      1600 objects), coverage sector grid for collision. All 27 tracks, 17
+      classic, 5 match and 35 career stages load (ext_stage_test).
+      Headless: NFM_EXT_STAGE=tracks:1.
+- [ ] specialchk (checkpoint that repairs) and the floating checkpoint height
+      window in mad.c; Extended's fadefrom 12000 left out (C fog kept).
 - [ ] Normal-mode stages (tracks.radq), Premier Tournament.
 - [ ] Revised and Recharged cars; cars and stages from the SD card.
 

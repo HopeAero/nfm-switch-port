@@ -9,9 +9,12 @@
 extern "C" {
 #endif
 
-#define TRACKERS_MAX 6700
+// NFM 2 holds 6700; Extended's own stages need more (its Trackers has 67000;
+// its biggest career stage places ~5000), so 20000. Stages fill trackers
+// from the front, so NFM 2's stages are untouched.
+#define TRACKERS_MAX 20000
 
-// ~350KB of fixed arrays -- heap- or static-allocate, never put this on the
+// ~1.2MB of fixed arrays -- heap- or static-allocate, never put this on the
 // stack. `trackers_init` only zeroes it; the caller owns storage.
 typedef struct Trackers {
   int32_t x[TRACKERS_MAX];
@@ -51,6 +54,20 @@ void trackers_init(Trackers *t);
 void trackers_free_sect(Trackers *t);
 
 void trackers_devidetrackers(Trackers *t, int32_t sx, int32_t n, int32_t sz, int32_t n2);
+
+/**
+ * The same sector grid (same sx/sz/ncx/ncz, same `sect` layout and the same
+ * post-build decrement, so every reader works unchanged) for Extended's
+ * stages, built by COVERAGE instead of distance: a tracker goes into every
+ * cell its x/z rectangle, grown by 1500, touches -- cells clamped to the
+ * grid, as readers clamp a car's cell. Extended has no grid (it scans every
+ * tracker, Madness.java:1980, 2259); NFM 2's distance-from-centre buckets
+ * miss its long and floating pieces and its walls (no 167 marker), so a
+ * car would drive through them. With the margin, any tracker a wheel within
+ * 1500 of the car's centre can touch is in the centre's cell (as
+ * web/ext/trackgrid.js); each cell lists its trackers ascending.
+ */
+void trackers_devidetrackers_cover(Trackers *t, int32_t sx, int32_t n, int32_t sz, int32_t n2);
 
 // Squared planar distance. Wraps at 32 bits on both the multiplies and the
 // addition, matching Java `iadd`/`imul` -- see web/Trackers.js's comment on

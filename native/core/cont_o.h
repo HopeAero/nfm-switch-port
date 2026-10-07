@@ -74,6 +74,14 @@ extern "C" {
 extern bool cont_o_shadows;
 extern bool cont_o_particles;
 
+/** The model parser's size divisor: div(n) scales by n / cont_o_sfactor and
+ * idiv(n) by n / (cont_o_sfactor * 10). NFM 2's is 10; Extended's model
+ * table sets 6 for its codes 78-119 while loading them (Extended
+ * ContO.java:357-362), then puts 10 back. */
+extern float cont_o_sfactor;
+
+#define CONT_O_MAX_WHEELS 6 // Extended's six-wheelers; physics stays on wheels 0-3
+
 // NFM 2 read up to 210 polygons, then the wheels (4 x 19 pieces): 286 in all.
 // Raised to Revised and Recharged's 1000 pieces (as web/ContO.js MAX_PIECES)
 // so its big cars load whole; no model the game ships passes 210.
@@ -98,10 +106,21 @@ typedef struct ContO {
   // condition's colour (ContO.spec, set each tick from specials.c).
   bool spec_on;
   int32_t spec[3];
+  // Extended stage pieces (ext_stage.c): `fade` is 255 - invisiblepiece (0
+  // opaque, 255 not drawn; outlines only when 0), `glowlines`/`glowc` its
+  // outline colour (setcol/setcolcode), `flameheight` its setfire flames'
+  // scale (0 = NFM 2's), `wallpiece` a boundary wall, `telechk` its teleport
+  // floor (-1 none).
+  int32_t fade;
+  bool glowlines;
+  int32_t glowc[3];
+  int32_t flameheight;
+  bool wallpiece;
+  int32_t telechk;
   bool decor;
   float grounded;
   int32_t grat;
-  int32_t keyx[4], keyz[4];
+  int32_t keyx[CONT_O_MAX_WHEELS], keyz[CONT_O_MAX_WHEELS];
   int32_t sprkat;
 
   // Track (collision volume) data, allocated when a `tracks` command is
@@ -226,6 +245,11 @@ void cont_o_init_pile(ContO *co, int32_t seed, int32_t n2, int32_t n3, Medium *m
  * all-zero, never uninitialised memory; `dst != src`.
  */
 void cont_o_recopy(ContO *dst, ContO *src, int32_t x, int32_t y, int32_t z, int32_t a);
+
+/** Extended's ContO.setfire (ContO.java:1651): every face that is not a
+ * wheel's (wz 0) or is grey -16/-17 burns -- the wreck's flames (embos 16),
+ * which the stage's flameheight scales. */
+void cont_o_setfire(ContO *co);
 
 /** Frees every Plane in co->p[0..npl), co->p itself, and any allocated
  * track/shadow/dust/spark arrays. */

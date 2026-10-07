@@ -20,18 +20,28 @@
 extern "C" {
 #endif
 
-#define CHECK_POINTS_MAX 140
+// Route points + checkpoints a stage may place. NFM 2's stages stay under
+// 140; Extended's career stages reach ~440 (its CheckPoints holds 2000).
+#define CHECK_POINTS_MAX 2000
+// Fix hoops: NFM 2's loader still stops at 5, Extended's at its arrays' 50.
+#define CHECK_POINTS_MAX_FIX 50
 
 // Tagged (not just typedef'd) so other headers can forward-declare
 // `struct CheckPoints *` without including this file -- see control.h.
 typedef struct CheckPoints {
   int32_t x[CHECK_POINTS_MAX], z[CHECK_POINTS_MAX], y[CHECK_POINTS_MAX];
   int32_t typ[CHECK_POINTS_MAX];
+  // Extended (ext_stage.c): a point's rotation, its teleport floor (-1 none)
+  // and tower floor, and which point each checkpoint (by nsp) is.
+  int32_t rotation[CHECK_POINTS_MAX];
+  int32_t telefloor[CHECK_POINTS_MAX];
+  int32_t floor[CHECK_POINTS_MAX];
+  int32_t chkcode[CHECK_POINTS_MAX];
   int32_t pcs;
   int32_t nsp;
   int32_t n;
-  int32_t fx[5], fz[5], fy[5];
-  bool roted[5], special[5];
+  int32_t fx[CHECK_POINTS_MAX_FIX], fz[CHECK_POINTS_MAX_FIX], fy[CHECK_POINTS_MAX_FIX];
+  bool roted[CHECK_POINTS_MAX_FIX], special[CHECK_POINTS_MAX_FIX];
   int32_t fn;
   int32_t stage;
   int32_t nlaps;

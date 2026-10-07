@@ -1002,8 +1002,39 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
   contO->wzy = jtrunc((float)contO->wzy - n11);
   if (contO->wzy < -30) contO->wzy += 30;
   if (contO->wzy > 30) contO->wzy -= 30;
+  // Extended keeps the wheels' angle as a double (Madness.java:1826-1861):
+  // its own cars turn by 7.5, 4.5, 3.5 a tick. contO->wxz, which the
+  // drawing reads, follows it truncated; anything else that sets
+  // contO->wxz (a reset) is picked up.
+  const bool ext_steer = mad->xt->extended;
+  if (ext_steer && (int32_t)mad->wxzd != contO->wxz) mad->wxzd = contO->wxz;
   if (control->steer != 0.0f) {
     contO->wxz = jtrunc(-36.0f * control->steer);
+    mad->wxzd = contO->wxz;
+  } else if (ext_steer) {
+    const double tp = cd->turn[mad->cn];
+    double w = mad->wxzd;
+    if (control->right) {
+      w -= tp;
+      if (w < -36.0) w = -36.0;
+    }
+    if (control->left) {
+      w += tp;
+      if (w > 36.0) w = 36.0;
+    }
+    if (w != 0.0 && !control->left && !control->right) {
+      if (fabsf(mad->speed) < 10.0f) {
+        if (fabs(w) == 1.0) w = 0.0;
+        if (w > 0.0) --w;
+        if (w < 0.0) ++w;
+      } else {
+        if (fabs(w) < tp * 2.0) w = 0.0;
+        if (w > 0.0) w -= tp * 2.0;
+        if (w < 0.0) w += tp * 2.0;
+      }
+    }
+    mad->wxzd = w;
+    contO->wxz = (int32_t)w;
   } else {
     if (control->right) {
       contO->wxz -= cd->turn[mad->cn];
@@ -1035,12 +1066,19 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
   if (mad->speed < 0.0f) n12 = -n12;
   if (mad->wtouch) {
     if (!mad->capsized) {
+      if (ext_steer) {
+        // Extended: float divisions of the double angle (:1873-1877).
+        const float w = (float)mad->wxzd, d = (float)n12;
+        mad->fxz = control->handb ? (int32_t)(w / d) : (int32_t)(w / (d * 3.0f));
+        contO->xz += (int32_t)(w / d);
+      } else {
       if (!control->handb) {
         mad->fxz = contO->wxz / (n12 * 3);
       } else {
         mad->fxz = contO->wxz / n12;
       }
       contO->xz += contO->wxz / n12;
+      }
     }
     mad->wtouch = false;
     mad->gtouch = false;

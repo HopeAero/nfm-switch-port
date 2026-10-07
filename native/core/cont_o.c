@@ -12,6 +12,7 @@
 #include <math.h>
 #include <stdio.h>
 
+float cont_o_sfactor = 10.0f;
 bool cont_o_shadows = true;
 bool cont_o_particles = true;
 
@@ -356,7 +357,7 @@ void cont_o_init_copy(ContO *dst, ContO *src, int32_t x, int32_t y, int32_t z, i
     }
   }
 
-  for (int32_t n = 0; n < 4; n++) {
+  for (int32_t n = 0; n < CONT_O_MAX_WHEELS; n++) {
     dst->keyx[n] = src->keyx[n];
     dst->keyz[n] = src->keyz[n];
   }
@@ -1442,10 +1443,25 @@ static void cont_o_d_inner(ContO *co, struct Graphics2D *g) {
         if (src != sort_order) memcpy(sort_order, src, sizeof(int32_t) * (size_t)co->npl);
       }
       if (co->spec_on) plane_set_outline(true, co->spec[0], co->spec[1], co->spec[2]);
-      for (int32_t n17 = 0; n17 < co->npl; n17++) {
-        Plane *pl = &co->p[sort_order[n17]];
-        plane_d(pl, g, co->x - m->x, co->y - m->y, co->z - m->z, co->xz, co->xy, co->zy,
-                co->wxz, co->wzy, co->noline, n4);
+      // Extended stage pieces: see-through (setfade, nosee walls), glowing
+      // outlines (setcol), scaled flames (setfire). NFM 2's objects leave all
+      // of it at its defaults, so they draw exactly as before.
+      const bool piece = co->fade != 0 || co->glowlines || co->flameheight != 0;
+      const float prev_a = g->a;
+      if (piece) {
+        plane_set_piece(255 - co->fade, co->glowlines, co->glowc, co->flameheight ? (double)co->flameheight : 1.0);
+        if (co->fade != 0) gfx_set_composite(g, prev_a * (float)(255 - co->fade) / 255.0f);
+      }
+      if (co->fade < 255) {
+        for (int32_t n17 = 0; n17 < co->npl; n17++) {
+          Plane *pl = &co->p[sort_order[n17]];
+          plane_d(pl, g, co->x - m->x, co->y - m->y, co->z - m->z, co->xz, co->xy, co->zy,
+                  co->wxz, co->wzy, co->noline, n4);
+        }
+      }
+      if (piece) {
+        if (co->fade != 0) gfx_set_composite(g, prev_a);
+        plane_set_piece(255, false, NULL, 1.0);
       }
       if (co->spec_on) plane_set_outline(false, 0, 0, 0);
 
@@ -1481,6 +1497,12 @@ static void cont_o_d_inner(ContO *co, struct Graphics2D *g) {
       if (co->rtg[n20] != 0) co->rtg[n20] = 0;
     }
     if (co->sprk_ != 0) co->sprk_ = 0;
+  }
+}
+
+void cont_o_setfire(ContO *co) {
+  for (int32_t i = 0; i < co->npl; i++) {
+    if (co->p[i].wz == 0 || co->p[i].gr == -17 || co->p[i].gr == -16) co->p[i].embos = 16;
   }
 }
 
@@ -1624,7 +1646,7 @@ void cont_o_init_buf(ContO *co, const char *text, Medium *m, Trackers *t) {
                        cont_o_getvalue("rims", string, 2), cont_o_getvalue("rims", string, 3),
                        cont_o_getvalue("rims", string, 4));
     }
-    if (starts_with(string, "w(") && n6 < 4) {
+    if (starts_with(string, "w(") && n6 < CONT_O_MAX_WHEELS) {
       // trunc(fr(getvalue*n4)*array2[0]) -- fr() wraps only the first
       // multiply; unwrapped second multiply, case-3 double precision.
       float w0 = (float)cont_o_getvalue("w", string, 0);
@@ -1754,6 +1776,10 @@ void cont_o_init_buf(ContO *co, const char *text, Medium *m, Trackers *t) {
         if (starts_with(string, "dam")) {
           co->dam[co->tnt] = 3;
         }
+        // Extended's burning pieces (ContO.java:503): three times a dam().
+        if (starts_with(string, "firedam")) {
+          co->dam[co->tnt] = 9;
+        }
         if (starts_with(string, "notwall")) {
           co->notwall[co->tnt] = true;
         }
@@ -1780,10 +1806,10 @@ void cont_o_init_buf(ContO *co, const char *text, Medium *m, Trackers *t) {
       co->grounded = (float)cont_o_getvalue("grounded", string, 0) / 100.0f;
     }
     if (starts_with(string, "div(")) {
-      n4 = (float)cont_o_getvalue("div", string, 0) / 10.0f;
+      n4 = (float)cont_o_getvalue("div", string, 0) / cont_o_sfactor;
     }
     if (starts_with(string, "idiv(")) {
-      n4 = (float)cont_o_getvalue("idiv", string, 0) / 100.0f;
+      n4 = (float)cont_o_getvalue("idiv", string, 0) / (cont_o_sfactor * 10.0f);
     }
     if (starts_with(string, "iwid(")) {
       n5 = (float)cont_o_getvalue("iwid", string, 0) / 100.0f;

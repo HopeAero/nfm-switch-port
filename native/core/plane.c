@@ -212,6 +212,24 @@ static void set_brighter(Graphics2D *g, int32_t r, int32_t gg, int32_t b) {
 static bool g_outline_on;
 static int32_t g_outline[3];
 
+static int32_t g_piece_alpha = 255;
+static bool g_piece_glow;
+static int32_t g_piece_glowc[3];
+static double g_piece_flame = 1.0;
+
+void plane_set_piece(int32_t alpha, bool glow, const int32_t *glowc, double flame) {
+  g_piece_alpha = alpha;
+  g_piece_glow = glow;
+  for (int32_t i = 0; i < 3; i++) g_piece_glowc[i] = (glow && glowc) ? glowc[i] : 0;
+  g_piece_flame = flame;
+}
+
+/** A flame distance scaled by the piece's flameheight (Extended Plane.d's
+ * `(int)(n * actualflame)`); NFM 2's flames (scale 1) untouched. */
+static int32_t flame_scaled(int32_t n) {
+  return g_piece_flame == 1.0 ? n : (int32_t)((double)n * g_piece_flame);
+}
+
 void plane_set_outline(bool on, int32_t r, int32_t g, int32_t b) {
   g_outline_on = on;
   g_outline[0] = r;
@@ -323,25 +341,25 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
       array[1] = p->ox[p->pb] + n;
       array3[1] = p->oy[p->pb] + n2;
       array2[1] = p->oz[p->pb] + n3;
-      while (abs(array[0] - array[1]) > 100) {
-        if (array[1] > array[0]) array[1] -= 30; else array[1] += 30;
+      while (abs(array[0] - array[1]) > flame_scaled(100)) {
+        if (array[1] > array[0]) array[1] -= flame_scaled(30); else array[1] += flame_scaled(30);
       }
-      while (abs(array2[0] - array2[1]) > 100) {
-        if (array2[1] > array2[0]) array2[1] -= 30; else array2[1] += 30;
+      while (abs(array2[0] - array2[1]) > flame_scaled(100)) {
+        if (array2[1] > array2[0]) array2[1] -= flame_scaled(30); else array2[1] += flame_scaled(30);
       }
       // trunc(idiv(abs(a[0]-a[1]),3) * (0.5-rand)) -- idiv result is int,
       // (0.5-rand) is fr()'d nowhere -- genuinely double throughout (no fr()
       // in this whole statement at all). Case: plain double, jtrunc_d.
       int32_t n16 = jtrunc_d((double)(abs(array[0] - array[1]) / 3) * (0.5 - (double)medium_random(p->m)));
       int32_t n17 = jtrunc_d((double)(abs(array2[0] - array2[1]) / 3) * (0.5 - (double)medium_random(p->m)));
-      array[2] = (array[0] + array[1]) / 2 + n16;
-      array2[2] = (array2[0] + array2[1]) / 2 + n17;
+      array[2] = (array[0] + array[1]) / 2 + flame_scaled(n16);
+      array2[2] = (array2[0] + array2[1]) / 2 + flame_scaled(n17);
       // trunc((abs(dx)+abs(dz))/1.5 * (fr(rand/2)+0.5)) -- again no fr()
       // wrapping the outer product/sum at all: double throughout.
       double n18d = ((double)(abs(array[0] - array[1]) + abs(array2[0] - array2[1])) / 1.5) *
                      ((double)(medium_random(p->m) / 2.0f) + 0.5);
       int32_t n18 = jtrunc_d(n18d);
-      array3[2] = (array3[0] + array3[1]) / 2 - (n10 * n11) * n18;
+      array3[2] = (array3[0] + array3[1]) / 2 - flame_scaled((n10 * n11) * n18);
       plane_rot(p, array, array3, n, n2, fxy, 3);
       plane_rot(p, array3, array2, n2, n3, fzy, 3);
       plane_rot(p, array, array2, n, n3, fxz, 3);
@@ -374,15 +392,15 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
       array[1] = p->ox[p->pb] + n;
       array3[1] = p->oy[p->pb] + n2;
       array2[1] = p->oz[p->pb] + n3;
-      while (abs(array[0] - array[1]) > 100) {
-        if (array[1] > array[0]) array[1] -= 30; else array[1] += 30;
+      while (abs(array[0] - array[1]) > flame_scaled(100)) {
+        if (array[1] > array[0]) array[1] -= flame_scaled(30); else array[1] += flame_scaled(30);
       }
-      while (abs(array2[0] - array2[1]) > 100) {
-        if (array2[1] > array2[0]) array2[1] -= 30; else array2[1] += 30;
+      while (abs(array2[0] - array2[1]) > flame_scaled(100)) {
+        if (array2[1] > array2[0]) array2[1] -= flame_scaled(30); else array2[1] += flame_scaled(30);
       }
-      array[2] = (array[0] + array[1]) / 2 + n16;
-      array2[2] = (array2[0] + array2[1]) / 2 + n17;
-      array3[2] = (array3[0] + array3[1]) / 2 - (n10 * n11) * jtrunc_d((double)n18 * 0.8);
+      array[2] = (array[0] + array[1]) / 2 + flame_scaled(n16);
+      array2[2] = (array2[0] + array2[1]) / 2 + flame_scaled(n17);
+      array3[2] = (array3[0] + array3[1]) / 2 - flame_scaled((n10 * n11) * jtrunc_d((double)n18 * 0.8));
       plane_rot(p, array, array3, n, n2, fxy, 3);
       plane_rot(p, array3, array2, n2, n3, fzy, 3);
       plane_rot(p, array, array2, n, n3, fxz, 3);
@@ -764,7 +782,7 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
     gfx_set_color(g, red, green, blue);
     gfx_fill_polygon(g, array26, array27, p->n);
     if (p->m->trk != 0 && p->gr == -10) b = false;
-    if (!b || (g_outline_on && p->flx == 0 && !p->solo)) {
+    if ((!b || (g_outline_on && p->flx == 0 && !p->solo)) && g_piece_alpha == 255) {
       if (p->flx == 0) {
         if (!p->solo) {
           int32_t r3 = 0, g3 = 0, b6 = 0;
@@ -810,10 +828,13 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
           p->flx = 0;
         }
       }
-    } else if (p->road && p->av <= 3000 && p->m->trk == 0 && p->m->fade[0] > 4000) {
-      red -= 10; if (red < 0) red = 0;
-      green -= 10; if (green < 0) green = 0;
-      blue -= 10; if (blue < 0) blue = 0;
+    } else if (((p->road && p->av <= 3000 && p->m->trk == 0 && p->m->fade[0] > 4000) || g_piece_glow) &&
+               g_piece_alpha == 255) {
+      // Extended's glowlines (Plane.java:1185-1212): the same darker edge,
+      // but never below the piece's glow colour (0 for NFM 2's roads).
+      red -= 10; if (red < g_piece_glowc[0]) red = g_piece_glowc[0];
+      green -= 10; if (green < g_piece_glowc[1]) green = g_piece_glowc[1];
+      blue -= 10; if (blue < g_piece_glowc[2]) blue = g_piece_glowc[2];
       gfx_set_color(g, red, green, blue);
       gfx_draw_polygon(g, array26, array27, p->n);
     }

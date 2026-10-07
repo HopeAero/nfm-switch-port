@@ -9,7 +9,7 @@
 
 #include "java_compat.h"
 
-int32_t specials_ext_car(int32_t cn) { return cn < 16 ? cn + 23 : cn - 16; }
+int32_t specials_ext_car(int32_t cn) { return cn < 16 ? cn + 23 : (cn < 39 ? cn - 16 : -1); }
 
 void specials_reset(Specials *sp) {
   memset(sp, 0, sizeof(*sp));

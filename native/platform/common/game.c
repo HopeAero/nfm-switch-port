@@ -71,6 +71,7 @@
 #include "wheels.h"
 #include "cont_o.h"
 #include "game_sparker.h"
+#include "ext_stage.h"
 #include "car_define.h"
 #include "record.h"
 #include "check_points.h"
@@ -86,21 +87,35 @@
 #include "specials.h"
 #include "diag.h"
 
-#define STAGE_OBJECT_CAPACITY 610 // matches GameSparker.js's own ContO[610]
+// GameSparker.js's own ContO[610] held NFM 2's stages; Extended's reach 1106
+// (its ContO[15000]), so room for those.
+#define STAGE_OBJECT_CAPACITY 1600
 #define NUM_STAGES 32              // stages/1.txt .. stages/32.txt
-#define CUSTOM_CAR_INDEX 16        // menu entry for the loadcar()/loadstat() Simple_Car.rad flow
+#define CUSTOM_CAR_INDEX 39        // menu entry for the loadcar()/loadstat() Simple_Car.rad flow (after Extended's cars)
 
 // Display names for the 16 built-in car slots -- transcribed verbatim
 // from web/CarDefine.js's own `this.names` literal (menu-display only,
 // never read by physics/drawing code, so not part of core/car_define.c's
 // own ported field set -- see that file's header comment on
 // `getSvalue`/name tables being out of scope there).
-static const char *CAR_DISPLAY_NAMES[16] = {
+static const char *CAR_DISPLAY_NAMES[39] = {
     "Tornado Shark", "Formula 7", "Wow Caninaro", "La Vita Crab", "Nimi",
     "MAX Revenge", "Lead Oxide", "Kool Kat", "Drifter X", "Sword of Justice",
     "High Rider", "EL KING", "Mighty Eight", "M A S H E E N", "Radical One",
     "DR Monstaa",
+    // Extended's own 23 (its xtGraphics.names 0-22), this port's 16-38.
+    "Remington", "Speedy 7", "Damn Van", "Blizzard Rush", "Twingoor", "Steel Falcon", "Oldskool",
+    "Revonater", "Comet", "Das Cop", "Hellfire", "Old Van", "Redspeed", "Stampede", "Skyrider",
+    "DR Chaos", "Bounty Hunter", "Radical Racer", "Titan", "Deity", "Agent Waster", "Agent Racer",
+    "Tesco Lorry",
 };
+#define CAR_COUNT 39   // NFM 2's 16 and Extended's 23; CUSTOM_CAR_INDEX follows
+
+/** A car's name for the HUD; the custom car's, or "Car" off the end. */
+static const char *car_name(int32_t cn) {
+  if (cn >= 0 && cn < CAR_COUNT) return CAR_DISPLAY_NAMES[cn];
+  return cn == CUSTOM_CAR_INDEX ? "Simple Car" : "Car";
+}
 
 // Locked-car gate overlay's fixed 9-segment fence layout --
 // xtGraphics.java:599-600.
@@ -184,6 +199,36 @@ static bool load_stage_objects(ContO **objects_ptr, int32_t *count_ptr, int32_t 
   m->resdown = g_resdown_setting;
   return ok;
 }
+
+// ---- One of Extended's stages, `spec` "pack:entry" ("tracks:1" is
+// ext/data/Files/tracks.radq's 1.txt), through ext_loadstage from Extended's
+// model table; `player_ext_car` is the player's car in Extended's numbering.
+static bool load_ext_stage_objects(ContO **objects_ptr, int32_t *count_ptr, int32_t previous_count, ContO *ext_models,
+                                   Medium *m, Trackers *t, CheckPoints *cp, const char *spec, int32_t player_ext_car) {
+  char pack[32] = "tracks", entry[48] = "1.txt";
+  const char *colon = strchr(spec, ':');
+  if (colon) {
+    snprintf(pack, sizeof(pack), "%.*s", (int)(colon - spec), spec);
+    if (strchr(colon + 1, '.')) snprintf(entry, sizeof(entry), "%s", colon + 1);
+    else snprintf(entry, sizeof(entry), "%s.txt", colon + 1);
+  }
+  char *text = ext_stage_text(pack, entry);
+  if (!text) return false;
+  if (*objects_ptr) {
+    for (int32_t i = 0; i < previous_count; i++) cont_o_free(&(*objects_ptr)[i]);
+    free(*objects_ptr);
+  }
+  *objects_ptr = calloc(STAGE_OBJECT_CAPACITY, sizeof(ContO));
+  check_points_init(cp);
+  ExtStageInfo info;
+  const bool ok = ext_loadstage(*objects_ptr, STAGE_OBJECT_CAPACITY, count_ptr, ext_models, m, t, cp, text,
+                                player_ext_car, &info);
+  free(text);
+  check_points_calprox(cp);
+  m->resdown = g_resdown_setting;
+  return ok;
+}
+// ----
 
 // Depth-sorted painter's-algorithm render for a flat ContO array -- the
 // SAME selection-sort-by-dist ranking as the racing loop's own object draw
@@ -1255,7 +1300,7 @@ static void draw_checkpoint_arrow(Graphics2D *g, Medium *m, XtGraphicsStub *xt,
     // :8673-8676 -- name the locked car, framed by a bracket pair: literally
     // "[" + 32 spaces + "]" in the source.
     hud_say_draw(g, m, 13, "[                                ]", 76, 67, 240, 0);
-    if (target >= 0 && target < BOTS_MAX_PLAYERS && sc[target] >= 0 && sc[target] < 16) {
+    if (target >= 0 && target < BOTS_MAX_PLAYERS && sc[target] >= 0 && sc[target] < CAR_COUNT) {
       hud_say_draw(g, m, 13, CAR_DISPLAY_NAMES[sc[target]], 0, 0, 0, 0);
     }
     return;
@@ -1747,7 +1792,7 @@ static void hud_messages_tick(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad 
   for (int32_t n9 = 0; n9 < nplayers; n9++) {
     if (xt->hud_dested[n9] == cp->dested[n9] || n9 == xt->im) continue;
     xt->hud_dested[n9] = cp->dested[n9];
-    const char *name = (sc[n9] >= 0 && sc[n9] < 16) ? CAR_DISPLAY_NAMES[sc[n9]] : "Simple Car";
+    const char *name = car_name(sc[n9]);
     if (xt->hud_dested[n9] == 1) snprintf(xt->say, sizeof(xt->say), "%s has been wasted!", name);
     if (xt->hud_dested[n9] == 2) snprintf(xt->say, sizeof(xt->say), "You wasted %s!", name);
     if (xt->hud_dested[n9] == 1 || xt->hud_dested[n9] == 2) {
@@ -1986,7 +2031,7 @@ static void draw_arrace_board(Graphics2D *g, Medium *m, CheckPoints *cp, int32_t
       else snprintf(ord, sizeof(ord), "%dth", place + 1);
       font_draw(g, ord, (place == 0) ? 673 : 671, 76 + 30 * place);
       if (names) {
-        const char *name = (sc[j] >= 0 && sc[j] < 16) ? CAR_DISPLAY_NAMES[sc[j]] : "Simple Car";
+        const char *name = car_name(sc[j]);
         hud_set_ink(g, 0, 0, 0);
         // Centred like Java's, but never left of the bar: the longest stock
         // name would otherwise run into the ordinal beside it.
@@ -3498,7 +3543,7 @@ static void draw_specials_hud(Graphics2D *g, Medium *m, const Specials *sp, cons
   gfx_set_composite(g, (float)sp->xfade / 255.0f);
   for (int32_t a = 0; a < nplayers; a++) {
     if (mads[a].dest) continue;
-    const char *name = (sc[a] >= 0 && sc[a] < 16) ? CAR_DISPLAY_NAMES[sc[a]] : "Car";
+    const char *name = car_name(sc[a]);
     char line[96];
     if (sp->over[0][a] && sp->xm[0][a] < 199) {
       if (a == 0) snprintf(line, sizeof(line), "You activated your special!");
@@ -3517,7 +3562,7 @@ static void draw_specials_hud(Graphics2D *g, Medium *m, const Specials *sp, cons
     }
     if (sp->over[2][a] && sp->xm[2][a] < 199) {
       const int32_t o = sp->strswapee[a];
-      const char *object = o == 0 ? "you" : ((sc[o] >= 0 && sc[o] < 16) ? CAR_DISPLAY_NAMES[sc[o]] : "Car");
+      const char *object = o == 0 ? "you" : (car_name(sc[o]));
       snprintf(line, sizeof(line), "%s swapped strength with %s!", a == 0 ? "You have" : name, object);
       gfx_set_color(g, 0, 50, 0);
       font_draw(g, line, 12, sp->xm[2][a]);
@@ -3618,7 +3663,7 @@ static void draw_ext_board(Graphics2D *g, const Medium *m, const CheckPoints *cp
         if (mads[a].strswap) gfx_set_color(g, 0, glowg[a], 0);
       }
       const int32_t c = sc[a];
-      const char *name = c == 9 ? "SoJ" : (c == 2 ? "Wow C." : ((c >= 0 && c < 16) ? CAR_DISPLAY_NAMES[c] : "Car"));
+      const char *name = c == 9 ? "SoJ" : (c == 2 ? "Wow C." : (car_name(c)));
       font_draw(g, name, 750 - font_width(name) / 2, 131 + y);
 
       // The bar.
@@ -3770,6 +3815,17 @@ int game_run(void) {
     fprintf(stderr, "could not load data/models.zip\n");
     return 1;
   }
+  // ---- Extended's model table (ext_stage.c): its 129 models in its own
+  // numbering -- 0-22 its cars (our 16-38, EXT_FIRST_CAR), 23-38 NFM 2's,
+  // 39-77 track pieces, 78-116 the beasts, 117-128 scenery.
+  ContO *ext_models = calloc(EXT_NUM_MODELS, sizeof(ContO));
+  // A car's model: NFM 2's 16 from models.zip, Extended's own 23 (this
+  // port's 16-38) from its models.radq.
+#define CAR_MODEL(cn) ((cn) < EXT_FIRST_CAR ? &base_models[(cn)] : &ext_models[(cn) - EXT_FIRST_CAR])
+  if (!ext_models || !ext_loadbase(ext_models, &m, &t)) {
+    fprintf(stderr, "could not load ext/data/models.radq\n");
+  }
+  // ----
   boot_loading_frame(&g, &boot_images, boot_kb_models, boot_kb_total);
 
   CarDefine cd;
@@ -4231,7 +4287,7 @@ int game_run(void) {
   // other than car 0 / stage 1 without needing real menu-navigation input
   // (this sandbox's Xvfb can't simulate keyboard input, see the Menu
   // comment above). Not read at all once state != STATE_RACING-via-hook.
-  int32_t car_index = 0;   // 0-15 built-in, CUSTOM_CAR_INDEX (16) = Simple_Car.rad
+  int32_t car_index = 0;   // 0-15 NFM 2, 16-38 Extended, CUSTOM_CAR_INDEX (39) = Simple_Car.rad
   int32_t stage_num = 1;   // 1-based, matches stages/N.txt
   {
     const char *car_env = getenv("NFM_CAR_INDEX");
@@ -4473,7 +4529,7 @@ int game_run(void) {
   int32_t stage_count = 0;
   Record rpd;
   memset(&rpd, 0, sizeof(rpd)); // record_free() before each race's record_init() needs it valid
-  CheckPoints cp;
+  static CheckPoints cp;   // ~70KB with Extended's room (check_points.h): off the stack
   XtGraphicsStub xt;
   Control control[BOTS_MAX_PLAYERS];
   Mad mad[BOTS_MAX_PLAYERS];
@@ -5402,8 +5458,15 @@ int game_run(void) {
       m.w = 800;
 
       DIAG_PHASE("race setup: loading the stage");
-      bool stage_ok = load_stage_objects(&stage_objects, &stage_count, stage_count,
-                                          base_models, &m, &t, &cp, stage_num, NULL, NULL);
+      // ---- NFM_EXT_STAGE=pack:entry (e.g. tracks:1, matchtracks:26m3.txt):
+      // race one of Extended's stages, headless (ext_stage.c).
+      const char *ext_stage_env = getenv("NFM_EXT_STAGE");
+      bool stage_ok = ext_stage_env
+          ? load_ext_stage_objects(&stage_objects, &stage_count, stage_count, ext_models, &m, &t, &cp, ext_stage_env,
+                                   car_index < 16 ? car_index + 23 : car_index - EXT_FIRST_CAR)
+          : load_stage_objects(&stage_objects, &stage_count, stage_count,
+                               base_models, &m, &t, &cp, stage_num, NULL, NULL);
+      // ----
       if (!stage_ok) {
         // Java's stage == -3: no race on a stage that failed its checks
         // (missing file, bad model id, too many objects or trackers, under
@@ -5623,7 +5686,7 @@ int game_run(void) {
       bots_sortcars(sc, (GameMode)gmode, &progress, stage_num);
 
       for (int32_t i = 0; i < nplayers; i++) {
-        ContO *base = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : &base_models[sc[i]];
+        ContO *base = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : CAR_MODEL(sc[i]);
         cont_o_recopy(&co[i], base, kXstart[i], 250 - base->grat, kZstart[i], 0);
         // Keyboard/pad input drives slot 0 -- see platform/<name>/input.h
         // for the exact keymap. Polled once per frame in the loop below,
@@ -6635,7 +6698,7 @@ int game_run(void) {
         for (int32_t i = 0; i < nplayers; i++) {
           if (mad[i].newcar) {
             int32_t saved_xz = co[i].xz, saved_xy = co[i].xy, saved_zy = co[i].zy;
-            ContO *pristine = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : &base_models[mad[i].cn];
+            ContO *pristine = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : CAR_MODEL(mad[i].cn);
             cont_o_recopy(&co[i], pristine, co[i].x, co[i].y, co[i].z, 0);
             co[i].xz = saved_xz;
             co[i].xy = saved_xy;
@@ -6993,7 +7056,7 @@ int game_run(void) {
           else co[i].fix = true;
         }
         if (co[i].fcnt == 7 || co[i].fcnt == 8) {
-          ContO *pristine = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : &base_models[mad[i].cn];
+          ContO *pristine = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : CAR_MODEL(mad[i].cn);
           cont_o_recopy(&co[i], pristine, 0, 0, 0, 0);
           rpd.cntdest[i] = 0;
         }
@@ -7154,7 +7217,7 @@ int game_run(void) {
           else co[i].fix = true;
         }
         if (co[i].fcnt == 7 || co[i].fcnt == 8) {
-          ContO *pristine = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : &base_models[mad[i].cn];
+          ContO *pristine = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : CAR_MODEL(mad[i].cn);
           cont_o_recopy(&co[i], pristine, 0, 0, 0, 0);
           rpd.cntdest[i] = 0;
         }
@@ -7538,7 +7601,7 @@ int game_run(void) {
           // draw_car_preview() (see its own comment), with finish()'s OWN
           // camera constants (m.x/y/z/ground) instead of car-select's.
           if (n4 >= 0 && n4 < GAME_SPARKER_NUM_BASE_MODELS && base_models[n4].p) {
-            ContO *unlocked_car = &base_models[n4];
+            ContO *unlocked_car = CAR_MODEL(n4);
             m.crs = true;
             m.x = -400;
             m.y = 0;
@@ -7582,7 +7645,7 @@ int game_run(void) {
 
           char car_unlock_line[64];
           snprintf(car_unlock_line, sizeof(car_unlock_line), "%s has been unlocked!",
-                   (n4 >= 0 && n4 < 16) ? CAR_DISPLAY_NAMES[n4] : "");
+                   car_name(n4));
           gfx_set_color(&g, xt.aflk ? 196 : 255, xt.aflk ? 176 : 247, xt.aflk ? 0 : 165);
           draw_centered(&g, car_unlock_line, 400, 320);
           pin = 140;
@@ -7790,7 +7853,7 @@ int game_run(void) {
         car_flipo--;
       }
       {
-        ContO *preview_base = (car_index == CUSTOM_CAR_INDEX) ? &car_base : &base_models[car_index];
+        ContO *preview_base = (car_index == CUSTOM_CAR_INDEX) ? &car_base : CAR_MODEL(car_index);
         draw_car_preview(&g, &m, preview_base, &car_preview_xz, &car_preview_wzy,
                           car_y_offset, car_zy_value, car_freeze_spin);
       }
@@ -7960,7 +8023,8 @@ int game_run(void) {
         }
         gfx_set_color(&g, 176, 41, 0);
         font_set(FONT_BOLD, 13);
-        font_draw(&g, class_str, 549 - font_width(class_str) / 2, 95);
+        // Extended's own cars carry no NFM 2 class.
+        if (cn < 16 || cn == CUSTOM_CAR_INDEX) font_draw(&g, class_str, 549 - font_width(class_str) / 2, 95);
 
         // Extended's "SPECIAL ATTACK:" panel (its carselect, xtGraphics.java:
         // 16120-16330), top left: a white tab sized to the lines. Moved by

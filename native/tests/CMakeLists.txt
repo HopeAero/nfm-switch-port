@@ -138,6 +138,26 @@ add_executable(game_sparker_test
 )
 target_link_libraries(game_sparker_test m ZLIB::ZLIB)
 
+add_executable(ext_stage_test
+  ext_stage_test.c
+  ../core/ext_stage.c
+  ../core/check_points.c
+  ../core/record.c
+  ../core/mad.c
+  ../core/car_define.c
+  ../core/xt_graphics.c
+  ../core/cont_o.c
+  ../core/wheels.c
+  ../core/plane.c
+  ../core/medium.c
+  ../core/trackers.c
+  ../core/java_compat.c
+  ../core/trig.c
+  ../core/gfx.c
+  ../core/vfs.c
+)
+target_link_libraries(ext_stage_test m ZLIB::ZLIB)
+
 add_executable(check_points_test
   check_points_test.c
   ../core/check_points.c
@@ -275,6 +295,7 @@ add_test(NAME plane_test COMMAND plane_test)
 add_test(NAME wheels_test COMMAND wheels_test)
 add_test(NAME cont_o_test COMMAND cont_o_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_test(NAME game_sparker_test COMMAND game_sparker_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_test(NAME ext_stage_test COMMAND ext_stage_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_test(NAME check_points_test COMMAND check_points_test)
 add_test(NAME control_test COMMAND control_test)
 add_test(NAME car_define_test COMMAND car_define_test)

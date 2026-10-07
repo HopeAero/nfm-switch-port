@@ -36,13 +36,13 @@ typedef struct {
   int32_t handb[CAR_DEFINE_NUM_CARS];
   float airs[CAR_DEFINE_NUM_CARS];
   int32_t airc[CAR_DEFINE_NUM_CARS];
-  int32_t turn[CAR_DEFINE_NUM_CARS];
+  float turn[CAR_DEFINE_NUM_CARS];   // float: Extended's cars turn 7.5, 4.5...
   float grip[CAR_DEFINE_NUM_CARS];
   float bounce[CAR_DEFINE_NUM_CARS];
   float simag[CAR_DEFINE_NUM_CARS];
   float moment[CAR_DEFINE_NUM_CARS];
   float comprad[CAR_DEFINE_NUM_CARS];
-  int32_t push[CAR_DEFINE_NUM_CARS];
+  float push[CAR_DEFINE_NUM_CARS];   // float: Extended's Tesco Lorry pushes 8.5
   float revpush[CAR_DEFINE_NUM_CARS];   // float in Extended (Radical One 0.25, DR Monstaa 0.4)
   int32_t lift[CAR_DEFINE_NUM_CARS];
   int32_t revlift[CAR_DEFINE_NUM_CARS];

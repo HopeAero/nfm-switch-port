@@ -45,7 +45,7 @@ typedef struct Control {
   int32_t attack;
   int32_t acr;
   bool afta;
-  int32_t fpnt[5];
+  int32_t fpnt[50];   // one per fix hoop (CHECK_POINTS_MAX_FIX: Extended's stages hold up to 50)
   float steer;
   bool touchTrick;
   int32_t touchTrickX, touchTrickY;
