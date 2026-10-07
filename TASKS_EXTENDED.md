@@ -63,9 +63,15 @@ fixes for many cars in view (trackgrid, archive loading) are reused.
 - [x] Specials HUD: the Special bar under Power (data/port/special.png from
       Extended's special.GIF + "SPECIAL" in Adventure, tools/bake_special.py),
       the status lines on the left, the player's +/- stat tabs.
-- [ ] Still: no-knockback for 15/25/38 while active, car-list colours and
-      the outline glow per condition, the car-select description
-      (specials_describe() has the texts).
+- [x] No knockback for Extended's 15/25/38 while active; the car-select
+      SPECIAL ATTACK panel; the outline glow (ContO.spec_on/spec, drawn by
+      plane_set_outline) cycling through a car's conditions.
+- [x] Extended's car list, always up under the Special bar (draw_ext_board):
+      ordinals, names in their condition's glow, a bar per car -- damage
+      (arrow on cars), power (arrow on track), the special's charge after
+      Settings > Controls' Car List Bars (L, its D).
+- [x] Extended's far camera (its view 1, medium_watch_far): a fourth view in
+      the camera cycle. NFM_HOOK_VIEW=n / NFM_HOOK_LISTBARS=1 headless.
 - [x] Classic AI changes (control.c, `xt.extended`): decide_ext() ports
       Extended's whole decision cycle (no rubber-banding, its skiplev, rampp,
       turntyp, mustland, stuntf, trickprf, attack odds, fix and bulistc
@@ -79,9 +85,9 @@ fixes for many cars in view (trackgrid, archive loading) are reused.
       classictracks.radq is the same tracks from the older NFM 2: no
       decoration or piles, and its AI repair targets marked with
       `setpoint` (13 of 17 stages; stage 16 also moves a fix hoop).
-- [ ] The setpoint repair targets for the AI (Extended's contva.fixpoint):
-      match each classictracks setpoint to the NFM 2 file's `set(...)p` at
-      the same place, hand control.c the checkpoint numbers.
+- [x] The setpoint repair targets for the AI: each classictracks setpoint
+      is matched by place to the NFM 2 file's route point and becomes the
+      AI's fpnt[0]; the 4 stages without one keep NFM 2's nearest hoop.
 - [ ] 7 cars and opponents as sortcars already picks them (Extended keeps
       NFM 2's rules); verify against Extended's sortcars for Classic.
 

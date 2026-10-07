@@ -106,6 +106,11 @@ int32_t plane_spy(Plane *p, int32_t n, int32_t n2);
  * Draw one face. Parameter names are procyon's; positionally:
  * (g, x, y, z, cxz, xy, zy, wxRot, wzRot, farAway, objDist).
  */
+/** Extended's condition glow (Plane.d's `speciallines`): while `on`, the
+ * faces drawn next outline in (r, g, b), near or far. cont_o sets it around
+ * one car's faces. */
+void plane_set_outline(bool on, int32_t r, int32_t g, int32_t b);
+
 void plane_d(Plane *p, struct Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t cxz,
              int32_t n4, int32_t n5, int32_t n6, int32_t n7, bool b, int32_t n8);
 

@@ -434,6 +434,24 @@ void medium_transaround(Medium *m, ContO *from, ContO *to, int32_t t) {
 // `contO.x + 400 - contO.x` / `contO.z + 5000 - contO.z`, i.e. literal
 // 400 and 5000 with the car's own coordinate added and subtracted again;
 // those are folded to the constants here, which is exactly equivalent.
+void medium_watch_far(Medium *m, const ContO *co, double angle, int32_t boost) {
+  m->zy = 10;
+  double i = (2.0 + fabs(m->bcxzwatch) / 4.0) / 15.0;
+  if (i > 1.3333333333333333) i = 1.3333333333333333;
+  if (fabs(m->bcxzwatch) > i / 15.0) {
+    if (m->bcxzwatch > 0.0) m->bcxzwatch -= i / 15.0;
+    else m->bcxzwatch += i / 15.0;
+  } else if (m->bcxzwatch != 0.0) {
+    m->bcxzwatch = 0.0;
+  }
+  angle += m->bcxzwatch;
+  m->xz = (int32_t)(-angle);
+  const double rad = angle * 3.141592653589793 / 180.0;
+  m->x = co->x - m->cx + (int32_t)(-(double)(-800 - boost) * sin(rad));
+  m->z = co->z - m->cz + (int32_t)((double)(-12000 - boost) * cos(rad));
+  m->y = co->y - 3750 - m->cy - boost;
+}
+
 void medium_watch(Medium *m, ContO *co, int32_t n) {
   if (m->td) {
     m->y = jtrunc((float)(co->y - 300) - 1100.0f * medium_random(m));

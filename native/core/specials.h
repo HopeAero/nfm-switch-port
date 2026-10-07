@@ -35,9 +35,14 @@ typedef struct {
   // the five conditions each car shows, at what height, and the fade.
   int32_t timershown[5][SPECIALS_MAX];
   bool newtimer[5][SPECIALS_MAX], over[5][SPECIALS_MAX];
-  int32_t q[5][SPECIALS_MAX], xm[5];
+  int32_t q[5][SPECIALS_MAX], xm[5][SPECIALS_MAX];   // xm: each car's line height (Extended draws as it goes)
   int32_t xfade;
   bool xfadephase;
+
+  // Outline glow: each car's colour, cycling through its conditions.
+  bool spec_on[SPECIALS_MAX];
+  int32_t spec[SPECIALS_MAX][3];
+  int32_t spglow[SPECIALS_MAX], spglowchange[SPECIALS_MAX];
 } Specials;
 
 /** Extended's number for one of this port's cars: NFM 2's 0-15 are its

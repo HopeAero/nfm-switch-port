@@ -4,6 +4,7 @@
 #include "specials.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "java_compat.h"
@@ -104,7 +105,7 @@ static void status_lines(Specials *sp, Mad *mads, int32_t nplayers) {
     if (!mads[a].dest) {
       for (int32_t h = 0; h < 5; h++) {
         if (!sp->over[h][a]) continue;
-        sp->xm[h] = 91 + 18 * sp->q[h][a];
+        sp->xm[h][a] = 91 + 18 * sp->q[h][a];
         sp->xfade += sp->xfadephase ? 12 : -12;
         if (sp->xfade >= 240) sp->xfadephase = false;
         if (sp->xfade <= 40) sp->xfadephase = true;
@@ -421,6 +422,41 @@ void specials_tick(Specials *sp, Mad *mads, Control *controls, int32_t nplayers,
     sp->statmod[a3][3] = round(100.0 * live->airs[c] / (double)base->airs[c]);
     sp->statmod[a3][4] = round(100.0 * live->moment[c] / (double)base->moment[c]);
     sp->statmod[a3][5] = round(100.0 * live->maxmag[c] / (double)base->maxmag[c]);
+  }
+
+  // Outline glow (:7214-7339): a car under conditions outlines in their
+  // colours -- special red, frozen blue, drained brown, weakened orange,
+  // swapped green -- fading from one to the next every 5 ticks.
+  static const int32_t kCond[5][3] = {{185, 0, 0}, {0, 0, 185}, {100, 75, 0}, {240, 120, 0}, {0, 150, 0}};
+  const int32_t glowfor = 5;
+  for (int32_t a5 = 0; a5 < nplayers; a5++) {
+    const bool cond[5] = {sp->fixspecials[a5], mads[a5].frozen, mads[a5].leech, mads[a5].redstr, mads[a5].strswap};
+    int32_t ref[5][3], n = 0;
+    for (int32_t k = 0; k < 5; k++) {
+      if (!cond[k]) continue;
+      for (int32_t ch = 0; ch < 3; ch++) ref[n][ch] = kCond[k][ch];
+      n++;
+    }
+    sp->spec_on[a5] = n > 0 && !mads[a5].dest;
+    if (n == 1) for (int32_t ch = 0; ch < 3; ch++) sp->spec[a5][ch] = ref[0][ch];
+    if (n <= 1) {
+      sp->spglow[a5] = 0;
+      sp->spglowchange[a5] = 0;
+      continue;
+    }
+    if (sp->spglow[a5] < glowfor) {
+      sp->spglow[a5]++;
+    } else {
+      sp->spglow[a5] = 0;
+      sp->spglowchange[a5] = sp->spglowchange[a5] < n - 1 ? sp->spglowchange[a5] + 1 : 0;
+    }
+    if (sp->spglowchange[a5] >= n) sp->spglowchange[a5] = 0;
+    const int32_t from = sp->spglowchange[a5], to = from < n - 1 ? from + 1 : 0;
+    for (int32_t ch = 0; ch < 3; ch++) {
+      const int32_t step = abs(ref[from][ch] - ref[to][ch]) / glowfor;
+      sp->spec[a5][ch] = ref[from][ch] > ref[to][ch] ? ref[from][ch] - sp->spglow[a5] * step
+                                                       : ref[from][ch] + sp->spglow[a5] * step;
+    }
   }
 }
 

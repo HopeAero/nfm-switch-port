@@ -18,7 +18,7 @@ extern PadState g_pad;
 // Shared with platform.c, which reads the menu-level actions from it.
 uint64_t g_bind[BIND_COUNT] = {
   HidNpadButton_ZR, HidNpadButton_ZL, HidNpadButton_B, HidNpadButton_X, HidNpadButton_Up,
-  HidNpadButton_Down, HidNpadButton_Plus, HidNpadButton_Y, HidNpadButton_Minus, HidNpadButton_R};
+  HidNpadButton_Down, HidNpadButton_Plus, HidNpadButton_Y, HidNpadButton_Minus, HidNpadButton_R, HidNpadButton_L};
 static bool g_steer_dpad;
 
 void input_configure(const uint64_t mask[], bool steer_dpad) {

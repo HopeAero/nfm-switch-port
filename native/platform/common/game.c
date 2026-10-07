@@ -2980,7 +2980,7 @@ enum { NEED_RUMBLE = 1, NEED_REMAP = 2 };
 #define HAS_REMAP false
 #endif
 
-typedef struct { const char *title; int32_t nrows; SettingsRow rows[12]; } SettingsPage;
+typedef struct { const char *title; int32_t nrows; SettingsRow rows[14]; } SettingsPage;
 
 static const char *const kOnOff[] = {"Off", "On"};
 static const char *const kQualityNames[] = {"Original", "Smooth", "HD"};
@@ -3022,7 +3022,7 @@ static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
     {ROW_CHOICE, "Screen Shake", 0, SET_FIELD(shake), 2, 1, kOnOff, false},
     {ROW_CHOICE, "Vibration", 0, SET_FIELD(rumble), 2, 1, kOnOff, NEED_RUMBLE},
     {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
-  [SET_CONTROLS] = {"SETTINGS - CONTROLS", 12, {
+  [SET_CONTROLS] = {"SETTINGS - CONTROLS", 13, {
     {ROW_CHOICE, "Steer and Stunt With", 0, SET_FIELD(steer_dpad), 2, 1, kSteerNames, false},
     {ROW_CHOICE, "Accelerate", 0, SET_FIELD(bind[BIND_ACCEL]), PAD_COUNT, 1, kPadNames, false},
     {ROW_CHOICE, "Brake / Reverse", 0, SET_FIELD(bind[BIND_BRAKE]), PAD_COUNT, 1, kPadNames, false},
@@ -3034,6 +3034,7 @@ static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
     {ROW_CHOICE, "Mute Music", 0, SET_FIELD(bind[BIND_MUSIC]), PAD_COUNT, 1, kPadNames, false},
     {ROW_CHOICE, "Mute Effects", 0, SET_FIELD(bind[BIND_SFX]), PAD_COUNT, 1, kPadNames, false},
     {ROW_CHOICE, "Special", 0, SET_FIELD(bind[BIND_SPECIAL]), PAD_COUNT, 1, kPadNames, false},
+    {ROW_CHOICE, "Car List Bars", 0, SET_FIELD(bind[BIND_LISTBARS]), PAD_COUNT, 1, kPadNames, false},
     {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
 };
 #undef SET_FIELD
@@ -3063,8 +3064,8 @@ static bool settings_row_shown(const SettingsRow *r, bool has_rumble) {
  * layout of settings_screen_draw, for touch). */
 static int32_t settings_row_at(const SettingsUi *ui, bool has_rumble, int32_t y) {
   const SettingsPage *pg = &kSettingsPages[ui->page];
-  const bool tight = pg->nrows > 8;
-  const int32_t h = tight ? 28 : 34, gap = tight ? 4 : 6;
+  const bool tight = pg->nrows > 8, tighter = pg->nrows > 11;
+  const int32_t h = tighter ? 22 : (tight ? 28 : 34), gap = tighter ? 4 : (tight ? 4 : 6);
   int32_t top = 68;
   for (int32_t r = 0; r < pg->nrows; r++) {
     if (!settings_row_shown(&pg->rows[r], has_rumble)) continue;
@@ -3209,11 +3210,12 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
   draw_centered(g, pg->title, 400, 46);
   font_set(FONT_BOLD, 18);
 
-  // A page longer than eight rows (Controls) packs them tighter.
-  const bool tight = pg->nrows > 8;
-  const int32_t x0 = 120, w = 560, h = tight ? 28 : 34, gap = tight ? 4 : 6;
-  const int32_t ty = tight ? 6 : 7;
-  if (tight) font_set(FONT_BOLD, 16);
+  // A page longer than eight rows (Controls) packs them tighter, and
+  // tighter still past eleven.
+  const bool tight = pg->nrows > 8, tighter = pg->nrows > 11;
+  const int32_t x0 = 120, w = 560, h = tighter ? 22 : (tight ? 28 : 34), gap = tighter ? 4 : (tight ? 4 : 6);
+  const int32_t ty = tighter ? 5 : (tight ? 6 : 7);
+  if (tight) font_set(FONT_BOLD, tighter ? 14 : 16);
   int32_t y = 68;
   for (int32_t r = 0; r < pg->nrows; r++) {
     const SettingsRow *row = &pg->rows[r];
@@ -3498,42 +3500,42 @@ static void draw_specials_hud(Graphics2D *g, Medium *m, const Specials *sp, cons
     if (mads[a].dest) continue;
     const char *name = (sc[a] >= 0 && sc[a] < 16) ? CAR_DISPLAY_NAMES[sc[a]] : "Car";
     char line[96];
-    if (sp->over[0][a] && sp->xm[0] < 199) {
+    if (sp->over[0][a] && sp->xm[0][a] < 199) {
       if (a == 0) snprintf(line, sizeof(line), "You activated your special!");
       else snprintf(line, sizeof(line), "%s activated its special!", name);
       gfx_set_color(g, 100, 0, 0);
-      font_draw(g, line, 12, sp->xm[0]);
+      font_draw(g, line, 12, sp->xm[0][a]);
     }
-    if (sp->over[1][a] && sp->xm[1] < 199) {
+    if (sp->over[1][a] && sp->xm[1][a] < 199) {
       char by[16] = "";
       if (sp->fixspecials[0] && sp->randomcar[0] == a)
         snprintf(by, sizeof(by), " (-%d%%)", (int32_t)round(100.0 - sp->statreduce[a][0] * 100.0));
       if (a == 0) snprintf(line, sizeof(line), "You have reduced speed!%s", by);
       else snprintf(line, sizeof(line), "%s has reduced speed!%s", name, by);
       gfx_set_color(g, 0, 0, 100);
-      font_draw(g, line, 12, sp->xm[1]);
+      font_draw(g, line, 12, sp->xm[1][a]);
     }
-    if (sp->over[2][a] && sp->xm[2] < 199) {
+    if (sp->over[2][a] && sp->xm[2][a] < 199) {
       const int32_t o = sp->strswapee[a];
       const char *object = o == 0 ? "you" : ((sc[o] >= 0 && sc[o] < 16) ? CAR_DISPLAY_NAMES[sc[o]] : "Car");
       snprintf(line, sizeof(line), "%s swapped strength with %s!", a == 0 ? "You have" : name, object);
       gfx_set_color(g, 0, 50, 0);
-      font_draw(g, line, 12, sp->xm[2]);
+      font_draw(g, line, 12, sp->xm[2][a]);
     }
-    if (sp->over[3][a] && sp->xm[3] < 199) {
+    if (sp->over[3][a] && sp->xm[3][a] < 199) {
       char by[16] = "";
       if (sp->fixspecials[0] && sp->randomcar[0] == a)
         snprintf(by, sizeof(by), " (-%d%%)", (int32_t)round(sp->statreduce[a][5] * 100.0));
       if (a == 0) snprintf(line, sizeof(line), "You have reduced defence!%s", by);
       else snprintf(line, sizeof(line), "%s has reduced defence!%s", name, by);
       gfx_set_color(g, 180, 90, 0);
-      font_draw(g, line, 12, sp->xm[3]);
+      font_draw(g, line, 12, sp->xm[3][a]);
     }
-    if (sp->over[4][a] && sp->xm[4] < 199) {
+    if (sp->over[4][a] && sp->xm[4][a] < 199) {
       if (a == 0) snprintf(line, sizeof(line), "Your health is being drained!");
       else snprintf(line, sizeof(line), "%s's health is being drained!", name);
       gfx_set_color(g, 100, 75, 0);
-      font_draw(g, line, 12, sp->xm[4]);
+      font_draw(g, line, 12, sp->xm[4][a]);
     }
   }
   gfx_set_composite(g, 1.0f);
@@ -3564,6 +3566,94 @@ static void draw_specials_hud(Graphics2D *g, Medium *m, const Specials *sp, cons
     font_set(FONT_BOLD, 11);
     font_draw(g, tab, 28, y + 13);
     row++;
+  }
+}
+
+// Extended's car list (its xtGraphics.stat, :3964-4229), moved 70 left from
+// its 870-wide screen: under the Special bar, every car in race order with
+// its name -- glowing in its condition's colour -- and a bar: damage while
+// the arrow points at cars, power while it points at the track, and the
+// special's charge after the List Bars button (its D).
+static void draw_ext_board(Graphics2D *g, const Medium *m, const CheckPoints *cp, const Mad *mads, int32_t nplayers,
+                           const int32_t *sc, const Specials *sp, bool arrace, bool listbars, bool step) {
+  static int32_t glowg[SPECIALS_MAX] = {65, 65, 65, 65, 65, 65, 65, 65};
+  static int32_t glowg2[SPECIALS_MAX] = {150, 150, 150, 150, 150, 150, 150, 150};
+  static bool glowphase[SPECIALS_MAX], glowphase2[SPECIALS_MAX];
+  font_set(FONT_BOLD, 11);
+  for (int32_t place = 0; place < 7; place++) {
+    for (int32_t a = 0; a < nplayers && a < SPECIALS_MAX; a++) {
+      if (cp->pos[a] != place || cp->dested[a] != 0) continue;
+      const int32_t y = 30 * place;
+      gfx_set_color(g, 0, 0, 0);
+      char ord[8];
+      if (place == 0) snprintf(ord, sizeof(ord), "1st");
+      else if (place == 1) snprintf(ord, sizeof(ord), "2nd");
+      else if (place == 2) snprintf(ord, sizeof(ord), "3rd");
+      else snprintf(ord, sizeof(ord), "%dth", place + 1);
+      font_draw(g, ord, place == 0 ? 688 : 686, 142 + y);
+
+      // The name: black, or glowing while a condition is on the car.
+      const bool glow = sp->fixspecials[a] || mads[a].frozen || mads[a].redstr || mads[a].leech;
+      if (glow && step) {
+        glowg[a] += glowphase[a] ? -12 : 12;
+        if (glowg[a] <= 65) glowphase[a] = false;
+        if (glowg[a] >= 225) glowphase[a] = true;
+        if (!glowphase2[a]) { if (glowg2[a] < 245) glowg2[a] += 10; }
+        else if (glowg2[a] > 75) glowg2[a] -= 10;
+        if (glowg2[a] <= 150) glowphase2[a] = false;
+        if (glowg2[a] >= 230) glowphase2[a] = true;
+        if (glowg[a] > 255) glowg[a] = 255;
+        if (glowg[a] < 0) glowg[a] = 0;
+        if (glowg2[a] > 255) glowg2[a] = 255;
+        if (glowg2[a] < 65) glowg2[a] = 65;
+      }
+      gfx_set_color(g, 0, 0, 0);
+      if (glow) {
+        if (sp->fixspecials[a] && !mads[a].frozen && !mads[a].redstr && !mads[a].leech && !mads[a].strswap)
+          gfx_set_color(g, glowg[a], 0, 0);
+        if (mads[a].frozen && !mads[a].redstr && !mads[a].leech && !mads[a].strswap) gfx_set_color(g, 0, 0, glowg[a]);
+        if (mads[a].redstr && !mads[a].leech && !mads[a].strswap) gfx_set_color(g, glowg2[a], glowg2[a] / 2, 0);
+        if (mads[a].leech && !mads[a].strswap)
+          gfx_set_color(g, glowg2[a] - 60, (glowg2[a] - 60) * 3 / 4, 0);
+        if (mads[a].strswap) gfx_set_color(g, 0, glowg[a], 0);
+      }
+      const int32_t c = sc[a];
+      const char *name = c == 9 ? "SoJ" : (c == 2 ? "Wow C." : ((c >= 0 && c < 16) ? CAR_DISPLAY_NAMES[c] : "Car"));
+      font_draw(g, name, 750 - font_width(name) / 2, 131 + y);
+
+      // The bar.
+      int32_t fill, r, gg, b;
+      if (!listbars || !arrace) {
+        if (arrace) {
+          fill = (int32_t)(60.0f * ((float)mads[a].hitmag / (float)mads[a].cd->maxmag[mads[a].cn]));
+          r = 244; gg = 244; b = 11;
+          if (fill > 20) gg = (int32_t)(244.0f - 233.0f * ((float)(fill - 20) / 40.0f));
+          if (fill > 60) fill = 60;
+          r += (int32_t)((float)r * ((float)m->snap[0] / 100.0f));
+          gg += (int32_t)((float)gg * ((float)m->snap[1] / 100.0f));
+          b += (int32_t)((float)b * ((float)m->snap[2] / 100.0f));
+        } else {
+          fill = (int32_t)(60.0f * (mads[a].power / 98.0f));
+          r = (int32_t)((mads[a].power == 98.0f ? 64.0f : 128.0f) * (1.0f + (float)m->snap[0] / 100.0f));
+          gg = (int32_t)(244.0f * (1.0f + (float)m->snap[1] / 100.0f));
+          b = (int32_t)(244.0f * (1.0f + (float)m->snap[2] / 100.0f));
+        }
+      } else {
+        const bool running = sp->fixspecials[a];
+        fill = (int32_t)(60.0f * ((running ? mads[a].speclast : mads[a].spatk) / 120.0f));
+        r = (int32_t)((running ? 85.0f : 220.0f) * (1.0f + (float)m->snap[0] / 100.0f));
+        gg = 0;
+        b = 0;
+      }
+      r = r > 255 ? 255 : (r < 0 ? 0 : r);
+      gg = gg > 255 ? 255 : (gg < 0 ? 0 : gg);
+      b = b > 255 ? 255 : (b < 0 ? 0 : b);
+      gfx_set_color(g, r, gg, b);
+      gfx_fill_rect(g, 715, 135 + y, fill, 5);
+      gfx_set_color(g, 0, 0, 0);
+      gfx_draw_rect(g, 715, 135 + y, 60, 5);
+      break;
+    }
   }
 }
 
@@ -4389,6 +4479,7 @@ int game_run(void) {
   Mad mad[BOTS_MAX_PLAYERS];
   static CarDefine live_cd[BOTS_MAX_PLAYERS]; // each racing car's own stats (see mad_init below)
   static Specials specials;                    // Extended's specials (specials.c)
+  bool ext_listbars = false;                   // Extended's control.swap: list bars show specials
   // Which car (0-15) each slot drives -- ports xtGraphics.java's own
   // persistent `sc[]` field (xtGraphics.java:94,460 -- `new int[]{0,0,...}`,
   // never reset between races). sc[0] (the player's own car) is refreshed
@@ -5499,6 +5590,34 @@ int game_run(void) {
         if (xt.extended) control_reset_ext(&control[i], &cp, sc[i]);   // Extended Classic's AI
         else control_reset(&control[i], &cp, sc[i]);
       }
+      // Extended's AI repair target: its classictracks mark a route point
+      // with `setpoint` (Contva.fixpoint, Control.java:9785 fpnt[0]); the
+      // same point is in NFM 2's file, so find it by its place. 13 of the
+      // 17 stages have one; the others keep NFM 2's nearest-hoop target.
+      if (xt.extended && stage_num >= 11 && stage_num <= 27) {
+        VfsZip tracks;
+        if (vfs_read_zip("ext/data/Files/classictracks.radq", &tracks)) {
+          char want[16];
+          snprintf(want, sizeof(want), "%d.txt", stage_num - 10);
+          for (int32_t e = 0; e < tracks.count; e++) {
+            if (strcmp(tracks.entries[e].name, want) != 0) continue;
+            char *text = vfs_entry_text(&tracks.entries[e]);
+            const char *sp = text ? strstr(text, "setpoint(") : NULL;
+            int32_t id, x, z;
+            if (sp && sscanf(sp, "setpoint(%d,%d,%d", &id, &x, &z) == 3) {
+              for (int32_t k = 0; k < cp.n; k++) {
+                if (cp.x[k] == x && cp.z[k] == z) {
+                  for (int32_t i = 1; i < nplayers; i++) control[i].fpnt[0] = k;
+                  break;
+                }
+              }
+            }
+            free(text);
+            break;
+          }
+          vfs_free_zip(&tracks);
+        }
+      }
       control_falseo(&control[0], 0);
 
       bots_sortcars(sc, (GameMode)gmode, &progress, stage_num);
@@ -5521,6 +5640,9 @@ int game_run(void) {
       specials_reset(&specials);
       // NFM_HOOK_SPECIALS=1: every bar starts full, to see specials headless.
       if (getenv("NFM_HOOK_SPECIALS")) for (int32_t i = 0; i < nplayers; i++) mad[i].spatk = mad[i].speclast = mad[i].speclast2 = 120.0f;
+      // NFM_HOOK_VIEW=n and NFM_HOOK_LISTBARS=1: a camera and the list bars, headless.
+      if (getenv("NFM_HOOK_VIEW")) race_view = atoi(getenv("NFM_HOOK_VIEW"));
+      if (getenv("NFM_HOOK_LISTBARS")) ext_listbars = true;
       // GameSparker.java:2768 -- record.reset(array) at the tail of
       // loadstage(), AFTER every car's ContO is (re)constructed for this
       // race but BEFORE the first tick -- clears the whole replay ring
@@ -5873,7 +5995,13 @@ int game_run(void) {
           }
           // Extended's specials: charged bars fire, boosts and attacks
           // rewrite each car's live stats (xtGraphics.nitroandspecials).
-          if (xt.extended) specials_tick(&specials, mad, control, nplayers, &cp, &cd);
+          if (xt.extended) {
+            specials_tick(&specials, mad, control, nplayers, &cp, &cd);
+            for (int32_t i = 0; i < nplayers; i++) {
+              co[i].spec_on = specials.spec_on[i];
+              memcpy(co[i].spec, specials.spec[i], sizeof(co[i].spec));
+            }
+          }
 
           // Checkpoint/Car-Fixed sound triggers -- Java xtGraphics.java:8397
           // (checkpoint.play()) and :9445's carfixed.checkopen() (armed by
@@ -6055,6 +6183,11 @@ int game_run(void) {
           // bookkeeping (Java's view==1 branch genuinely has neither).
           medium_around(&m, &co[0], false);
           mvect = 80;
+        } else if (race_view == 3) {
+          // Extended's far camera (its view 1, GameSparker.java:2595): high
+          // and far behind, turning a fifteenth as much as the car.
+          medium_watch_far(&m, &co[0], (double)mad[0].cxz / 15.0, 0);
+          mvect = 80;
         } else if (race_view == 2) {
           // :992-999 -- the fixed "watch" tripod, aimed with the car's raw
           // movement heading (`mad.mxz`, not the smoothed `cxz` the chase
@@ -6122,7 +6255,7 @@ int game_run(void) {
       // the camera dispatch further down.
       if (KEY_EDGE(BTN_VIEW)) {
         race_view++;
-        if (race_view == 3) race_view = 0; // :3635-3638
+        if (race_view == (xt.extended ? 4 : 3)) race_view = 0; // :3635-3638; Extended's far camera is 3
       }
       if (KEY_EDGE(BTN_MUTE_MUSIC)) {
         control[0].mutem = !control[0].mutem;
@@ -6145,6 +6278,8 @@ int game_run(void) {
       // Extended's S: fires the special once its bar is full (mad.c lets go
       // of a press made on a bar that is not).
       if (xt.extended && KEY_EDGE(BTN_SPECIAL)) control[0].spatk = !control[0].spatk;
+      // Extended's D: the car list's bars show every car's special.
+      if (xt.extended && KEY_EDGE(BTN_LISTBARS)) ext_listbars = !ext_listbars;
       if (KEY_EDGE(BTN_RADAR)) {
         control[0].radar = !control[0].radar;
 #ifdef NFM_SVCLOG
@@ -6662,7 +6797,13 @@ int game_run(void) {
         // dested-clears-the-lock step at :3689-3692 runs here too, even
         // though alocked never leaves -1 in this port (see xt_graphics.h),
         // because it is the source's own first statement in this block.
-        if (control[0].arrace && starcnt < 38 && !race_holdit && cp.stage != 10) {
+        if (xt.extended) {
+          // Extended keeps its car list up all race, under the Special bar.
+          if (starcnt == 0 && !race_holdit) {
+            draw_ext_board(&g, &m, &cp, mad, nplayers, sc, &specials, control[0].arrace, ext_listbars,
+                           race_ticked);
+          }
+        } else if (control[0].arrace && starcnt < 38 && !race_holdit && cp.stage != 10) {
           if (xt.alocked != -1 && cp.dested[xt.alocked] != 0) {
             xt.alocked = -1;
             xt.lalocked = -1;

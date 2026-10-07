@@ -1441,11 +1441,13 @@ static void cont_o_d_inner(ContO *co, struct Graphics2D *g) {
         }
         if (src != sort_order) memcpy(sort_order, src, sizeof(int32_t) * (size_t)co->npl);
       }
+      if (co->spec_on) plane_set_outline(true, co->spec[0], co->spec[1], co->spec[2]);
       for (int32_t n17 = 0; n17 < co->npl; n17++) {
         Plane *pl = &co->p[sort_order[n17]];
         plane_d(pl, g, co->x - m->x, co->y - m->y, co->z - m->z, co->xz, co->xy, co->zy,
                 co->wxz, co->wzy, co->noline, n4);
       }
+      if (co->spec_on) plane_set_outline(false, 0, 0, 0);
 
       if (co->shadow) {
         const GfxMark dust_mark = gfx_mark(g);

@@ -223,7 +223,7 @@ GameSettings game_settings_defaults(int32_t graphics) {
   s.steer_dpad = 0;
   // Indices into game.c's Switch button list: ZR, ZL, B, X, D-Pad Up,
   // D-Pad Down, Plus, Y, Minus -- the scheme v1.0 shipped with.
-  static const int32_t kBindDefaults[BIND_COUNT] = {7, 6, 1, 2, 12, 13, 9, 3, 8, 5};   // ..., Special on R
+  static const int32_t kBindDefaults[BIND_COUNT] = {7, 6, 1, 2, 12, 13, 9, 3, 8, 5, 4};   // ..., Special R, list bars L
   memcpy(s.bind, kBindDefaults, sizeof(s.bind));
   return s;
 }
@@ -256,6 +256,7 @@ static const SettingKey kSettingKeys[] = {
   {"bind_mute_music", offsetof(GameSettings, bind[BIND_MUSIC]), 0, 19, 1},
   {"bind_mute_effects", offsetof(GameSettings, bind[BIND_SFX]), 0, 19, 1},
   {"bind_special", offsetof(GameSettings, bind[BIND_SPECIAL]), 0, 19, 1},
+  {"bind_list_bars", offsetof(GameSettings, bind[BIND_LISTBARS]), 0, 19, 1},
 };
 
 void game_settings_load(const char *progress_path, GameSettings *s) {

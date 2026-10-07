@@ -209,6 +209,16 @@ static void set_brighter(Graphics2D *g, int32_t r, int32_t gg, int32_t b) {
   gfx_set_color(g, rr, gv, bb);
 }
 
+static bool g_outline_on;
+static int32_t g_outline[3];
+
+void plane_set_outline(bool on, int32_t r, int32_t g, int32_t b) {
+  g_outline_on = on;
+  g_outline[0] = r;
+  g_outline[1] = g;
+  g_outline[2] = b;
+}
+
 void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t cxz,
              int32_t n4, int32_t n5, int32_t n6, int32_t n7, bool b, int32_t n8) {
   g->faceCalls++;
@@ -754,7 +764,7 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
     gfx_set_color(g, red, green, blue);
     gfx_fill_polygon(g, array26, array27, p->n);
     if (p->m->trk != 0 && p->gr == -10) b = false;
-    if (!b) {
+    if (!b || (g_outline_on && p->flx == 0 && !p->solo)) {
       if (p->flx == 0) {
         if (!p->solo) {
           int32_t r3 = 0, g3 = 0, b6 = 0;
@@ -763,6 +773,7 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
             g3 = p->oc[1] / 2; if (g3 > 255) g3 = 255; if (g3 < 0) g3 = 0;
             b6 = p->oc[2] / 2; if (b6 > 255) b6 = 255; if (b6 < 0) b6 = 0;
           }
+          if (g_outline_on) { r3 = g_outline[0]; g3 = g_outline[1]; b6 = g_outline[2]; }
           gfx_set_rendering_hint(g); // Madness.anti === 1, always true in this port
           gfx_set_color(g, r3, g3, b6);
           gfx_draw_polygon(g, array26, array27, p->n);

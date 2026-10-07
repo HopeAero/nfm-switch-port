@@ -126,6 +126,7 @@ bool platform_poll(bool held[BTN_COUNT]) {
   // Return-only here.
   held[BTN_PAUSE] = keys[SDL_SCANCODE_RETURN];
   held[BTN_SPECIAL] = keys[SDL_SCANCODE_Q];
+  held[BTN_LISTBARS] = keys[SDL_SCANCODE_D];
   return running;
 }
 

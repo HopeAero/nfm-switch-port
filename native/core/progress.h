@@ -180,7 +180,7 @@ typedef enum { GFX_ORIGINAL = 0, GFX_SMOOTH = 1, GFX_HD = 2, GFX_QUALITY_COUNT }
 /** The race actions Settings > Controls can move to another button. */
 typedef enum {
   BIND_ACCEL, BIND_BRAKE, BIND_HANDB, BIND_VIEW, BIND_ARRACE, BIND_RADAR,
-  BIND_PAUSE, BIND_MUSIC, BIND_SFX, BIND_SPECIAL, BIND_COUNT
+  BIND_PAUSE, BIND_MUSIC, BIND_SFX, BIND_SPECIAL, BIND_LISTBARS, BIND_COUNT
 } BindAction;
 
 /** The Settings screen's values, saved beside the progress file. */

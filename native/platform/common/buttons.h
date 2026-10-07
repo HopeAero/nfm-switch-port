@@ -39,6 +39,7 @@ typedef enum {
   // handbrake -- braking must not pause the game. Return only.
   BTN_PAUSE,
   BTN_SPECIAL,  // Extended: fire the special (its S key)
+  BTN_LISTBARS, // Extended: the car list's bars show the specials (its D key)
   BTN_COUNT
 } Button;
 

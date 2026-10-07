@@ -101,6 +101,7 @@ typedef struct Medium {
   int32_t spx[7], spz[7], sprad[7];
   bool td;
   int32_t bcxz;
+  double bcxzwatch; // Extended's far camera (medium_watch_far)
   bool bt;
   int32_t vxz;
   int32_t adv;
@@ -298,6 +299,10 @@ void medium_transaround(Medium *m, struct ContO *from, struct ContO *to, int32_t
  * this). A fixed tripod that plants itself once, then only re-aims at the
  * car, re-planting when the car passes 6000 units away. `n` is the car's
  * heading (Java passes `mad.mxz`), used only when choosing a new spot. */
+/** Extended's far camera (its Medium.watch, :1971-1994): 12000 behind and
+ * 3750 above the car, turning with `angle` (the car's cxz / 15). */
+void medium_watch_far(Medium *m, const struct ContO *co, double angle, int32_t boost);
+
 void medium_watch(Medium *m, struct ContO *co, int32_t n);
 
 // Procedural ground-poly scatter -- draws into cells populated by newpolys()

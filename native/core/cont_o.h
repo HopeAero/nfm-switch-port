@@ -94,6 +94,10 @@ typedef struct ContO {
   int32_t disline;
   bool shadow;
   bool noline;
+  // Extended: a car under a special's condition draws its outlines in that
+  // condition's colour (ContO.spec, set each tick from specials.c).
+  bool spec_on;
+  int32_t spec[3];
   bool decor;
   float grounded;
   int32_t grat;

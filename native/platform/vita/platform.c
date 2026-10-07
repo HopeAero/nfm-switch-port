@@ -222,6 +222,7 @@ bool platform_poll(bool held[BTN_COUNT]) {
   // pause needed a home.
   held[BTN_PAUSE] = (pad.buttons & SCE_CTRL_START) != 0;
   held[BTN_SPECIAL] = (pad.buttons & SCE_CTRL_RTRIGGER) != 0;
+  held[BTN_LISTBARS] = (pad.buttons & SCE_CTRL_LTRIGGER) != 0;
 
   // No window-close/OS-quit event on this platform, and START now pauses
   // instead of quitting (see BTN_PAUSE above), so nothing here ever ends
