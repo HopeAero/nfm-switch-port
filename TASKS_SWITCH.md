@@ -245,6 +245,11 @@ PC with `nxlink -s`.
 - [x] "X has been wasted!" / "You wasted X!" (xtGraphics.java:8341-8356):
       the HUD diffs CheckPoints.dested against its own copy (hud_dested) and
       announces each wasting once. The Vita port had left the loop out.
+- [x] Pause > Instant Replay closed at once: the A press that picked it was
+      still an edge on the replay's first frame, which set the skip latch
+      (jump to tick 299). The latch now ignores the entering frame; the same
+      fix keeps the post-race highlight from being skipped by the press that
+      passed the win card. The pausereplay hook now sends a real A edge.
 - [ ] Batch 3: visual-only low detail (not `resdown=2`, which drops scenery
       collisions) and the web's lightweight intro; draw distance keeps cars'
       `dist` neutral.

@@ -4700,7 +4700,8 @@ int game_run(void) {
       // Instant Replay (see the matching pause trigger in the race block).
       bool hook_replay = screenshot_menu && strcmp(screenshot_menu, "pausereplay") == 0 &&
                          frame == hook_replay_frame;
-      if (hook_replay) pause_opselect = 1;
+      // A real press, edge and all, so the replay sees what a player sends.
+      if (hook_replay) { pause_opselect = 1; held[BTN_CONFIRM] = true; }
       // NFM_SCREENSHOT_MENU=settings: open the Settings screen headless.
       if (screenshot_menu && strcmp(screenshot_menu, "settings") == 0 && frame == screenshot_frame - 3) {
         settings_ui = (SettingsUi){SET_MAIN, 0};
@@ -5818,9 +5819,12 @@ int game_run(void) {
         replay_confirm_latch = false;
       } else {
         paced_acc_ms += (double)(now_ms - paced_last_ms);
+        // Not on the entering frame: the press that chose Replay (or passed
+        // the win card) is still an edge there, and would skip the whole
+        // replay straight to its last frame.
+        if (is_replay && KEY_EDGE(BTN_CONFIRM)) replay_confirm_latch = true;
       }
       paced_last_ms = now_ms;
-      if (is_replay && KEY_EDGE(BTN_CONFIRM)) replay_confirm_latch = true;
       // One step per loop iteration at most, like the Java's loop; a long
       // stall must not turn into a burst of catch-up frames.
       if (paced_acc_ms >= step_ms) {
