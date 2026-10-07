@@ -194,6 +194,24 @@ PC with `nxlink -s`.
 - [ ] Vibration on real hardware (Eden forwards it to a PC pad; untested here).
 - [ ] Touch screen in menus (taps as clicks), as the web port does.
 
+- [x] **Web fixes the native port lacked, batch 1** (audit against nfm-master):
+      brake and gear thresholds divide `handb`/`swits` as ints like Java
+      (`swit_speed`/`acel_step` in mad.c); wheel dust (`cont_o_pdust`) rolls,
+      drifts, grows and ages on ticks only, and `scx *= n3` is the float decay
+      the bytecode does; the horizon pitch test sees the fractional `fzy`;
+      leaving pause/Settings/pause replay drops the paused time instead of
+      running 3 catch-up ticks; `game_sparker_loadstage` rejects a stage like
+      Java's `stage = -3` (model id out of range, Trackers full, under 2
+      checkpoints, 16000+ ground cells) -- the stage list shows ERROR LOADING
+      STAGE and a race on it returns to the menu; face points cap at 100.
+- [ ] Batch 2: `pile(` rock piles (procedural `ContO.#initModel`, 31 stages).
+- [ ] Batch 3: visual-only low detail (not `resdown=2`, which drops scenery
+      collisions) and the web's lightweight intro; draw distance keeps cars'
+      `dist` neutral.
+- [ ] Float/double rounding sites from the web's later float audit (mad.c
+      bounce `- 0.3`, `tilt/1.5`, `gr += abs(n*1.5)`, ...); stages 28-32
+      `loadnew`.
+
 ## From nfm-master, later (small first)
 
 - [ ] Raw "Recharged" stats in `car_define.c` (web `CarDefine.readRawStats`).

@@ -3817,6 +3817,7 @@ int game_run(void) {
   // the STATE_CAR_SELECT draw block to (re-)arm the smoke-warp intro.
   bool car_select_needs_intro = true;
   int32_t stage_preview_loaded_num = -1; // -1 = nothing loaded yet, see the STAGE_SELECT draw block below
+  bool stage_preview_ok = true;          // that load passed game_sparker_loadstage's checks
 
   // Post-race unlock-celebration card's live 3D car spin state --
   // xtGraphics.java:6816/6819 (`contO.xz += 5`, `contO2.wzy -= 10` every
@@ -4185,6 +4186,7 @@ int game_run(void) {
   const double MAX_ACCUMULATOR_MS = TICK_MS * 3.0; // MAX_CATCHUP=3, clamped directly
   uint32_t last_ticks_ms = platform_ticks_ms();
   double accumulator_ms = 0.0;
+  int32_t last_racing_frame = -2; // the loop's `frame` when the race last ran
   // Smooth frames (see smooth_apply): the cars and camera before and after
   // the latest tick, the HUD that tick drew (replayed on the frames between
   // ticks -- its drawing advances per-draw timers), and each object's dist
@@ -4545,6 +4547,9 @@ int game_run(void) {
           // comment asserted Java used 40; :2616 is `lockcnt = 100`).
           state = STATE_STAGE_LOCKED;
           stage_lockcnt = 100;
+        } else if (!stage_preview_ok) {
+          // A stage that failed loadstage's checks (Java's stage == -3) is
+          // not raced: its draw block says so and confirm does nothing.
         } else {
           // Java loadingstage() -- fase 2. We hold the animated transition
           // for ~30 frames (~1.6s at our 18.9 FPS tick rate; feels close
@@ -4828,9 +4833,13 @@ int game_run(void) {
       bool stage_ok = load_stage_objects(&stage_objects, &stage_count, stage_count,
                                           base_models, &m, &t, &cp, stage_num, NULL, NULL);
       if (!stage_ok) {
-        fprintf(stderr, "could not load stages/%d.txt (missing, or overflowed its %d-object capacity)\n",
-                stage_num, STAGE_OBJECT_CAPACITY);
-        if (!stage_objects) return 1; // nothing to race with at all, not even stale preview data
+        // Java's stage == -3: no race on a stage that failed its checks
+        // (missing file, bad model id, too many objects or trackers, under
+        // two checkpoints). Racing it anyway hung mad_drive.
+        fprintf(stderr, "could not load stages/%d.txt -- back to the menu\n", stage_num);
+        stage_preview_loaded_num = -1;
+        state = STATE_MAIN_MENU;
+        goto race_setup_done;
       }
       // The race reloads the stage and drives the camera, so the stage
       // list's preview no longer holds what it loaded: make it load and
@@ -5085,6 +5094,7 @@ int game_run(void) {
       last_ticks_ms = platform_ticks_ms();
       accumulator_ms = 0.0;
     }
+  race_setup_done:
 
     if (state == STATE_RACING) {
       // The Performance Test's car drives itself (control_preform below).
@@ -5093,6 +5103,11 @@ int game_run(void) {
       if (screenshot_menu && strcmp(screenshot_menu, "pausereplay") == 0) control[0].up = true;
 
       uint32_t now_ms = platform_ticks_ms();
+      // Back from the pause menu, Settings or the pause replay: the time spent
+      // there is not race time. Without this the first frame back ran the
+      // capped 3 catch-up ticks (~159 ms of physics) in one burst.
+      if (last_racing_frame != frame - 1) last_ticks_ms = now_ms;
+      last_racing_frame = frame;
       race_frame_ms = (double)(now_ms - last_ticks_ms);
       accumulator_ms += race_frame_ms;
       last_ticks_ms = now_ms;
@@ -7382,6 +7397,7 @@ int game_run(void) {
                                           base_models, &m, &t, &cp, stage_num,
                                           &center_x, &center_z);
         stage_preview_loaded_num = stage_num;
+        stage_preview_ok = loaded;
         if (loaded) {
           m.trx = center_x;
           m.trz = center_z;
@@ -7430,7 +7446,7 @@ int game_run(void) {
       // algorithm the racing loop further below uses. Guarded on
       // stage_count so a stage that failed to load just shows the flat
       // beige backdrop above instead of a crash or garbage draw.
-      if (stage_count > 0) {
+      if (stage_count > 0 && stage_preview_ok) {
         medium_aroundtrack(&m, &cp);
         // GameSparker.java:466-467 -- once the dive settles (hit reaches
         // its 5000 cruise floor), the motion-blur trail slowly fades out
@@ -7442,6 +7458,11 @@ int game_run(void) {
         nfm_set_draw_phase(true); // cont_o_d may draw dust/sparks -- see main()'s racing-draw comment
         render_sorted_objects(stage_objects, stage_count, &g);
         nfm_set_draw_phase(false);
+      }
+
+      if (!stage_preview_ok) {
+        gfx_set_color(&g, 0, 0, 0);
+        draw_centered(&g, "ERROR LOADING STAGE", width / 2, 220, 2);
       }
 
       // 3. br.png torn-paper frame on top -- opaque black edges crop the

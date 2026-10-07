@@ -107,6 +107,7 @@ bool game_sparker_loadbase(ContO *base_models, Medium *m, Trackers *t, const cha
 /** One boundary wall tracker, x-aligned (maxr/maxl). */
 static void gs_wall(Trackers *t, int32_t y, int32_t rady, int32_t x, int32_t radx,
                      int32_t z, int32_t radz, int32_t xy, int32_t zy) {
+  if (t->nt >= TRACKERS_MAX) return; // loadstage rejects the stage
   t->y[t->nt] = y;
   t->rady[t->nt] = rady;
   t->x[t->nt] = x;
@@ -124,6 +125,7 @@ static void gs_wall(Trackers *t, int32_t y, int32_t rady, int32_t x, int32_t rad
 /** One boundary wall tracker, z-aligned (maxt/maxb). */
 static void gs_wallz(Trackers *t, int32_t y, int32_t rady, int32_t z, int32_t radz,
                       int32_t x, int32_t radx, int32_t zy, int32_t xy) {
+  if (t->nt >= TRACKERS_MAX) return; // loadstage rejects the stage
   t->y[t->nt] = y;
   t->rady[t->nt] = rady;
   t->z[t->nt] = z;
@@ -215,6 +217,7 @@ bool game_sparker_loadstage(ContO *out_objects, int32_t out_capacity, int32_t *o
 
     if (starts_with(trimmed, "set")) {
       int32_t slot = gs_getint("set", trimmed, 0) + 46;
+      if (slot < 0 || slot >= GAME_SPARKER_NUM_BASE_MODELS) { ok = false; break; }
       if (nob >= out_capacity) { ok = false; break; }
       cont_o_init_copy(&out_objects[nob], &base_models[slot],
                         gs_getint("set", trimmed, 1),
@@ -244,6 +247,7 @@ bool game_sparker_loadstage(ContO *out_objects, int32_t out_capacity, int32_t *o
     }
     if (starts_with(trimmed, "chk")) {
       int32_t slot = gs_getint("chk", trimmed, 0) + 46;
+      if (slot < 0 || slot >= GAME_SPARKER_NUM_BASE_MODELS) { ok = false; break; }
       int32_t y = m->ground - base_models[slot].grat;
       if (slot == 110) y = gs_getint("chk", trimmed, 4);
       if (nob >= out_capacity) { ok = false; break; }
@@ -273,6 +277,7 @@ bool game_sparker_loadstage(ContO *out_objects, int32_t out_capacity, int32_t *o
     }
     if (nfix != 5 && starts_with(trimmed, "fix")) {
       int32_t slot = gs_getint("fix", trimmed, 0) + 46;
+      if (slot < 0 || slot >= GAME_SPARKER_NUM_BASE_MODELS) { ok = false; break; }
       if (nob >= out_capacity) { ok = false; break; }
       // Args are (base, x, y, z, a) with y/z SWAPPED relative to the
       // stage file's own field order (field 3 -> y, field 2 -> z) --
@@ -387,6 +392,14 @@ bool game_sparker_loadstage(ContO *out_objects, int32_t out_capacity, int32_t *o
   // division (trackers.c) loses the precision this needs.
   if (out_center_x) *out_center_x = (ge2 + ge1) / 2;
   if (out_center_z) *out_center_z = (ge3 + ge4) / 2;
+
+  // GameSparker.java:2697-2707 rejects a stage (stage = -3, back to the
+  // menu) when the parse threw -- Java's array bounds did the throwing for a
+  // bad model id or too many trackers, C checks them above -- or when it has
+  // under two checkpoints (mad_drive's checkpoint wrap loops never end with
+  // nsp 0) or a ground grid of 16000+ cells.
+  // ponytail: a stage filling exactly all 6700 trackers is rejected too.
+  if (t->nt >= TRACKERS_MAX || cp->nsp < 2 || m->nrw * m->ncl >= 16000) ok = false;
 
   *out_count = nob;
   return ok;

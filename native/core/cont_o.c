@@ -136,7 +136,9 @@ void cont_o_init_copy(ContO *dst, ContO *src, int32_t x, int32_t y, int32_t z, i
     int32_t absA = abs(a);
     if (absA == 180) absA = 0;
     float cosAbs = medium_cos(dst->m, (float)absA), sinAbs = medium_sin(dst->m, (float)absA);
-    for (int32_t k = 0; k < src->tnt; k++) {
+    // Full Trackers: stop adding (Java's int[6700] threw here) and let
+    // game_sparker_loadstage reject the stage.
+    for (int32_t k = 0; k < src->tnt && dst->t->nt < TRACKERS_MAX; k++) {
       Trackers *t = dst->t;
       // t.xy/t.zy: trunc(fr(fr(A)-+fr(B))), no center term mixed in -- both
       // inner fr()s and the outer fr() wrap a single op each, case 1 all
@@ -764,7 +766,11 @@ void cont_o_pdust(ContO *co, int32_t n, struct Graphics2D *g, bool b) {
     co->sav[n] = jtrunc_d(sqrt((double)dx * (double)dx + (double)dy * (double)dy + (double)dz * (double)dz));
   }
   if ((b && co->sav[n] > co->dist) || (!b && co->sav[n] <= co->dist)) {
-    if (co->stg[n] == 1) {
+    // Frames between ticks draw the puff where the tick left it: the roll at
+    // stage 1, the drift, the growth and the stage advance run on a tick only.
+    // Without this a puff lives 8 draws (~133 ms at 60 Hz) instead of 8 ticks.
+    const bool tick = !m->interpolating;
+    if (co->stg[n] == 1 && tick) {
       co->sbln[n] = 0.6f;
       bool b2 = false;
       int32_t array[3];
@@ -805,16 +811,9 @@ void cont_o_pdust(ContO *co, int32_t n, struct Graphics2D *g, bool b) {
       }
       float n3 = (float)(0.1 + (double)medium_random(m));
       if (n3 > 1.0f) n3 = 1.0f;
-      // ContO.java:2009-2010 -- `scx[n] *= (int)n3`. n3 is in [0.1,1.0],
-      // so `(int)n3` is 0 unless n3 clamped to exactly 1.0f (the ~10% of
-      // frames where 0.1+rand() >= 1.0), in which case it's a no-op
-      // multiply-by-1. This looks like an authoring slip (probably meant
-      // `scx[n] *= n3` as a float decay) but it's what the real applet
-      // does -- preserved exactly rather than "fixed", same as fixit's
-      // `this.z - this.m.y` quirk elsewhere in this file. Net effect:
-      // a dust puff's horizontal drift velocity zeroes out on its very
-      // first aging frame ~90% of the time.
-      co->scx[n] = co->scx[n] * jtrunc(n3);
+      // `scx[n] *= n3` -- the bytecode is iaload; i2f; fmul; f2i (a float
+      // decay), not `*= (int)n3` as the decompiler prints it.
+      co->scx[n] = jtrunc((float)co->scx[n] * n3);
       co->scz[n] = jtrunc((float)co->scx[n] * n3);
       for (int32_t n4 = 0; n4 < 8; n4++) {
         co->smag[n][n4] = co->osmag[n] * medium_random(m) * 50.0f;
@@ -842,8 +841,10 @@ void cont_o_pdust(ContO *co, int32_t n, struct Graphics2D *g, bool b) {
     float ySum = (float)(co->sy[n] - m->y - m->cy) - co->smag[n][7];
     int32_t n10 = m->cy + jtrunc(ySum * cosZY - (float)(n9 - m->cz) * sinZY);
     int32_t n11 = m->cz + jtrunc(ySum * sinZY + (float)(n9 - m->cz) * cosZY);
-    co->sx[n] = co->sx[n] + co->scx[n] / (co->stg[n] + 1);
-    co->sz[n] = co->sz[n] + co->scz[n] / (co->stg[n] + 1);
+    if (tick) {
+      co->sx[n] = co->sx[n] + co->scx[n] / (co->stg[n] + 1);
+      co->sz[n] = co->sz[n] + co->scz[n] / (co->stg[n] + 1);
+    }
 
     int32_t array2[8], array3[8];
     array2[0] = cont_o_xs(co, jtrunc((float)n8 + co->smag[n][0] * 0.9238f * 1.5f), n11);
@@ -863,10 +864,12 @@ void cont_o_pdust(ContO *co, int32_t n, struct Graphics2D *g, bool b) {
     array2[7] = cont_o_xs(co, jtrunc((float)n8 + co->smag[n][7] * 0.3826f * 1.7f), n11);
     array3[7] = cont_o_ys(co, jtrunc((float)n10 + co->smag[n][7] * 0.9238f), n11);
 
-    for (int32_t n12 = 0; n12 < 7; n12++) {
-      co->smag[n][n12] = co->smag[n][n12] + 5.0f + medium_random(m) * 15.0f;
+    if (tick) {
+      for (int32_t n12 = 0; n12 < 7; n12++) {
+        co->smag[n][n12] = co->smag[n][n12] + (5.0f + medium_random(m) * 15.0f);
+      }
+      co->smag[n][7] = co->smag[n][6];
     }
-    co->smag[n][7] = co->smag[n][6];
 
     bool b3 = true;
     int32_t n14 = 0, n15 = 0, n16 = 0, n17 = 0;
@@ -898,8 +901,10 @@ void cont_o_pdust(ContO *co, int32_t n, struct Graphics2D *g, bool b) {
       gfx_set_composite(g, 1.0f);
     }
 
-    if (co->stg[n] == 7) co->stg[n] = 0;
-    else co->stg[n]++;
+    if (tick) {
+      if (co->stg[n] == 7) co->stg[n] = 0;
+      else co->stg[n]++;
+    }
   }
 }
 // Unlike pdust (only called from a `co->stg[n]!=0` guard, so genuinely
@@ -1390,7 +1395,9 @@ void cont_o_init_buf(ContO *co, const char *text, Medium *m, Trackers *t) {
         if (starts_with(string, "noOutline")) {
           b3 = true;
         }
-        if (starts_with(string, "p(")) {
+        // Java's int[100] throws past the hundredth point and ContO's catch
+        // drops the rest of the model; C would write past the stack arrays.
+        if (starts_with(string, "p(") && n3 < 100) {
           // trunc(fr(fr(getvalue*n4)*n5*array2[0])) -- the OUTER fr() wraps
           // a MULTI-op expression (innerFr * n5 * array2[0], two chained
           // multiplies with no fr() splitting them) -- case 2, needs

@@ -648,7 +648,7 @@ void medium_d(Medium *m, Graphics2D *g) {
   for (int32_t i = 0; i < 16; i++) {
     int32_t n4 = m->fade[i];
     int32_t ground_local = m->ground;
-    if (m->zy != 0) {
+    if (m->zy != 0 || m->fzy != 0.0f) {
       // Single-op fr() chains, same pattern as groundpolys' n4/n8.
       float A = (float)(m->ground - m->cy) * cos_zy;
       float B = (float)(m->fade[i] - m->cz) * sin_zy;
@@ -718,7 +718,7 @@ void medium_d(Medium *m, Graphics2D *g) {
     for (int32_t j = 0; j < 16; j++) {
       int32_t n5 = m->fade[j];
       int32_t skyline_local = m->skyline;
-      if (m->zy != 0) {
+      if (m->zy != 0 || m->fzy != 0.0f) {
         float As = (float)(m->skyline - m->cy) * cos_zy;
         float Bs = (float)(m->fade[j] - m->cz) * sin_zy;
         skyline_local = m->cy + jtrunc(As - Bs);
@@ -774,7 +774,7 @@ void medium_d(Medium *m, Graphics2D *g) {
       for (int32_t k = 1; k < 20; k++) {
         int32_t n7 = 7000;
         int32_t n8 = m->skyline - 700 - k * 70;
-        if (m->zy != 0 && k != 19) {
+        if ((m->zy != 0 || m->fzy != 0.0f) && k != 19) {
           float Ak = (float)(m->skyline - 700 - k * 70 - m->cy) * cos_zy;
           float Bk = (float)(7000 - m->cz) * sin_zy;
           n8 = m->cy + jtrunc(Ak - Bk);

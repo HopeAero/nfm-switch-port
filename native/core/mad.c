@@ -672,6 +672,18 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
   }
 }
 
+// Gear thresholds and the top-speed clamp, as Java writes them:
+// `swits / 2 + power * swits / 196.0f` -- swits is int, so the half is an int
+// division (185/2 is 92) and the rest is float.
+static float swit_speed(float power, int32_t swits) {
+  return (float)(swits / 2) + power * (float)swits / 196.0f;
+}
+
+// `acelf / 2.0f + power * acelf / 196.0f`, all float (acelf is float).
+static float acel_step(float power, float acelf) {
+  return acelf / 2.0f + power * acelf / 196.0f;
+}
+
 void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, CheckPoints *checkPoints) {
   CarDefine *cd = mad->cd;
   Medium *m = mad->m;
@@ -791,38 +803,17 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
       if (power < 40.0f) power = 40.0f;
       if (control->down) {
         if (mad->speed > 0.0f) {
-          mad->speed = mad->speed - (float)cd->handb[mad->cn] / 2.0f;
+          // Java: `speed -= handb / 2` -- int division, 7/2 is 3.
+          mad->speed = mad->speed - (float)(cd->handb[mad->cn] / 2);
         } else {
           int32_t n8 = 0;
           for (int32_t l = 0; l < 2; l++) {
-            // fr(-fr(swits/2.0 + fr(power*swits/196.0))) -- swits[l] is
-            // int (CarDefine.swits is int[3]); the inner power*swits/196.0
-            // is TWO chained ops under one fr() (case 2, double then round
-            // once); the "swits/2.0 + inner" is ALSO two chained ops under
-            // its own fr() (case 2 again, since swits/2.0 isn't separately
-            // fr()-wrapped before the add); the outer negation is case 1
-            // (exact).
-            double innerA = (double)power * (double)cd->swits[mad->cn][l] / 196.0;
-            float innerAf = (float)innerA;
-            double innerB = (double)cd->swits[mad->cn][l] / 2.0 + (double)innerAf;
-            float threshold = -(float)innerB;
-            if (mad->speed <= threshold) n8++;
+            if (mad->speed <= -swit_speed(power, cd->swits[mad->cn][l])) n8++;
           }
           if (n8 != 2) {
-            // fr(fr(acelf/2.0) + fr(power*acelf/196.0)) -- acelf IS float
-            // (CarDefine.acelf is float[3]), and acelf/2.0 is separately
-            // fr()-wrapped before the add, so the add is case 1 (single op
-            // between two already-rounded floats). power*acelf/196.0 is
-            // still two chained ops under one fr() -- case 2.
-            float acelfTerm1 = cd->acelf[mad->cn][n8] / 2.0f;
-            double acelfTerm2_d = (double)power * (double)cd->acelf[mad->cn][n8] / 196.0;
-            float acelfTerm2 = (float)acelfTerm2_d;
-            mad->speed = mad->speed - (acelfTerm1 + acelfTerm2);
+            mad->speed = mad->speed - acel_step(power, cd->acelf[mad->cn][n8]);
           } else {
-            double innerA = (double)power * (double)cd->swits[mad->cn][1] / 196.0;
-            float innerAf = (float)innerA;
-            double innerB = (double)cd->swits[mad->cn][1] / 2.0 + (double)innerAf;
-            mad->speed = -(float)innerB;
+            mad->speed = -swit_speed(power, cd->swits[mad->cn][1]);
           }
         }
       }
@@ -832,22 +823,12 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
         } else {
           int32_t n9 = 0;
           for (int32_t n10 = 0; n10 < 3; n10++) {
-            double innerA = (double)power * (double)cd->swits[mad->cn][n10] / 196.0;
-            float innerAf = (float)innerA;
-            double innerB = (double)cd->swits[mad->cn][n10] / 2.0 + (double)innerAf;
-            float threshold = (float)innerB;
-            if (mad->speed >= threshold) n9++;
+            if (mad->speed >= swit_speed(power, cd->swits[mad->cn][n10])) n9++;
           }
           if (n9 != 3) {
-            float acelfTerm1 = cd->acelf[mad->cn][n9] / 2.0f;
-            double acelfTerm2_d = (double)power * (double)cd->acelf[mad->cn][n9] / 196.0;
-            float acelfTerm2 = (float)acelfTerm2_d;
-            mad->speed = mad->speed + (acelfTerm1 + acelfTerm2);
+            mad->speed = mad->speed + acel_step(power, cd->acelf[mad->cn][n9]);
           } else {
-            double innerA = (double)power * (double)cd->swits[mad->cn][2] / 196.0;
-            float innerAf = (float)innerA;
-            double innerB = (double)cd->swits[mad->cn][2] / 2.0 + (double)innerAf;
-            mad->speed = (float)innerB;
+            mad->speed = swit_speed(power, cd->swits[mad->cn][2]);
           }
         }
       }

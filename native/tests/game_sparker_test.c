@@ -149,7 +149,8 @@ static void test_loadbase_and_loadstage(void) {
   check_points_init(&cp);
   bool sok = game_sparker_loadstage(objects, 610, &count, base_models, &m, &t, &cp, kTestStage,
                                      NULL, NULL);
-  CHECK(sok, "loadstage: fits in capacity");
+  // One checkpoint: rejected like Java (stage -3), but parsed in full.
+  CHECK(!sok, "loadstage: a one-checkpoint stage is rejected");
   CHECK(count == 16, "loadstage: object count");
 
   // Real checkpoint/fix-point/nlaps bookkeeping (see game_sparker.h's own
@@ -234,7 +235,7 @@ static void test_loadstage_center(void) {
   int32_t cx = -999999, cz = -999999;
   bool sok = game_sparker_loadstage(objects, 32, &count, base_models, &m, &t, &cp, kCenterStage,
                                      &cx, &cz);
-  CHECK(sok, "loadstage_center: loadstage ok");
+  CHECK(!sok, "loadstage_center: no checkpoints, rejected");
   // ge1=1000 (maxr), ge2=-2000 (maxl), ge3=3000 (maxt), ge4=-6000 (maxb).
   // center_x = (ge2+ge1)/2 = (-2000+1000)/2 = -500
   // center_z = (ge3+ge4)/2 = (3000+-6000)/2 = -1500
@@ -251,9 +252,59 @@ static void test_loadstage_center(void) {
   trackers_free_sect(&t);
 }
 
+// GameSparker.java:2697-2707's stage == -3 checks: two checkpoints race, a
+// model id outside the base models fails instead of reading past the array.
+static void test_loadstage_rejects(void) {
+  Medium m;
+  medium_init(&m);
+  Trackers t;
+  trackers_init(&t);
+  vfs_set_fpath("../../../");
+  ContO *base_models = calloc(GAME_SPARKER_NUM_BASE_MODELS, sizeof(ContO));
+  CHECK(game_sparker_loadbase(base_models, &m, &t, "data/models.zip"), "rejects: loadbase");
+  static const char *kStages[3] = {
+      "chk(20,0,0,0)\nchk(20,0,2000,0)\n",
+      "chk(20,0,0,0)\nchk(20,0,2000,0)\nset(500,0,0,0)\n",
+      "chk(20,0,0,0)\nchk(20,0,2000,0)\nset(-100,0,0,0)\n",
+  };
+  for (int32_t k = 0; k < 3; k++) {
+    ContO *objects = calloc(32, sizeof(ContO));
+    int32_t count = 0;
+    CheckPoints cp;
+    check_points_init(&cp);
+    bool sok = game_sparker_loadstage(objects, 32, &count, base_models, &m, &t, &cp, kStages[k], NULL, NULL);
+    CHECK(sok == (k == 0), k == 0 ? "rejects: two checkpoints load" : "rejects: bad model id fails");
+    for (int32_t i = 0; i < count; i++) cont_o_free(&objects[i]);
+    free(objects);
+  }
+  // Every stock stage still passes the checks.
+  for (int32_t n = 1; n <= 32; n++) {
+    char path[32], label[48];
+    snprintf(path, sizeof(path), "stages/%d.txt", n);
+    char *text = vfs_read_text(path);
+    ContO *objects = calloc(610, sizeof(ContO));
+    int32_t count = 0;
+    CheckPoints cp;
+    check_points_init(&cp);
+    bool sok = text && game_sparker_loadstage(objects, 610, &count, base_models, &m, &t, &cp, text, NULL, NULL);
+    snprintf(label, sizeof(label), "rejects: stock stage %d loads", n);
+    CHECK(sok, label);
+    for (int32_t i = 0; i < count; i++) cont_o_free(&objects[i]);
+    free(objects);
+    free(text);
+  }
+  for (int32_t i = 0; i < GAME_SPARKER_NUM_BASE_MODELS; i++) {
+    if (base_models[i].p) cont_o_free(&base_models[i]);
+  }
+  free(base_models);
+  medium_free(&m);
+  trackers_free_sect(&t);
+}
+
 int main(void) {
   test_loadbase_and_loadstage();
   test_loadstage_center();
+  test_loadstage_rejects();
   if (failures == 0) {
     printf("all tests passed\n");
     return 0;
