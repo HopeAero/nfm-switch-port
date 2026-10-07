@@ -3590,6 +3590,7 @@ int game_run(void) {
 
   CarDefine cd;
   car_define_init(&cd);
+  car_define_extended(&cd);   // the cars as Extended tuned them
   // Simple_Car.rad's own interpolated stats, computed once (independent
   // of menu navigation) into slot CUSTOM_CAR_INDEX -- matching
   // CarDefine.js's real loadcar() call (see car_define.h). If this
@@ -5354,6 +5355,8 @@ int game_run(void) {
         race_dudo = (dudo_a > dudo_b) ? 250 : 428;
       }
       xt_graphics_stub_init(&xt);
+      xt.extended = true;      // Extended's gameplay (mad.c)
+      xt.classicmode = true;   // every race is Classic Mode until Extended's own stages arrive
       xt.im = 0;
 
       // xtGraphics.java:2354-2358 (loadstage(), top of the function) --

@@ -20,8 +20,17 @@ void mad_init(Mad *mad, CarDefine *cd, Medium *m, Record *rpd, XtGraphicsStub *x
   mad->im = im;
 }
 
+// M A S H E E N, NFM 2's car 13 (Extended's 36).
+#define CAR_MASHEEN 13
+
 void mad_reseto(Mad *mad, int32_t cn, ContO *contO, CheckPoints *checkPoints) {
   mad->cn = cn;
+  // Extended (Madness.java:1080-1087): M A S H E E N takes less damage and
+  // reaches further in Classic Mode, in this car's copy of the tables.
+  if (mad->xt->extended) {
+    mad->cd->dammult[CAR_MASHEEN] = mad->xt->classicmode ? 0.225f : 0.3f;
+    mad->cd->clrad[CAR_MASHEEN] = mad->xt->classicmode ? 30000 : 20000;
+  }
   for (int32_t i = 0; i < 8; i++) {
     mad->dominate[i] = false;
     mad->caught[i] = false;
@@ -40,12 +49,14 @@ void mad_reseto(Mad *mad, int32_t cn, ContO *contO, CheckPoints *checkPoints) {
   // Java: ((float)sqrt(A) + (float)sqrt(B) + (float)sqrt(C) + (float)sqrt(D))
   // / 10000.0f * (float)(bounce - 0.3) -- float sums, and the 0.3 is a
   // double: (float)(bounce - 0.3) is not bounce - 0.3f.
+  // Extended divides by 8000 (Madness.java:1104): a quarter more yaw from
+  // uneven wheels after hits and bumps.
   double sqrtA = sqrt((double)(contO->keyz[0] * contO->keyz[0] + contO->keyx[0] * contO->keyx[0]));
   double sqrtB = sqrt((double)(contO->keyz[1] * contO->keyz[1] + contO->keyx[1] * contO->keyx[1]));
   double sqrtC = sqrt((double)(contO->keyz[2] * contO->keyz[2] + contO->keyx[2] * contO->keyx[2]));
   double sqrtD = sqrt((double)(contO->keyz[3] * contO->keyz[3] + contO->keyx[3] * contO->keyx[3]));
   float fSqrtA = (float)sqrtA, fSqrtB = (float)sqrtB, fSqrtC = (float)sqrtC, fSqrtD = (float)sqrtD;
-  float middle = (((fSqrtA + fSqrtB) + fSqrtC) + fSqrtD) / 10000.0f;
+  float middle = (((fSqrtA + fSqrtB) + fSqrtC) + fSqrtD) / (mad->xt->extended ? 8000.0f : 10000.0f);
   mad->forca = middle * (float)((double)mad->cd->bounce[mad->cn] - 0.3);
 
   mad->mtouch = false;
@@ -601,6 +612,14 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
     int32_t n4 = 7000;
     float n5 = 1.0f;
     if (mad->xt->multion != 0) { n4 = 28000; n5 = 1.27f; }
+    // Extended (Madness.java:883-898, 928-949): hits on M A S H E E N count
+    // 1.27 times in Classic Mode, and the hitter's own recoil uses its
+    // moment as the other car's tables have it, capped at 3 -- which only
+    // bites once a special has raised a car's strength past that.
+    const bool ext = mad->xt->extended;
+    const float masheen_hit = (ext && mad->xt->classicmode && mad2->cn == CAR_MASHEEN) ? 1.27f : 1.0f;
+    float recoil = ext ? mad2->cd->moment[mad->cn] : cd->moment[mad->cn];
+    if (ext && recoil > 3.0f) recoil = 3.0f;
     for (int32_t j = 0; j < 4; j++) {
       for (int32_t k = 0; k < 4; k++) {
         float compradSum = cd->comprad[mad2->cn] + cd->comprad[mad->cn];
@@ -615,10 +634,10 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
             if (n7 < -300.0f) n7 = -300.0f;
             mad2->scx[k] = mad2->scx[k] + n7;
             if (xt_graphics_stub_human(mad->xt, mad->im)) mad2->colidim = true;
-            int32_t n9 = n + mad_regx(mad2, k, (n7 * cd->moment[mad->cn]) * n5, contO2);
+            int32_t n9 = n + mad_regx(mad2, k, ((n7 * cd->moment[mad->cn]) * n5) * masheen_hit, contO2);
             if (mad2->colidim) mad2->colidim = false;
             mad->scx[j] = mad->scx[j] - n6;
-            n2 += mad_regx(mad, j, (-n6 * cd->moment[mad->cn]) * n5, contO);
+            n2 += mad_regx(mad, j, (-n6 * recoil) * n5, contO);
             mad->scy[j] = mad->scy[j] - (float)cd->revlift[mad->cn];
             if (mad->im == mad->xt->im) mad2->colidim = true;
             n = n9 + mad_regy(mad2, k, cd->revlift[mad->cn] * 7.0f, contO2);
@@ -637,10 +656,10 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
             if (n13 < -300.0f) n13 = -300.0f;
             mad2->scz[k] = mad2->scz[k] + n13;
             if (mad->im == mad->xt->im) mad2->colidim = true;
-            int32_t n15 = n + mad_regz(mad2, k, (n13 * cd->moment[mad->cn]) * n5, contO2);
+            int32_t n15 = n + mad_regz(mad2, k, ((n13 * cd->moment[mad->cn]) * n5) * masheen_hit, contO2);
             if (mad2->colidim) mad2->colidim = false;
             mad->scz[j] = mad->scz[j] - n12;
-            n2 += mad_regz(mad, j, (-n12 * cd->moment[mad->cn]) * n5, contO);
+            n2 += mad_regz(mad, j, (-n12 * recoil) * n5, contO);
             mad->scy[j] = mad->scy[j] - (float)cd->revlift[mad->cn];
             if (mad->im == mad->xt->im) mad2->colidim = true;
             n = n15 + mad_regy(mad2, k, cd->revlift[mad->cn] * 7.0f, contO2);
@@ -663,11 +682,12 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
   }
 }
 
-// Gear thresholds and the top-speed clamp, as Java writes them:
-// `swits / 2 + power * swits / 196.0f` -- swits is int, so the half is an int
-// division (185/2 is 92) and the rest is float.
-static float swit_speed(float power, int32_t swits) {
-  return (float)(swits / 2) + power * (float)swits / 196.0f;
+// Gear thresholds and the top-speed clamp. NFM 2 writes `swits / 2 + power *
+// swits / 196.0f` with an int half (185/2 is 92); Extended's Madness copies
+// swits into a float first (Madness.java:1677-1702), so the half is 92.5.
+static float swit_speed(bool ext, float power, int32_t swits) {
+  const float half = ext ? (float)swits / 2.0f : (float)(swits / 2);
+  return half + power * (float)swits / 196.0f;
 }
 
 // `acelf / 2.0f + power * acelf / 196.0f`, all float (acelf is float).
@@ -678,6 +698,11 @@ static float acel_step(float power, float acelf) {
 void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, CheckPoints *checkPoints) {
   CarDefine *cd = mad->cd;
   Medium *m = mad->m;
+  // The car's pitch and roll as this tick starts, 0..360 (Extended,
+  // Madness.java:1322-1325), for the in-air righting below.
+  int32_t zyangle, xyangle;
+  for (zyangle = abs(mad->pzy); zyangle > 360; zyangle -= 360) {}
+  for (xyangle = abs(mad->pxy); xyangle > 360; xyangle -= 360) {}
 
   int32_t n = 1;
   int32_t n2 = 1;
@@ -792,19 +817,25 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
     } else {
       float power = mad->power;
       if (power < 40.0f) power = 40.0f;
+      // Extended (Madness.java:1587-1608, carried from the older NFM 2): the
+      // player's power counts for 0.76 of itself until it is full, 98. The
+      // AI's does not. (Career stat points scale it back up; not ported.)
+      const bool ext = mad->xt->extended;
+      if (ext && mad->im == 0 && mad->power != 98.0f) power = (float)((double)power * 0.76);
       if (control->down) {
         if (mad->speed > 0.0f) {
-          // Java: `speed -= handb / 2` -- int division, 7/2 is 3.
-          mad->speed = mad->speed - (float)(cd->handb[mad->cn] / 2);
+          // Java: `speed -= handb / 2` -- int division, 7/2 is 3; Extended's
+          // float handb makes it 3.5.
+          mad->speed = mad->speed - (ext ? (float)cd->handb[mad->cn] / 2.0f : (float)(cd->handb[mad->cn] / 2));
         } else {
           int32_t n8 = 0;
           for (int32_t l = 0; l < 2; l++) {
-            if (mad->speed <= -swit_speed(power, cd->swits[mad->cn][l])) n8++;
+            if (mad->speed <= -swit_speed(ext, power, cd->swits[mad->cn][l])) n8++;
           }
           if (n8 != 2) {
             mad->speed = mad->speed - acel_step(power, cd->acelf[mad->cn][n8]);
           } else {
-            mad->speed = -swit_speed(power, cd->swits[mad->cn][1]);
+            mad->speed = -swit_speed(ext, power, cd->swits[mad->cn][1]);
           }
         }
       }
@@ -814,12 +845,12 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
         } else {
           int32_t n9 = 0;
           for (int32_t n10 = 0; n10 < 3; n10++) {
-            if (mad->speed >= swit_speed(power, cd->swits[mad->cn][n10])) n9++;
+            if (mad->speed >= swit_speed(ext, power, cd->swits[mad->cn][n10])) n9++;
           }
           if (n9 != 3) {
             mad->speed = mad->speed + acel_step(power, cd->acelf[mad->cn][n9]);
           } else {
-            mad->speed = swit_speed(power, cd->swits[mad->cn][2]);
+            mad->speed = swit_speed(ext, power, cd->swits[mad->cn][2]);
           }
         }
       }
@@ -1144,13 +1175,28 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
         mad->dcnt -= 2;
         if (mad->dcnt < 0) mad->dcnt = 0;
       }
-      if (n22 == 3 || n22 == 4) {
+      if ((n22 == 3 || n22 == 4) && !mad->xt->extended) {
         // trunc(rand*4.0) -- no fr(), genuinely double.
         int32_t idx = jtrunc_d((double)medium_random(m) * 4.0);
         // Java: (float)(-100.0f * random() * (speed / swits) * (bounce - 0.3))
         const float base = (n22 == 3) ? -100.0f : -150.0f;
         const float a1 = (base * medium_random(m)) * (mad->speed / (float)cd->swits[mad->cn][2]);
         mad->scy[idx] = (float)((double)a1 * ((double)cd->bounce[mad->cn] - 0.3));
+      } else if (n22 == 3 || n22 == 4) {
+        // Bumpy road. Extended (Madness.java:2148-2167, 1354-1356) kicks a
+        // wheel only while the tyres grip (NFM 2: every wheel, every tick),
+        // with one random number for the wheel and the kick, and bounce
+        // capped at 1.35. Java: (float)(-100.0f * r * (speed / swits) *
+        // (bounciness - 0.3)).
+        if (!(n25 < cd->grip[mad->cn])) {
+          const float r = medium_random(m);
+          const int32_t idx = (int32_t)(r * 4.0f);
+          float bounciness = cd->bounce[mad->cn];
+          if (bounciness > 1.35f) bounciness = 1.35f;
+          const float base = (n22 == 3) ? -100.0f : -150.0f;
+          const float a1 = (base * r) * (mad->speed / (float)cd->swits[mad->cn][2]);
+          mad->scy[idx] = (float)((double)a1 * ((double)bounciness - 0.3));
+        }
       }
       n29 = n29 + mad->scx[n31];
       n30 = n30 + mad->scz[n31];
@@ -1500,8 +1546,28 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
 
   if (abs(a2_) > abs(a_)) a_ = a2_;
   if (abs(a4_) > abs(a3_)) a3_ = a4_;
-  if (!zyinv) mad->pzy += a_; else mad->pzy -= a_;
-  if (n3 == 0) mad->pxy += a3_; else mad->pxy -= a3_;
+  if (mad->xt->extended && !mad->mtouch) {
+    // Extended (Madness.java:2664-2700): in the air, the pitch and roll
+    // corrections turn the car toward whichever is nearer, upright or
+    // upside down, instead of NFM 2's fixed sign -- kinder landings.
+    const int32_t zero_zy = zyangle < 360 - zyangle ? zyangle : 360 - zyangle, flip_zy = abs(zyangle - 180);
+    if ((zero_zy <= flip_zy && zyangle < 180) || (flip_zy < zero_zy && zyangle >= 180)) {
+      if (mad->pzy > 0) mad->pzy -= abs(a_); else mad->pzy += abs(a_);
+    }
+    if ((zero_zy <= flip_zy && zyangle >= 180) || (flip_zy < zero_zy && zyangle < 180)) {
+      if (mad->pzy > 0) mad->pzy += abs(a_); else mad->pzy -= abs(a_);
+    }
+    const int32_t zero_xy = xyangle < 360 - xyangle ? xyangle : 360 - xyangle, flip_xy = abs(xyangle - 180);
+    if ((zero_xy <= flip_xy && xyangle < 180) || (flip_xy < zero_xy && xyangle >= 180)) {
+      if (mad->pxy > 0) mad->pxy -= abs(a3_); else mad->pxy += abs(a3_);
+    }
+    if ((zero_xy <= flip_xy && xyangle >= 180) || (flip_xy < zero_xy && xyangle < 180)) {
+      if (mad->pxy > 0) mad->pxy += abs(a3_); else mad->pxy -= abs(a3_);
+    }
+  } else {
+    if (!zyinv) mad->pzy += a_; else mad->pzy -= a_;
+    if (n3 == 0) mad->pxy += a3_; else mad->pxy -= a3_;
+  }
   if (n40 == 4) {
     int32_t n106 = 0;
     while (mad->pzy < 360) { mad->pzy += 360; contO->zy += 360; }
@@ -1800,7 +1866,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
             if (mad->btab) mad->powerup = mad->powerup + 40.0f;
           }
           if (abs(mad->travxz) > 90) mad->powerup = mad->powerup + (float)abs(mad->travxz) / 18.0f;
-          if (mad->surfer) mad->powerup = mad->powerup + 30.0f;
+          if (mad->surfer) mad->powerup = mad->powerup + (mad->xt->extended ? 15.0f : 30.0f);   // Extended halves it (Madness.java:2869)
           mad->power = mad->power + mad->powerup;
           if (mad->im == mad->xt->im && jtrunc(mad->powerup) > mad->rpd->powered && mad->rpd->wasted == 0 &&
               (mad->powerup > 60.0f || checkPoints->stage == 1 || checkPoints->stage == 2)) {

@@ -38,6 +38,14 @@ static void test_init(void) {
   CHECK(cd.enginsignature[11] == 4, "enginsignature[11]");
   CHECK(cd.flipy[13] == -100, "flipy[13]");
   CHECK(cd.powerloss[13] == 16700000, "powerloss[13]");
+  // Extended's retuned NFM 2 cars on top (Madness.java:404-435, its 23-38).
+  CarDefine ext;
+  car_define_init(&ext);
+  car_define_extended(&ext);
+  CHECK(ext.grip[10] == 22.4f && ext.maxmag[13] == 63000 && ext.dammult[8] == 0.6f, "extended: grip, maxmag, dammult");
+  CHECK(ext.revpush[14] == 0.25f && ext.revpush[15] == 0.4f, "extended: revpush fractions");
+  CHECK(ext.acelf[6][0] == 9.0f && ext.acelf[6][1] == 7.0f && ext.swits[0][1] == 180, "extended: Lead Oxide's gears, Tornado Shark");
+  CHECK(ext.handb[13] == cd.handb[13] && ext.turn[5] == cd.turn[5], "extended: handling left as NFM 2's");
   // The car-select bars read these for the stock cars (CarDefine.java:108-110).
   CHECK(cd.dishandle[0] == 0.65f && cd.dishandle[14] == 1.0f, "dishandle[0], [14]");
   CHECK(cd.outdam[1] == 0.35f && cd.outdam[13] == 1.0f, "outdam[1], [13]");

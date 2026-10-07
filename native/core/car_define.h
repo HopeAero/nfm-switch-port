@@ -43,7 +43,7 @@ typedef struct {
   float moment[CAR_DEFINE_NUM_CARS];
   float comprad[CAR_DEFINE_NUM_CARS];
   int32_t push[CAR_DEFINE_NUM_CARS];
-  int32_t revpush[CAR_DEFINE_NUM_CARS];
+  float revpush[CAR_DEFINE_NUM_CARS];   // float in Extended (Radical One 0.25, DR Monstaa 0.4)
   int32_t lift[CAR_DEFINE_NUM_CARS];
   int32_t revlift[CAR_DEFINE_NUM_CARS];
   int32_t powerloss[CAR_DEFINE_NUM_CARS];
@@ -76,6 +76,9 @@ typedef struct {
 /** Fills the built-in car slots (0-15) with the JS constructor's literal
  * values. Pure data, no allocation, safe to call more than once. */
 void car_define_init(CarDefine *cd);
+
+/** Extended Mode's retuned stats for NFM 2's 16 cars, over car_define_init's. */
+void car_define_extended(CarDefine *cd);
 
 /**
  * Ports web/CarDefine.js's `loadstat(buf, s, n, n2, n3, n4)`. Given a

@@ -36,11 +36,21 @@ fixes for many cars in view (trackgrid, archive loading) are reused.
 
 ## Phase 2 -- Classic Mode as Extended plays it
 
-- [ ] Extended's stat tables for the 16 NFM2 cars (engine-analysis.md §1).
-- [ ] Intentional physics changes: forca /8000, airborne righting, wall-surf
-      +15, bumpy-road gating + bounce 1.35, float handb / double turn,
-      recoil cap 3, road scan dy<1000 / groundlevel, MASHEEN classic rules,
-      0.76 player handicap without the old stage exemptions.
+- [x] Extended's stat tables for the 16 NFM2 cars: `car_define_extended()`
+      over NFM 2's table (64 values; revpush is float now).
+- [x] Physics, behind `xt.extended` so the NFM 2 oracle tests still hold
+      (mad_test runs a second pass with it on): forca /8000, airborne
+      righting toward upright/inverted, wall-surf +15, bumpy road only while
+      gripping with one draw and bounce <= 1.35, float handb/2 and gear
+      halves, recoil from the other car's tables capped at 3, M A S H E E N
+      in classic (x1.27 hits, dammult .225, clrad 30000), the player's 0.76
+      power below 98.
+- [ ] Still to port when their content arrives: road scan dy<1000 /
+      groundlevel (floating floors), double `turn` / ContO.wxz (Extended
+      cars' 7.5, 4.5...).
+- NFM 2 numbering stays: its cars are 0-15 here (Extended's 23-38); when
+  porting Extended code, car `cn` 23+k is k, and Extended's own 0-22 will be
+  16+k.
 - [ ] Specials: bar, charging, S button, AI auto-fire, nitroandspecials
       (buffs, freeze, strswap, leech, redstr, 1v1 rule), no-knockback.
 - [ ] Specials HUD: Special bar, status lines, buff list, car-list colours,

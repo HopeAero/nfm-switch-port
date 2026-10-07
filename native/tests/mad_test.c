@@ -30,6 +30,10 @@ static int failures = 0;
   if (!(cond)) { fprintf(stderr, "FAIL: %s (%s:%d)\n", msg, __FILE__, __LINE__); failures++; } \
 } while (0)
 
+// The extended build's gameplay (xt.extended, car_define_extended): set by
+// main() for a second pass over the scenarios that cover what it changes.
+static bool g_ext = false;
+
 static void scenario(int32_t nfix, bool imEqualsXtIm, int32_t expectFixes) {
   nfm_set_seed(9001);
   Medium m;
@@ -38,6 +42,7 @@ static void scenario(int32_t nfix, bool imEqualsXtIm, int32_t expectFixes) {
   trackers_init(&t);
   CarDefine cd;
   car_define_init(&cd);
+  if (g_ext) car_define_extended(&cd);
   Record rpd;
   record_init(&rpd);
   CheckPoints cp;
@@ -46,6 +51,7 @@ static void scenario(int32_t nfix, bool imEqualsXtIm, int32_t expectFixes) {
   cp.nfix = nfix;
   XtGraphicsStub xt;
   xt_graphics_stub_init(&xt);
+  xt.extended = g_ext;
   xt.im = 2;
 
   vfs_set_fpath("../../../");
@@ -70,7 +76,9 @@ static void scenario(int32_t nfix, bool imEqualsXtIm, int32_t expectFixes) {
   snprintf(label, sizeof(label), "nfix=%d imEq=%d cn/mxz/pcleared/power", nfix, imEqualsXtIm);
   CHECK(mad.cn == 3 && mad.mxz == 0 && mad.pcleared == 7 && mad.power == 98.0f, label);
   snprintf(label, sizeof(label), "nfix=%d imEq=%d forca", nfix, imEqualsXtIm);
-  CHECK(mad.forca == 0.037368882f, label);
+  // Extended: NFM 2's 0.037368882 * 10000 / 8000 (its divisor), with La Vita
+  // Crab's bounce 1.05 for 1.15: * (1.05 - 0.3) / (1.15 - 0.3).
+  CHECK(mad.forca == (g_ext ? 0.0412156768f : 0.037368882f), label);
   snprintf(label, sizeof(label), "nfix=%d imEq=%d fixes", nfix, imEqualsXtIm);
   CHECK(mad.fixes == expectFixes, label);
   snprintf(label, sizeof(label), "nfix=%d imEq=%d checkpoint/dested", nfix, imEqualsXtIm);
@@ -157,19 +165,23 @@ static void handb_grounded_scenario(void) {
   contO.grat=0; contO.x=1000; contO.y=200; contO.z=-5000;
   contO.xz=45; contO.zy=0; contO.xy=0;
 
-  XtGraphicsStub xt; xt_graphics_stub_init(&xt); xt.im = 0;
+  XtGraphicsStub xt; xt_graphics_stub_init(&xt); xt.im = 0; xt.extended = g_ext;
   Control control; control_init(&control, &m); control_falseo(&control, 0);
   Mad mad; mad_init(&mad, &cd, &m, &rpd, &xt, 0);
   mad_reseto(&mad, 0, &contO, &cp);
 
   // Phase 1 -- 40 ticks of plain acceleration, to reach a speed where the
   // handbrake actually breaks traction rather than just slowing the car.
+  // Extended: a regression snapshot, recorded when its drive changes were
+  // ported (the player's 0.76 power below 98, float gear halves, forca
+  // /8000); slower, same headings.
   control.up = true; control.right = false; control.handb = false;
   for (int32_t k = 1; k <= 40; k++) mad_drive(&mad, &control, &contO, &t, &cp);
-  CHECK(mad.speed == 111.653061f && contO.xz == 45, "handb: spin-up matches oracle");
+  CHECK(mad.speed == (g_ext ? 103.816322f : 111.653061f) && contO.xz == 45, "handb: spin-up matches oracle");
 
   // Phase 2 -- the attack manoeuvre itself: handbrake + steer, throttle held.
-  struct { int32_t tick, x, z, xz; float speed; } expected[] = {
+  struct Expect { int32_t tick, x, z, xz; float speed; };
+  static const struct Expect nfm2[] = {
     {  45, -1735, -2242,   35, 102.158432f },
     {  50, -2031, -1823,    6, 104.603172f },
     {  60, -2546,  -938,  -64, 102.203865f },
@@ -177,11 +189,20 @@ static void handb_grounded_scenario(void) {
     { 100, -4066,  1695, -344,  99.635475f },
     { 120, -4796,  2935, -484, 102.203865f },
   };
+  static const struct Expect ext[] = {
+    {  45, -1561, -2417,   35, 93.1902924f },
+    {  50, -1827, -2033,    6, 93.6980591f },
+    {  60, -2282, -1218,  -64, 94.6401443f },
+    {  80, -2894,   149, -204, 96.2627029f },
+    { 100, -3562,  1141, -344, 97.5898209f },
+    { 120, -4172,  2241, -484, 92.6287155f },
+  };
+  const struct Expect *expected = g_ext ? ext : nfm2;
   int32_t ei = 0;
   control.up = true; control.right = true; control.handb = true;
   for (int32_t k = 41; k <= 120; k++) {
     mad_drive(&mad, &control, &contO, &t, &cp);
-    if (ei < (int32_t)(sizeof(expected)/sizeof(expected[0])) && expected[ei].tick == k) {
+    if (ei < 6 && expected[ei].tick == k) {
       char lbl[96];
       snprintf(lbl, sizeof(lbl), "handb grounded tick %d matches Mad.js oracle", k);
       CHECK(contO.x == expected[ei].x && contO.z == expected[ei].z &&
@@ -1380,6 +1401,11 @@ int main(void) {
   colide_scenario();
   drive_wall_scenario(19, "wall_hit19");
 
+  // The extended build: Extended's stats and drive changes on.
+  g_ext = true;
+  scenario(0, true, -1);
+  handb_grounded_scenario();
+  g_ext = false;
   if (failures == 0) {
     printf("all tests passed\n");
     return 0;

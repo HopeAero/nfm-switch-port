@@ -19,7 +19,7 @@ static const int32_t handb_data[56] = {7,10,7,15,12,8,9,10,5,7,8,10,8,12,7,7,0,0
 static const int32_t airc_data[56] = {70,30,40,40,30,50,40,90,40,50,75,10,50,0,100,60,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 static const int32_t turn_data[56] = {6,9,5,7,8,7,5,5,9,7,7,4,6,5,7,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 static const int32_t push_data[56] = {2,2,3,3,2,2,2,4,2,2,2,4,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-static const int32_t revpush_data[56] = {2,3,2,2,2,2,2,1,2,1,2,1,2,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+static const float revpush_data[56] = {2.0f,3.0f,2.0f,2.0f,2.0f,2.0f,2.0f,1.0f,2.0f,1.0f,2.0f,1.0f,2.0f,2.0f,2.0f,1.0f,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 static const int32_t lift_data[56] = {0,30,0,20,0,30,0,0,20,0,0,0,10,0,30,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 static const int32_t revlift_data[56] = {0,0,15,0,0,0,0,0,0,0,0,0,0,0,0,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 static const int32_t powerloss_data[56] = {2500000,2500000,3500000,2500000,4000000,2500000,3200000,3200000,2750000,5500000,2750000,4500000,3500000,16700000,3000000,5500000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
@@ -621,4 +621,74 @@ bool car_define_loadcar(CarDefine *cd, const char *text, const ContO *co, int32_
   if (co->keyz[2] > 0 || co->keyx[2] > 0) return false;
   if (co->keyz[3] > 0 || co->keyx[3] < 0) return false;
   return car_define_loadstat(cd, text, maxR, roofat, wh, slot);
+}
+
+// Extended Mode's retuned NFM 2 cars (Madness.java:404-435, its cars 23-38,
+// which are NFM 2's 0-15): only the values that differ from NFM 2's own.
+// The extended build applies it once at boot; the tests keep NFM 2's table.
+void car_define_extended(CarDefine *cd) {
+  cd->grip[6] = 22.0f;
+  cd->grip[8] = 16.0f;
+  cd->grip[10] = 22.4f;
+  cd->grip[14] = 30.0f;
+  cd->grip[15] = 24.0f;
+  cd->bounce[3] = 1.05f;
+  cd->bounce[10] = 1.1f;
+  cd->moment[0] = 1.2f;
+  cd->moment[3] = 1.0f;
+  cd->moment[5] = 1.25f;
+  cd->moment[6] = 1.4f;
+  cd->moment[7] = 1.3f;
+  cd->moment[8] = 1.2f;
+  cd->moment[9] = 1.45f;
+  cd->moment[10] = 1.375f;
+  cd->moment[12] = 1.2f;
+  cd->comprad[4] = 0.3f;
+  cd->comprad[11] = 1.0f;
+  cd->comprad[13] = 0.6f;
+  cd->revpush[2] = 1.0f;
+  cd->revpush[14] = 0.25f;
+  cd->revpush[15] = 0.4f;
+  cd->revlift[15] = 15;
+  cd->msquash[7] = 2;
+  cd->clrad[1] = 2500;
+  cd->clrad[9] = 9500;
+  cd->clrad[13] = 500000;
+  cd->clrad[15] = 4200;
+  cd->dammult[0] = 0.8f;
+  cd->dammult[1] = 1.0f;
+  cd->dammult[2] = 0.55f;
+  cd->dammult[3] = 1.0f;
+  cd->dammult[4] = 0.6f;
+  cd->dammult[7] = 0.8f;
+  cd->dammult[8] = 0.6f;
+  cd->dammult[9] = 0.46f;
+  cd->dammult[10] = 0.6f;
+  cd->dammult[11] = 0.48f;
+  cd->dammult[12] = 0.6f;
+  cd->dammult[13] = 0.2f;
+  cd->dammult[14] = 0.3f;
+  cd->dammult[15] = 0.46f;
+  cd->maxmag[0] = 6000;
+  cd->maxmag[5] = 9100;
+  cd->maxmag[6] = 14000;
+  cd->maxmag[7] = 12000;
+  cd->maxmag[8] = 12000;
+  cd->maxmag[9] = 9700;
+  cd->maxmag[10] = 13000;
+  cd->maxmag[13] = 63000;
+  cd->swits[0][1] = 180;
+  cd->swits[0][2] = 280;
+  cd->swits[3][0] = 70;
+  cd->swits[3][1] = 200;
+  cd->swits[3][2] = 295;
+  cd->swits[5][0] = 60;
+  cd->swits[5][1] = 200;
+  cd->swits[5][2] = 290;
+  cd->swits[6][2] = 280;
+  cd->swits[7][0] = 60;
+  cd->swits[7][1] = 180;
+  cd->swits[7][2] = 280;
+  cd->acelf[6][0] = 9.0f;
+  cd->acelf[6][1] = 7.0f;
 }

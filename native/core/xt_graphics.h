@@ -33,6 +33,8 @@ struct Control;
 typedef struct {
   int32_t im;      // which player slot is "the local viewer" -- HUD/camera-shake gate
   int32_t multion; // 0 = single-player; most of drive()'s xt.multion-gated code is dead at 0
+  bool extended;    // Extended Mode's gameplay changes (mad.c), on in the extended build
+  bool classicmode; // Extended's Classic Mode: NFM 2's stages and cars (M A S H E E N's own rules)
   bool lan;
   int32_t starcnt;
   bool mutes;
