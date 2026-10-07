@@ -1,8 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/matheus/Downloads/nvm-psvita/native/build-vita/cmake_install.cmake",
-		"/home/matheus/Downloads/nvm-psvita/native/build-vita/platform/vita/cmake_install.cmake"
-	],
-	"Parallel" : false
-}

@@ -1,2 +1,0 @@
-/usr/local/vitasdk/bin/arm-vita-eabi-ar qc libnfm_game.a CMakeFiles/nfm_game.dir/platform/common/game.c.obj
-/usr/local/vitasdk/bin/arm-vita-eabi-ranlib libnfm_game.a

@@ -1,1 +1,8 @@
 vdpm/
+native/build-*/
+native/tests/build/
+*.nro
+*.nacp
+*.elf
+nfm_linux
+build.log
