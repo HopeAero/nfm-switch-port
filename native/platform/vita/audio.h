@@ -24,6 +24,7 @@
 #include <psp2/types.h>
 #include <stdbool.h>
 #include "audio_mixer.h"
+#include "ogg_music.h"
 #include "radical_mod.h"
 
 typedef struct {
@@ -31,6 +32,8 @@ typedef struct {
   int32_t grain;          // frames per sceAudioOutOutput() call (the port's fixed "len")
   AudioMixer mixer;
   RadicalPlayer music;
+  OggMusic ogg;     // Extended's career music, when ogg_active
+  bool ogg_active;
   bool music_active;
   // GameSparker.java's `mutem` (toggled on the M key, :3633-3640) reaches
   // the mixer through here. Java pauses/resumes its track rather than
@@ -72,6 +75,10 @@ void audio_stop(Audio *al, int32_t channel);
 // can radical_track_free() the old track right after calling either.
 void audio_start_music(Audio *al, const RadicalTrack *track);
 void audio_stop_music(Audio *al);
+
+/** Extended's career music (ogg_music.h): `intro` once (NULL: none), then
+ * `loop` over and over. Both BORROWED, as audio_start_music's track. */
+void audio_start_ogg(Audio *al, const uint8_t *intro, int32_t intro_len, const uint8_t *loop, int32_t loop_len);
 
 /** Pauses/unpauses background music without discarding it (Java's own
  * mutem pause/resume, not a stop). Safe to call when nothing is

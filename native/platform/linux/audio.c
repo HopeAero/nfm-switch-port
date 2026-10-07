@@ -12,7 +12,8 @@ static void audio_callback(void *userdata, Uint8 *stream, int len) {
   // comment, so call order here matters.
   audio_mixer_render(&al->mixer, (int16_t *)stream, frames);
   if (al->music_active && !al->music_muted) {
-    radical_player_render(&al->music, (int16_t *)stream, frames);
+    if (al->ogg_active) ogg_music_render(&al->ogg, (int16_t *)stream, frames);
+    else radical_player_render(&al->music, (int16_t *)stream, frames);
   }
 }
 
@@ -72,6 +73,7 @@ void audio_start_music(Audio *al, const RadicalTrack *track) {
   if (al->device == 0) return;
   SDL_LockAudioDevice(al->device);
   radical_player_start(&al->music, track, al->mixer.output_rate);
+  al->ogg_active = false;
   al->music_active = true;
   SDL_UnlockAudioDevice(al->device);
 }
@@ -80,6 +82,14 @@ void audio_stop_music(Audio *al) {
   if (al->device == 0) return;
   SDL_LockAudioDevice(al->device);
   al->music_active = false;
+  SDL_UnlockAudioDevice(al->device);
+}
+
+void audio_start_ogg(Audio *al, const uint8_t *intro, int32_t intro_len, const uint8_t *loop, int32_t loop_len) {
+  if (al->device == 0) return;
+  SDL_LockAudioDevice(al->device);
+  al->ogg_active = ogg_music_start(&al->ogg, intro, intro_len, loop, loop_len, al->mixer.output_rate);
+  al->music_active = al->ogg_active;
   SDL_UnlockAudioDevice(al->device);
 }
 

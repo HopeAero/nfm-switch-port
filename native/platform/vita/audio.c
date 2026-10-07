@@ -190,3 +190,9 @@ void audio_set_music_muted(Audio *al, bool muted) {
   al->music_muted = muted;
   sceKernelUnlockMutex(al->lock, 1);
 }
+
+// ponytail: no career music on the Vita build (unverified target); add the
+// ogg_music_render call to its mixer thread when that build is revived.
+void audio_start_ogg(Audio *al, const uint8_t *intro, int32_t intro_len, const uint8_t *loop, int32_t loop_len) {
+  (void)al; (void)intro; (void)intro_len; (void)loop; (void)loop_len;
+}

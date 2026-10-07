@@ -263,6 +263,14 @@ add_executable(radical_mod_test
 )
 target_link_libraries(radical_mod_test ZLIB::ZLIB)
 
+add_executable(ogg_music_test
+  ogg_music_test.c
+  ../core/ogg_music.c
+  ../core/radical_mod.c
+  ../core/vfs.c
+)
+target_link_libraries(ogg_music_test ZLIB::ZLIB m)
+
 add_executable(bots_test
   bots_test.c
   ../core/bots.c
@@ -315,6 +323,7 @@ add_test(NAME wav_decode_test COMMAND wav_decode_test WORKING_DIRECTORY ${CMAKE_
 add_test(NAME audio_mixer_test COMMAND audio_mixer_test)
 add_test(NAME radical_mod_test COMMAND radical_mod_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_test(NAME bots_test COMMAND bots_test)
+add_test(NAME ogg_music_test COMMAND ogg_music_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 # vfs_test reads the real stages/1.txt with a path relative to this build
 # dir (native/tests/build/) -- WORKING_DIRECTORY pins that regardless of
 # where ctest itself is invoked from.

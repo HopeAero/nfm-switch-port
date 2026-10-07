@@ -102,6 +102,7 @@ add_library(nfm_core STATIC
   core/wav_decode.c
   core/audio_mixer.c
   core/radical_mod.c
+  core/ogg_music.c
   core/bots.c
 )
 target_include_directories(nfm_core PUBLIC core)
