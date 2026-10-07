@@ -15,6 +15,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "nfm_limits.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -54,12 +55,13 @@ typedef struct CheckPoints {
   int32_t trackvol;
   int32_t top20;
   int32_t nto;
-  int32_t pos[8], clear[8], dested[8];
-  float magperc[8];
+  int32_t pos[NFM_MAX_CARS], clear[NFM_MAX_CARS], dested[NFM_MAX_CARS];
+  float magperc[NFM_MAX_CARS];
   int32_t wasted;
   bool haltall;
   int32_t pcleared;
-  int32_t opx[8], opz[8], onscreen[8], omxz[8];
+  int32_t opx[NFM_MAX_CARS], opz[NFM_MAX_CARS], onscreen[NFM_MAX_CARS], omxz[NFM_MAX_CARS];
+  int32_t nplayers;   // cars in the race, as the last checkstat was given (7 before any)
   int32_t catchfin;
   int32_t postwo;
   float prox;

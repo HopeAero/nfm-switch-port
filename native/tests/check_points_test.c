@@ -76,7 +76,7 @@ static void checkstat_ranking_scenario(void) {
   };
   Mad *mad_ptrs[2] = {&mads[0], &mads[1]};
   ContO *co_ptrs[2] = {&contOs[0], &contOs[1]};
-  Record record;
+  static Record record;
   record_init(&record);
 
   check_points_checkstat(&cp, mad_ptrs, co_ptrs, &record, 2, 0, 0);
@@ -125,7 +125,7 @@ static void checkstat_catchfin_scenario(void) {
   };
   Mad *mad_ptrs[2] = {&mads[0], &mads[1]};
   ContO *co_ptrs[2] = {&contOs[0], &contOs[1]};
-  Record record;
+  static Record record;
   record_init(&record);
 
   check_points_checkstat(&cp, mad_ptrs, co_ptrs, &record, 2, 0, 0);

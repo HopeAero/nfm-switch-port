@@ -22,6 +22,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "nfm_limits.h"
 #include "medium.h"
 #include "car_define.h"
 #include "record.h"
@@ -39,7 +40,7 @@ typedef struct Mad {
   int32_t cn;
   int32_t im;
   int32_t mxz, cxz;
-  bool dominate[8], caught[8];
+  bool dominate[NFM_MAX_CARS], caught[NFM_MAX_CARS];
   int32_t pzy, pxy;
   float speed;
   float forca;

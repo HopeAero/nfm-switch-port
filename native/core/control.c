@@ -179,7 +179,9 @@ static bool control_rand_gt_rand(Medium *m) {
 // will sit at 16-38 here.
 static int32_t ext_cn(int32_t cn) { return cn < 16 ? cn + 23 : cn - 16; }
 
-#define EXT_NPLAYERS 7 // Classic Mode races seven cars
+// Extended counts the race's own cars (xtgraphics.nplayers): 7 in Classic,
+// 11 in its normal mode.
+#define EXT_NPLAYERS (cp->nplayers)
 
 /** One decision cycle (stcnt > statusque) of Extended's preform,
  * Control.java:159-4894 in Classic Mode. Rubber-banding is gone: acuracy and

@@ -16,6 +16,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "cont_o.h"
+#include "nfm_limits.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,52 +28,52 @@ typedef struct Record {
   int32_t caught;
   bool hcaught;
   bool prepit;
-  ContO ocar[8];      // Record.java:103 -- fed by GameSparker's own stuck-car
+  ContO ocar[NFM_MAX_CARS];      // Record.java:103 -- fed by GameSparker's own stuck-car
                        // respawn (:1261), not this port's scope (see mad.h's
                        // own note on why `newcar` never becomes true here);
                        // written for fidelity, never consumed.
   int32_t cntf;
-  ContO car[6][8];     // Record.java:105 -- 50-tick-interval keyframes, same
+  ContO car[6][NFM_MAX_CARS];     // Record.java:105 -- 50-tick-interval keyframes, same
                        // "recorded but not consumed" scope note as ocar above.
-  int32_t squash[6][8];
+  int32_t squash[6][NFM_MAX_CARS];
 
-  int32_t fix[8], dest[8];
+  int32_t fix[NFM_MAX_CARS], dest[NFM_MAX_CARS];
 
   // 300-tick position/orientation ring, oldest at index 0, newest at 299
   // (rec() shifts everything down by one and appends -- see record_rec's
   // own doc comment for why this port keeps that O(n) shift instead of a
   // circular index, same "translate the algorithm, not just the result"
   // reasoning PORT_SPEC.md gives for ContO's own painter's-algorithm sort).
-  int32_t x[300][8], y[300][8], z[300][8];
-  int32_t xy[300][8], zy[300][8], xz[300][8];
-  int32_t wxz[300][8], wzy[300][8];
+  int32_t x[300][NFM_MAX_CARS], y[300][NFM_MAX_CARS], z[300][NFM_MAX_CARS];
+  int32_t xy[300][NFM_MAX_CARS], zy[300][NFM_MAX_CARS], xz[300][NFM_MAX_CARS];
+  int32_t wxz[300][NFM_MAX_CARS], wzy[300][NFM_MAX_CARS];
 
   // Spark-particle ring: [car][stg-slot 0-19][ring-slot 0-29]. A fresh
   // spark is stamped with a countdown starting at 300 (matches ContO's
   // own `stg[]` semantics -- see cont_o_pdust); play()/playh() re-arm
   // `contO->stg[k]` when the ring's countdown equals the tick being
   // played back.
-  int32_t ns[8][20];
-  int32_t sspark[8][20][30];
-  int32_t sx[8][20][30], sy[8][20][30], sz[8][20][30];
-  float smag[8][20][30];
-  int32_t scx[8][20][30], scz[8][20][30];
+  int32_t ns[NFM_MAX_CARS][20];
+  int32_t sspark[NFM_MAX_CARS][20][30];
+  int32_t sx[NFM_MAX_CARS][20][30], sy[NFM_MAX_CARS][20][30], sz[NFM_MAX_CARS][20][30];
+  float smag[NFM_MAX_CARS][20][30];
+  int32_t scx[NFM_MAX_CARS][20][30], scz[NFM_MAX_CARS][20][30];
 
   // Skid/scrape spark ring: [car][ring-slot 0-199], same countdown idiom.
-  int32_t nr[8];
-  int32_t rspark[8][200];
-  int32_t sprk[8][200];
-  int32_t srx[8][200], sry[8][200], srz[8][200];
-  float rcx[8][200], rcy[8][200], rcz[8][200];
+  int32_t nr[NFM_MAX_CARS];
+  int32_t rspark[NFM_MAX_CARS][200];
+  int32_t sprk[NFM_MAX_CARS][200];
+  int32_t srx[NFM_MAX_CARS][200], sry[NFM_MAX_CARS][200], srz[NFM_MAX_CARS][200];
+  float rcx[NFM_MAX_CARS][200], rcy[NFM_MAX_CARS][200], rcz[NFM_MAX_CARS][200];
 
   // Damage-dent ring: [car][corner/quadrant 0-3][ring-slot 0-6]. Already
   // ported (record_recy/recx/recz below write into these) -- see their
   // own doc comments for the recx/recz `nry`-not-`nrx`/`nrz` indexing
   // quirk, preserved verbatim.
-  int32_t nry[8][4], ry[8][4][7], magy[8][4][7];
-  bool mtouch[8][7];
-  int32_t nrx[8][4], rx[8][4][7], magx[8][4][7];
-  int32_t nrz[8][4], rz[8][4][7], magz[8][4][7];
+  int32_t nry[NFM_MAX_CARS][4], ry[NFM_MAX_CARS][4][7], magy[NFM_MAX_CARS][4][7];
+  bool mtouch[NFM_MAX_CARS][7];
+  int32_t nrx[NFM_MAX_CARS][4], rx[NFM_MAX_CARS][4][7], magx[NFM_MAX_CARS][4][7];
+  int32_t nrz[NFM_MAX_CARS][4], rz[NFM_MAX_CARS][4][7], magz[NFM_MAX_CARS][4][7];
 
   int32_t checkpoint[300];
   bool lastcheck[300];
@@ -91,28 +92,29 @@ typedef struct Record {
   // real Java relies on the same distinction -- `caught` never resets
   // mid-race, so cotchinow's `>= 300` gate can fire at most once per
   // race, exactly matching a race having exactly one "best moment").
-  ContO starcar[8];
-  int32_t hsquash[8], hfix[8], hdest[8];
-  int32_t hx[300][8], hy[300][8], hz[300][8];
-  int32_t hxy[300][8], hzy[300][8], hxz[300][8];
-  int32_t hwxz[300][8], hwzy[300][8];
-  int32_t hsspark[8][20][30];
-  int32_t hsx[8][20][30], hsy[8][20][30], hsz[8][20][30];
-  float hsmag[8][20][30];
-  int32_t hscx[8][20][30], hscz[8][20][30];
-  int32_t hrspark[8][200];
-  int32_t hsprk[8][200];
-  int32_t hsrx[8][200], hsry[8][200], hsrz[8][200];
-  float hrcx[8][200], hrcy[8][200], hrcz[8][200];
-  int32_t hry[8][4][7], hmagy[8][4][7];
-  int32_t hrx[8][4][7], hmagx[8][4][7];
-  int32_t hrz[8][4][7], hmagz[8][4][7];
-  bool hmtouch[8][7];
+  ContO starcar[NFM_MAX_CARS];
+  int32_t hsquash[NFM_MAX_CARS], hfix[NFM_MAX_CARS], hdest[NFM_MAX_CARS];
+  int32_t hx[300][NFM_MAX_CARS], hy[300][NFM_MAX_CARS], hz[300][NFM_MAX_CARS];
+  int32_t hxy[300][NFM_MAX_CARS], hzy[300][NFM_MAX_CARS], hxz[300][NFM_MAX_CARS];
+  int32_t hwxz[300][NFM_MAX_CARS], hwzy[300][NFM_MAX_CARS];
+  int32_t hsspark[NFM_MAX_CARS][20][30];
+  int32_t hsx[NFM_MAX_CARS][20][30], hsy[NFM_MAX_CARS][20][30], hsz[NFM_MAX_CARS][20][30];
+  float hsmag[NFM_MAX_CARS][20][30];
+  int32_t hscx[NFM_MAX_CARS][20][30], hscz[NFM_MAX_CARS][20][30];
+  int32_t hrspark[NFM_MAX_CARS][200];
+  int32_t hsprk[NFM_MAX_CARS][200];
+  int32_t hsrx[NFM_MAX_CARS][200], hsry[NFM_MAX_CARS][200], hsrz[NFM_MAX_CARS][200];
+  float hrcx[NFM_MAX_CARS][200], hrcy[NFM_MAX_CARS][200], hrcz[NFM_MAX_CARS][200];
+  int32_t hry[NFM_MAX_CARS][4][7], hmagy[NFM_MAX_CARS][4][7];
+  int32_t hrx[NFM_MAX_CARS][4][7], hmagx[NFM_MAX_CARS][4][7];
+  int32_t hrz[NFM_MAX_CARS][4][7], hmagz[NFM_MAX_CARS][4][7];
+  bool hmtouch[NFM_MAX_CARS][7];
   int32_t hcheckpoint[300];
   bool hlastcheck[300];
 
-  int32_t cntdest[8];
+  int32_t cntdest[NFM_MAX_CARS];
   int32_t lastfr;
+  int32_t ncars;   // cars the last record_reset set up (cars[0..ncars))
 } Record;
 
 // Zeroes *r, then applies Record.java's constructor's own non-zero
@@ -134,7 +136,7 @@ void record_free(Record *r);
 // `starcar`/`car[j]` snapshots of the just-placed cars. `prepit` (true
 // only before the very first reset ever) gates whether `starcar` gets
 // captured here at all -- matches the Java's own guard.
-void record_reset(Record *r, ContO *cars[8]);
+void record_reset(Record *r, ContO *cars[], int32_t ncars);
 
 void record_recy(Record *r, int32_t n, double n2, bool b, int32_t n3);
 void record_recx(Record *r, int32_t n, double n2, int32_t n3);

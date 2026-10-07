@@ -15,8 +15,9 @@
 #include "check_points.h"
 #include "control.h"
 #include "mad.h"
+#include "nfm_limits.h"
 
-#define SPECIALS_MAX 8
+#define SPECIALS_MAX NFM_MAX_CARS
 
 typedef struct {
   bool fixspecials[SPECIALS_MAX];   // the car's special is running

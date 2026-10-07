@@ -94,6 +94,8 @@ add_library(nfm_core STATIC
   core/mad.c
   core/specials.c
   core/ext_stage.c
+  core/ext_mode.c
+  core/ext_pt.c
   core/progress.c
   core/wav_decode.c
   core/audio_mixer.c

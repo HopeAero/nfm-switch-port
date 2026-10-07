@@ -83,7 +83,7 @@ static void rig_free(RecordTestRig *rig) {
 static void test_reset(void) {
   RecordTestRig rig;
   if (!rig_init(&rig)) { CHECK(false, "reset: rig_init (Simple_Car.rad)"); return; }
-  Record r;
+  static Record r;   // off the stack: NFM_MAX_CARS cars of rings
   record_init(&r);
   CHECK(r.cntf == 50, "init: cntf==50");
   CHECK(r.hfix[3] == -1 && r.hdest[5] == -1, "init: hfix/hdest default to -1");
@@ -91,7 +91,7 @@ static void test_reset(void) {
 
   ContO *carPtrs[8];
   for (int32_t i = 0; i < 8; i++) carPtrs[i] = &rig.cars[i];
-  record_reset(&r, carPtrs);
+  record_reset(&r, carPtrs, 8);
   for (int32_t i = 0; i < 8; i++) {
     CHECK(r.fix[i] == -1, "reset: fix[i]==-1");
     CHECK(r.dest[i] == -1, "reset: dest[i]==-1");
@@ -116,11 +116,11 @@ static void test_reset(void) {
 static void test_rec_position_ring(void) {
   RecordTestRig rig;
   if (!rig_init(&rig)) { CHECK(false, "rec_ring: rig_init"); return; }
-  Record r;
+  static Record r;   // off the stack: NFM_MAX_CARS cars of rings
   record_init(&r);
   ContO *carPtrs[8];
   for (int32_t i = 0; i < 8; i++) carPtrs[i] = &rig.cars[i];
-  record_reset(&r, carPtrs);
+  record_reset(&r, carPtrs, 8);
 
   for (int32_t k = 0; k < 310; k++) {
     rig.cars[0].x = 1000 + k;
@@ -143,11 +143,11 @@ static void test_rec_position_ring(void) {
 static void test_rec_checkpoint_only_for_im(void) {
   RecordTestRig rig;
   if (!rig_init(&rig)) { CHECK(false, "rec_checkpoint: rig_init"); return; }
-  Record r;
+  static Record r;   // off the stack: NFM_MAX_CARS cars of rings
   record_init(&r);
   ContO *carPtrs[8];
   for (int32_t i = 0; i < 8; i++) carPtrs[i] = &rig.cars[i];
-  record_reset(&r, carPtrs);
+  record_reset(&r, carPtrs, 8);
 
   rig.m.checkpoint = 7;
   rig.m.lastcheck = true;
@@ -168,11 +168,11 @@ static void test_rec_checkpoint_only_for_im(void) {
 static void test_caught_and_cotchinow_deep_copy(void) {
   RecordTestRig rig;
   if (!rig_init(&rig)) { CHECK(false, "cotchinow: rig_init"); return; }
-  Record r;
+  static Record r;   // off the stack: NFM_MAX_CARS cars of rings
   record_init(&r);
   ContO *carPtrs[8];
   for (int32_t i = 0; i < 8; i++) carPtrs[i] = &rig.cars[i];
-  record_reset(&r, carPtrs);
+  record_reset(&r, carPtrs, 8);
 
   for (int32_t k = 0; k < 300; k++) {
     rig.cars[0].x = 5000 + k;
@@ -200,11 +200,11 @@ static void test_caught_and_cotchinow_deep_copy(void) {
 static void test_playh_reads_frozen_snapshot(void) {
   RecordTestRig rig;
   if (!rig_init(&rig)) { CHECK(false, "playh: rig_init"); return; }
-  Record r;
+  static Record r;   // off the stack: NFM_MAX_CARS cars of rings
   record_init(&r);
   ContO *carPtrs[8];
   for (int32_t i = 0; i < 8; i++) carPtrs[i] = &rig.cars[i];
-  record_reset(&r, carPtrs);
+  record_reset(&r, carPtrs, 8);
 
   for (int32_t k = 0; k < 300; k++) {
     rig.cars[0].x = 9000 + k;
@@ -234,7 +234,7 @@ static void test_playh_reads_frozen_snapshot(void) {
 }
 
 int main(void) {
-  Record r;
+  static Record r;   // off the stack: NFM_MAX_CARS cars of rings
   record_init(&r);
   record_recy(&r, 2, 45.7, true, 3);
   record_recy(&r, 2, 12.2, false, 3);

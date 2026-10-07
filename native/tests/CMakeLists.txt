@@ -314,3 +314,12 @@ add_test(NAME gif_decode_test COMMAND gif_decode_test WORKING_DIRECTORY ${CMAKE_
 add_test(NAME png_decode_test COMMAND png_decode_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_test(NAME jpeg_decode_test COMMAND jpeg_decode_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_test(NAME hud_recolor_test COMMAND hud_recolor_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+add_executable(ext_mode_test ext_mode_test.c ../core/ext_mode.c ../core/java_compat.c)
+target_include_directories(ext_mode_test PRIVATE ../core)
+target_link_libraries(ext_mode_test m)
+add_test(NAME ext_mode_test COMMAND ext_mode_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+add_executable(ext_pt_test ext_pt_test.c ../core/ext_pt.c)
+target_include_directories(ext_pt_test PRIVATE ../core)
+add_test(NAME ext_pt_test COMMAND ext_pt_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})

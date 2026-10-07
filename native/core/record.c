@@ -18,8 +18,8 @@
 // memory -- so a caller reusing a Record across races calls this first.
 void record_free(Record *r) {
   for (int32_t j = 0; j < 6; j++)
-    for (int32_t k = 0; k < 8; k++) cont_o_free(&r->car[j][k]);
-  for (int32_t i = 0; i < 8; i++) {
+    for (int32_t k = 0; k < NFM_MAX_CARS; k++) cont_o_free(&r->car[j][k]);
+  for (int32_t i = 0; i < NFM_MAX_CARS; i++) {
     cont_o_free(&r->starcar[i]);
     cont_o_free(&r->ocar[i]);
   }
@@ -32,32 +32,36 @@ void record_init(Record *r) {
   // (Record.java:203-204), matching the Java's own split between
   // construction-time and per-race-reset-time defaults exactly.
   r->cntf = 50;
-  for (int32_t i = 0; i < 8; i++) {
+  for (int32_t i = 0; i < NFM_MAX_CARS; i++) {
     r->hfix[i] = -1;
     r->hdest[i] = -1;
   }
 }
 
-void record_reset(Record *r, ContO *cars[8]) {
+// Only the `ncars` cars racing are copied and armed: NFM 2's Java reset all
+// of its 8 fixed slots, which nothing past nplayers ever reads.
+void record_reset(Record *r, ContO *cars[], int32_t ncars) {
+  if (ncars > NFM_MAX_CARS) ncars = NFM_MAX_CARS;
+  r->ncars = ncars;
   r->caught = 0;
   r->hcaught = false;
   r->wasted = 0;
   r->whenwasted = 0;
   r->closefinish = 0;
   r->powered = 0;
-  for (int32_t i = 0; i < 8; i++) {
+  for (int32_t i = 0; i < ncars; i++) {
     if (r->prepit) cont_o_recopy(&r->starcar[i], cars[i], 0, 0, 0, 0);
     r->fix[i] = -1;
     r->dest[i] = -1;
     r->cntdest[i] = 0;
   }
   for (int32_t j = 0; j < 6; j++) {
-    for (int32_t k = 0; k < 8; k++) {
+    for (int32_t k = 0; k < ncars; k++) {
       cont_o_recopy(&r->car[j][k], cars[k], 0, 0, 0, 0);
       r->squash[j][k] = 0;
     }
   }
-  for (int32_t l = 0; l < 8; l++) {
+  for (int32_t l = 0; l < ncars; l++) {
     r->nr[l] = 0;
     for (int32_t n = 0; n < 200; n++) r->rspark[l][n] = -1;
     for (int32_t n2 = 0; n2 < 20; n2++) {
@@ -234,7 +238,7 @@ void record_rec(Record *r, ContO *contO, int32_t n, int32_t squash, int32_t last
 void record_cotchinow(Record *r, int32_t wasted) {
   if (r->caught < 300) return;
   r->wasted = wasted;
-  for (int32_t i = 0; i < 8; i++) {
+  for (int32_t i = 0; i < r->ncars; i++) {
     cont_o_recopy(&r->starcar[i], &r->car[0][i], 0, 0, 0, 0);
     r->hsquash[i] = r->squash[0][i];
     r->hfix[i] = r->fix[i];

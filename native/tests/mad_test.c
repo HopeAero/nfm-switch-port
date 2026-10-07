@@ -43,7 +43,7 @@ static void scenario(int32_t nfix, bool imEqualsXtIm, int32_t expectFixes) {
   CarDefine cd;
   car_define_init(&cd);
   if (g_ext) car_define_extended(&cd);
-  Record rpd;
+  static Record rpd;
   record_init(&rpd);
   CheckPoints cp;
   check_points_init(&cp);
@@ -133,7 +133,7 @@ static void handb_grounded_scenario(void) {
     cd.push[i]=100; cd.revpush[i]=100; cd.revlift[i]=10; cd.lift[i]=10;
     cd.comprad[i]=300.0f;
   }
-  Record rpd; record_init(&rpd);
+  static Record rpd; record_init(&rpd);
   CheckPoints cp; check_points_init(&cp);
   cp.pcs=0; cp.nfix=0; cp.n=4;
   cp.typ[0]=cp.typ[1]=cp.typ[2]=cp.typ[3]=1;
@@ -227,7 +227,7 @@ static void drive_scenario(int32_t nticks, bool upPressed, const char *label) {
   trackers_devidetrackers(&t, -10000, 20000, -10000, 20000);
   CarDefine cd;
   car_define_init(&cd);
-  Record rpd;
+  static Record rpd;
   record_init(&rpd);
   CheckPoints cp;
   check_points_init(&cp);
@@ -346,7 +346,7 @@ static void drive_track_scenario(int32_t nticks, bool leftPressed, const char *l
 
   CarDefine cd;
   car_define_init(&cd);
-  Record rpd;
+  static Record rpd;
   record_init(&rpd);
   CheckPoints cp;
   check_points_init(&cp);
@@ -464,7 +464,7 @@ static void drive_checkpoint_scenario(void) {
 
   CarDefine cd;
   car_define_init(&cd);
-  Record rpd;
+  static Record rpd;
   record_init(&rpd);
   CheckPoints cp;
   check_points_init(&cp);
@@ -565,7 +565,7 @@ static void drive_slope_scenario(void) {
 
   CarDefine cd;
   car_define_init(&cd);
-  Record rpd;
+  static Record rpd;
   record_init(&rpd);
   CheckPoints cp;
   check_points_init(&cp);
@@ -674,7 +674,7 @@ static void drive_multitracker_scenario(void) {
 
   CarDefine cd;
   car_define_init(&cd);
-  Record rpd;
+  static Record rpd;
   record_init(&rpd);
   CheckPoints cp;
   check_points_init(&cp);
@@ -768,7 +768,7 @@ static void drive_capsize_scenario(void) {
 
   CarDefine cd;
   car_define_init(&cd);
-  Record rpd;
+  static Record rpd;
   record_init(&rpd);
   CheckPoints cp;
   check_points_init(&cp);
@@ -880,7 +880,7 @@ static void drive_repair_scenario(void) {
 
   CarDefine cd;
   car_define_init(&cd);
-  Record rpd;
+  static Record rpd;
   record_init(&rpd);
   CheckPoints cp;
   check_points_init(&cp);
@@ -995,7 +995,7 @@ static void colide_scenario(void) {
 
   CarDefine cd;
   car_define_init(&cd);
-  Record rpd;
+  static Record rpd;
   record_init(&rpd);
   CheckPoints cp;
   check_points_init(&cp);
@@ -1118,7 +1118,7 @@ static void drive_gear_cap_scenario(void) {
 
   CarDefine cd;
   car_define_init(&cd);
-  Record rpd;
+  static Record rpd;
   record_init(&rpd);
   CheckPoints cp;
   check_points_init(&cp);
@@ -1193,7 +1193,7 @@ static void drive_reverse_cap_scenario(void) {
 
   CarDefine cd;
   car_define_init(&cd);
-  Record rpd;
+  static Record rpd;
   record_init(&rpd);
   CheckPoints cp;
   check_points_init(&cp);
@@ -1284,7 +1284,7 @@ static void drive_wall_scenario(int32_t nticks, const char *label) {
 
   CarDefine cd;
   car_define_init(&cd);
-  Record rpd;
+  static Record rpd;
   record_init(&rpd);
   CheckPoints cp;
   check_points_init(&cp);

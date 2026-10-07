@@ -37,7 +37,7 @@ void mad_reseto(Mad *mad, int32_t cn, ContO *contO, CheckPoints *checkPoints) {
     mad->cd->dammult[CAR_MASHEEN] = mad->xt->classicmode ? 0.225f : 0.3f;
     mad->cd->clrad[CAR_MASHEEN] = mad->xt->classicmode ? 30000 : 20000;
   }
-  for (int32_t i = 0; i < 8; i++) {
+  for (int32_t i = 0; i < NFM_MAX_CARS; i++) {
     mad->dominate[i] = false;
     mad->caught[i] = false;
   }

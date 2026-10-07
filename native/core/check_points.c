@@ -13,7 +13,8 @@ void check_points_init(CheckPoints *cp) {
   cp->stage = jtrunc_d(nfm_random() * 27.0) + 1; // trunc(random()*27.0)+1, no fr(), genuinely double
   strncpy(cp->name, "hogan rewish", sizeof(cp->name) - 1);
   cp->trackvol = 200;
-  for (int32_t i = 0; i < 8; i++) cp->pos[i] = 7;
+  for (int32_t i = 0; i < NFM_MAX_CARS; i++) cp->pos[i] = 7;
+  cp->nplayers = 7;
 }
 
 void check_points_calprox(CheckPoints *cp) {
@@ -35,6 +36,7 @@ int32_t check_points_py(int32_t n, int32_t n2, int32_t n3, int32_t n4) {
 
 void check_points_checkstat(CheckPoints *cp, Mad **mads, ContO **contOs, Record *record,
                              int32_t n, int32_t n2, int32_t n3) {
+  cp->nplayers = n;
   if (!cp->haltall) {
     cp->pcleared = mads[n2]->pcleared;
     for (int32_t i = 0; i < n; i++) {

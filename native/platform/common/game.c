@@ -84,6 +84,7 @@
 #include "wav_decode.h"
 #include "radical_mod.h"
 #include "bots.h"
+#include "nfm_limits.h"
 #include "specials.h"
 #include "diag.h"
 
@@ -1300,7 +1301,7 @@ static void draw_checkpoint_arrow(Graphics2D *g, Medium *m, XtGraphicsStub *xt,
     // :8673-8676 -- name the locked car, framed by a bracket pair: literally
     // "[" + 32 spaces + "]" in the source.
     hud_say_draw(g, m, 13, "[                                ]", 76, 67, 240, 0);
-    if (target >= 0 && target < BOTS_MAX_PLAYERS && sc[target] >= 0 && sc[target] < CAR_COUNT) {
+    if (target >= 0 && target < NFM_MAX_CARS && sc[target] >= 0 && sc[target] < CAR_COUNT) {
       hud_say_draw(g, m, 13, CAR_DISPLAY_NAMES[sc[target]], 0, 0, 0, 0);
     }
     return;
@@ -1891,7 +1892,7 @@ static void draw_pause_highlight(Graphics2D *g, int32_t x, int32_t y, int32_t w,
 // Nothing in the simulation ever sees a blended value.
 typedef struct { int32_t x, y, z, xz, xy, zy; } SmoothPose;
 typedef struct {
-  SmoothPose car[BOTS_MAX_PLAYERS];
+  SmoothPose car[NFM_MAX_CARS];
   int32_t x, y, z, xz, zy; // the camera
 } SmoothSnap;
 
@@ -2013,7 +2014,8 @@ static void draw_race_scene(Graphics2D *g, Medium *m, ContO **all_objs, int32_t 
 static void draw_arrace_board(Graphics2D *g, Medium *m, CheckPoints *cp, int32_t nplayers,
                               const int32_t *sc, bool names) {
   int32_t label_b = hud_tint(100.0, m->snap[2]);
-  for (int32_t place = 0; place < nplayers; place++) {
+  const int32_t rows = nplayers < 12 ? nplayers : 12;   // 76 + 30 * 11 is the last row that fits
+  for (int32_t place = 0; place < rows; place++) {
     int32_t found = 0;
     for (int32_t j = 0; j < nplayers && found == 0; j++) {
       if (cp->pos[j] != place || cp->dested[j] != 0) continue;
@@ -2120,7 +2122,7 @@ static void radar_stat(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad *mad,
   // grows by a pixel and drops the sky-blend when that car is the manually
   // locked one (never true here -- see xt_graphics.h on alocked).
   if (arrace) {
-    int32_t bx[BOTS_MAX_PLAYERS], by[BOTS_MAX_PLAYERS];
+    int32_t bx[NFM_MAX_CARS], by[NFM_MAX_CARS];
     for (int32_t j = 0; j < nplayers; j++) {
       bx[j] = jtrunc(96.0f - (float)(cp->opx[0] - cp->opx[j]) / cp->prox);
       by[j] = jtrunc(141.0f - (float)(cp->opz[j] - cp->opz[0]) / cp->prox);
@@ -3621,9 +3623,13 @@ static void draw_specials_hud(Graphics2D *g, Medium *m, const Specials *sp, cons
 // special's charge after the List Bars button (its D).
 static void draw_ext_board(Graphics2D *g, const Medium *m, const CheckPoints *cp, const Mad *mads, int32_t nplayers,
                            const int32_t *sc, const Specials *sp, bool arrace, bool listbars, bool step) {
-  static int32_t glowg[SPECIALS_MAX] = {65, 65, 65, 65, 65, 65, 65, 65};
-  static int32_t glowg2[SPECIALS_MAX] = {150, 150, 150, 150, 150, 150, 150, 150};
+  static int32_t glowg[SPECIALS_MAX], glowg2[SPECIALS_MAX];
   static bool glowphase[SPECIALS_MAX], glowphase2[SPECIALS_MAX];
+  static bool glow_ready;
+  if (!glow_ready) {
+    for (int32_t i = 0; i < SPECIALS_MAX; i++) { glowg[i] = 65; glowg2[i] = 150; }
+    glow_ready = true;
+  }
   font_set(FONT_BOLD, 11);
   for (int32_t place = 0; place < 7; place++) {
     for (int32_t a = 0; a < nplayers && a < SPECIALS_MAX; a++) {
@@ -4518,22 +4524,23 @@ int game_run(void) {
 
   // Racing-only state -- left uninitialised until the STATE_STAGE_SELECT
   // -> STATE_RACING transition below actually populates it exactly once.
-  // BOTS_MAX_PLAYERS (7) racers, index 0 always the human -- matches
-  // xtGraphics.java's inishcarselect() (`this.nplayers = 7`) for every
-  // single-player campaign/free-play race; slots 1-6 are AI-controlled
-  // via control_preform(), see the STATE_RACING tick loop below.
+  // Room for NFM_MAX_CARS racers, index 0 always the human; NFM 2 races 7
+  // (xtGraphics.java's inishcarselect(), `this.nplayers = 7`), Extended's
+  // normal mode 11 (race_nplayers below). Slots 1.. are AI-controlled via
+  // control_preform(), see the STATE_RACING tick loop below. Static: with
+  // twenty cars the Record and these arrays are too big for the stack.
   // Zeroed, not left uninitialised: every (re)build of a car goes through
   // cont_o_recopy(), which frees what the slot held before.
-  ContO co[BOTS_MAX_PLAYERS] = {0};
+  static ContO co[NFM_MAX_CARS];
   ContO *stage_objects = NULL;
   int32_t stage_count = 0;
-  Record rpd;
+  static Record rpd;
   memset(&rpd, 0, sizeof(rpd)); // record_free() before each race's record_init() needs it valid
   static CheckPoints cp;   // ~70KB with Extended's room (check_points.h): off the stack
   XtGraphicsStub xt;
-  Control control[BOTS_MAX_PLAYERS];
-  Mad mad[BOTS_MAX_PLAYERS];
-  static CarDefine live_cd[BOTS_MAX_PLAYERS]; // each racing car's own stats (see mad_init below)
+  static Control control[NFM_MAX_CARS];
+  static Mad mad[NFM_MAX_CARS];
+  static CarDefine live_cd[NFM_MAX_CARS]; // each racing car's own stats (see mad_init below)
   static Specials specials;                    // Extended's specials (specials.c)
   bool ext_listbars = false;                   // Extended's control.swap: list bars show specials
   // Which car (0-15) each slot drives -- ports xtGraphics.java's own
@@ -4546,7 +4553,7 @@ int game_run(void) {
   // block for why that stale-read-before-reroll ordering is deliberate,
   // not a bug (GameSparker.java:2723-2726: the u[].reset() loop runs
   // BEFORE resetstat()'s own sortcars() call).
-  int32_t sc[BOTS_MAX_PLAYERS] = {0, 0, 0, 0, 0, 0, 0};
+  int32_t sc[NFM_MAX_CARS] = {0};
   // xtGraphics.java:2354-2358 (loadstage()) -- NFM1 races only 5 cars,
   // not 7; every per-race loop below (construction, collision, checkstat,
   // AI, cleanup) is bounded by this instead of BOTS_MAX_PLAYERS, matching
@@ -4555,6 +4562,15 @@ int game_run(void) {
   // see bots.c) -- reading base_models[sc[i]] for an unbuilt slot i>=
   // nplayers is what used to segfault (reproduced via NFM1 stage 1).
   int32_t nplayers = BOTS_MAX_PLAYERS;
+  // The next race's car count when a mode wants other than NFM 2's 7 (and
+  // NFM 1's 5): Extended's normal mode sets 11. 0 = the mode's own.
+  // NFM_PLAYERS=n sets it headless.
+  int32_t race_nplayers = 0;
+  if (getenv("NFM_PLAYERS")) {
+    race_nplayers = atoi(getenv("NFM_PLAYERS"));
+    if (race_nplayers < 1) race_nplayers = 0;
+    if (race_nplayers > NFM_MAX_CARS) race_nplayers = NFM_MAX_CARS;
+  }
   ContO **all_objs = NULL;
   int32_t *visible_idx = NULL;
   int32_t *rank = NULL;
@@ -5630,12 +5646,18 @@ int game_run(void) {
       // set BEFORE the u[].reset() loop below, matching Java exactly, so
       // every per-race loop from here on (reset, sortcars, construction,
       // collision, checkstat, AI, cleanup) sees the right car count.
-      nplayers = BOTS_MAX_PLAYERS;
-      // xtGraphics.java:4847-4860 -- inishcarselect()'s fixed 7-car
-      // starting grid (x/z per slot, all facing the same way).
-      int32_t kXstart[BOTS_MAX_PLAYERS] = {0, -350, 350, 0, -350, 350, 0};
-      int32_t kZstart[BOTS_MAX_PLAYERS] = {-760, -380, -380, 0, 380, 380, 760};
-      if (gmode == GMODE_NFM1) {
+      nplayers = race_nplayers > 0 ? race_nplayers : BOTS_MAX_PLAYERS;
+      // The starting grid, rows of three: Extended's (GameSparker.java:
+      // 1555-1574), which for the first seven is exactly NFM 2's
+      // inishcarselect() grid (xtGraphics.java:4847-4860): x 0/-350/350,
+      // z -760/-380/-380 then 760 further back per row.
+      int32_t kXstart[NFM_MAX_CARS], kZstart[NFM_MAX_CARS];
+      for (int32_t j = 0; j < NFM_MAX_CARS; j++) {
+        static const int32_t kRowX[3] = {0, -350, 350};
+        kXstart[j] = kRowX[j % 3];
+        kZstart[j] = (j % 3 == 0 ? -760 : -380) + (j / 3) * 760;
+      }
+      if (gmode == GMODE_NFM1 && race_nplayers == 0) {
         nplayers = 5;
         kXstart[4] = 0;
         kZstart[4] = 760;
@@ -5684,6 +5706,18 @@ int game_run(void) {
       control_falseo(&control[0], 0);
 
       bots_sortcars(sc, (GameMode)gmode, &progress, stage_num);
+      // Past NFM 2's seven: random NFM 2 cars, no repeats while any are
+      // left (the modes that race more cars pick their own afterwards).
+      for (int32_t i = BOTS_MAX_PLAYERS; i < nplayers; i++) {
+        int32_t pick = 0;
+        for (int32_t tries = 0; tries < 64; tries++) {
+          pick = (int32_t)(nfm_random() * 16.0);
+          bool used = false;
+          for (int32_t k = 0; k < i; k++) used = used || sc[k] == pick;
+          if (!used || i >= 16) break;
+        }
+        sc[i] = pick;
+      }
 
       for (int32_t i = 0; i < nplayers; i++) {
         ContO *base = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : CAR_MODEL(sc[i]);
@@ -5712,10 +5746,9 @@ int game_run(void) {
       // (positions/sparks/dents/hcaught) so a previous race's highlight
       // reel never bleeds into this one.
       {
-        ContO *record_car_ptrs[8];
+        ContO *record_car_ptrs[NFM_MAX_CARS];
         for (int32_t i = 0; i < nplayers; i++) record_car_ptrs[i] = &co[i];
-        for (int32_t i = nplayers; i < 8; i++) record_car_ptrs[i] = &co[0];
-        record_reset(&rpd, record_car_ptrs);
+        record_reset(&rpd, record_car_ptrs, nplayers);
       }
       // Reset countdown -- Java xtGraphics.java:1501-1502 (fase 1 entry).
       starcnt = 130;
@@ -5822,8 +5855,8 @@ int game_run(void) {
       // reaction exactly (a fresh bot's control flags all start false from
       // control_init/control_falseo, so it coasts for exactly one tick
       // before its first preform() call fires).
-      Mad *mad_ptrs[BOTS_MAX_PLAYERS];
-      ContO *co_ptrs[BOTS_MAX_PLAYERS];
+      Mad *mad_ptrs[NFM_MAX_CARS];
+      ContO *co_ptrs[NFM_MAX_CARS];
       for (int32_t i = 0; i < nplayers; i++) { mad_ptrs[i] = &mad[i]; co_ptrs[i] = &co[i]; }
       // Every draw-phase EFFECT guards its own advance on m.interpolating
       // (16 sites across medium.c, cont_o.c and plane.c, all spelled
@@ -6770,7 +6803,17 @@ int game_run(void) {
         snprintf(hud, sizeof(hud), "%d / %d", cp.wasted, nplayers - 1); // Java: checkPoints.wasted / (nplayers-1)
         font_draw(&g, hud, 150, 18);
         draw_hud_img(&g, hud_images.pos, 42, 27);
-        if (cp.pos[0] >= 0 && cp.pos[0] < 8) draw_hud_img(&g, hud_images.rank[cp.pos[0]], 110, 28);
+        if (cp.pos[0] >= 0 && cp.pos[0] < 8) {
+          draw_hud_img(&g, hud_images.rank[cp.pos[0]], 110, 28);
+        } else if (cp.pos[0] >= 8) {
+          // 1.gif-8.gif are all there are; a bigger field's 9th+ as text.
+          char place[8];
+          snprintf(place, sizeof(place), "%dth", cp.pos[0] + 1);
+          hud_set_ink(&g, 0, 0, 100);
+          font_set(FONT_BOLD, 13);
+          font_draw(&g, place, 112, 43);
+          font_set(FONT_BOLD, 12);
+        }
 
         // Ports drawstat(maxmag, hitmag, newcar, power)'s own two
         // fillPolygon bars (damage bar top, power bar bottom) -- JS lines

@@ -17,6 +17,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "nfm_limits.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,8 +43,8 @@ typedef struct {
   // xt_graphics.c), same "wired but no key bound yet" state as
   // control->lookback elsewhere in this port.
   bool mutem;
-  bool isbot[8];
-  int32_t dcrashes[8];
+  bool isbot[NFM_MAX_CARS];
+  int32_t dcrashes[NFM_MAX_CARS];
   int32_t beststunt;
   int32_t laptime;
   int32_t fastestlap;
@@ -121,7 +122,7 @@ typedef struct {
   int32_t hud_clear;
   // xtGraphics.dested[]: the HUD's last-seen CheckPoints.dested, so a car's
   // wasting is announced once, the tick it changes.
-  int32_t hud_dested[8];
+  int32_t hud_dested[NFM_MAX_CARS];
 
   // Stunt announcer state -- XtGraphics.js's own `loop`/`spin`/`asay`/
   // `looped`/`pwcnt`/`pwflk`/`skidup` (see main.c's hud_stunt_detect()/
