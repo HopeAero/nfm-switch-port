@@ -11,7 +11,9 @@ Extended Mode v2.8's content and gameplay on this C engine. Builds
   Extended's own rendering is not ported.
 - **Extended's gameplay comes in:** its car stats, the physics and AI changes
   its author made on purpose, the specials, its content.
-- **Everything unlocked.** No `betalimit` / "END OF BETA".
+- **All content reachable.** No `betalimit` / "END OF BETA": every stage
+  and car can be won. Unlocking stays as it is -- played for, not open from
+  the start (the user, 2026-10-07).
 - **1000-piece cars**, for Revised and Recharged's.
 - Users add content without code (cars and stages from the SD card).
 
@@ -71,8 +73,8 @@ fixes for many cars in view (trackgrid, archive loading) are reused.
       stage 19 routed like 24, fewer air-stunt rules. control_reset_ext()
       for its hold/revstart. Fix targets stay NFM 2's nearest-hoop (stage
       files carry no `setpoint` yet).
-- [x] All open: both campaigns count as cleared at boot, so every stage
-      and car can be picked.
+- [x] Progression stays: stages and cars unlock by winning, as in NFM 2
+      (no betalimit to port: nothing past it is cut off).
 - [x] Stages: NFM 2's own files stay (the user wants the 2015 look).
       classictracks.radq is the same tracks from the older NFM 2: no
       decoration or piles, and its AI repair targets marked with
