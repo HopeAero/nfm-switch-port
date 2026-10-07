@@ -1,10 +1,10 @@
 # Nintendo Switch port — tasks
 
 This repository starts from the PS Vita / Linux native port (first commit,
-`599c005`) and adds a Switch target. The plan: first the Vita port as it is,
-running on Switch; then, a piece at a time, what the web port in `nfm-master`
-gained (Extended Mode, the car and stage editors, raw "Recharged" stats,
-community cars, lightBrake, 1000-piece cars, touch controls ...).
+`599c005`) and adds a Switch target. The priority is fidelity to the original
+game: fixes from the web port in `nfm-master` that bring the port closer to the
+Java come here; its extra content (Extended Mode, the editors, custom cars ...)
+would go to a separate branch or repository, only if requested.
 
 ## Build
 
@@ -227,7 +227,7 @@ PC with `nxlink -s`.
       bounce `- 0.3`, `tilt/1.5`, `gr += abs(n*1.5)`, ...); stages 28-32
       `loadnew`.
 
-## From nfm-master, later (small first)
+## Extra content from nfm-master (separate branch/repo, only if requested)
 
 - [ ] Raw "Recharged" stats in `car_define.c` (web `CarDefine.readRawStats`).
 - [ ] `lightBrake` (light 3), 1000-piece cars, Re-Lit arrow stunts.

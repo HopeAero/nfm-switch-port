@@ -224,13 +224,10 @@ build nor the game on the Vita has been checked.
   Performance Test report helps here.
 - PS Vita: none of this fork's changes have been tested on the Vita.
 
-**Not yet brought over from the web port**
-([HopeAero/nfm](https://github.com/HopeAero/nfm))
-- Extended Mode, the car and stage editors, custom cars from the SD card, and
-  the Extended, R&R and Origins car sets.
-- Rivals, raw "Recharged" car stats, `lightBrake`, 1000-piece cars and the
-  Re-Lit arrow stunts.
-- A low-detail mode that only changes the picture, and the lightweight intro.
+**Priority**: a port as faithful to the original game as possible. Extra
+content from the web port (Extended Mode, the editors, custom cars …) is not
+part of this repository's plan; if there is demand, it may come later in a
+separate branch or repository.
 
 ---
 

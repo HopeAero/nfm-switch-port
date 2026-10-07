@@ -233,13 +233,10 @@ el build de Vita ni el juego en la Vita.
   Performance Test ayuda con eso.
 - PS Vita: ninguno de los cambios de este fork se probó en la Vita.
 
-**Lo que falta traer del port web**
-([HopeAero/nfm](https://github.com/HopeAero/nfm))
-- Extended Mode, los editores de autos y pistas, autos propios desde la SD y
-  los sets de autos Extended, R&R y Origins.
-- Rivals, las stats "Recharged" de los autos, `lightBrake`, autos de 1000
-  piezas y las acrobacias con flechas de Re-Lit.
-- Un modo de bajo detalle que solo cambie la imagen, y la intro ligera.
+**Prioridad**: un port lo más fiel posible al juego original. El contenido
+extra del port web (Extended Mode, los editores, autos propios …) no forma
+parte del plan de este repositorio; si se pide, podría llegar más adelante en
+otra rama u otro repositorio.
 
 ---
 
