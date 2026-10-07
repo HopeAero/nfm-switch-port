@@ -25,6 +25,12 @@ void mad_init(Mad *mad, CarDefine *cd, Medium *m, Record *rpd, XtGraphicsStub *x
 
 void mad_reseto(Mad *mad, int32_t cn, ContO *contO, CheckPoints *checkPoints) {
   mad->cn = cn;
+  // Extended (Madness.java:1154-1155): an empty bar; the next tick refills
+  // speclast (an empty bar and no special left).
+  mad->spatk = 0.0f;
+  mad->speclast = 0.0f;
+  mad->speclast2 = 120.0f;
+  mad->specialact = mad->frozen = mad->strswap = mad->leech = mad->redstr = false;
   // Extended (Madness.java:1080-1087): M A S H E E N takes less damage and
   // reaches further in Classic Mode, in this car's copy of the tables.
   if (mad->xt->extended) {
@@ -693,6 +699,35 @@ static float swit_speed(bool ext, float power, int32_t swits) {
 // `acelf / 2.0f + power * acelf / 196.0f`, all float (acelf is float).
 static float acel_step(float power, float acelf) {
   return acelf / 2.0f + power * acelf / 196.0f;
+}
+
+// Extended's special bar, each tick (Madness.java:3074-3151, outside career):
+// it creeps up from the last landed stunt, a full one (120) can be fired,
+// and a running special drains speclast at 343000 / 2500000 a tick (about
+// 875 ticks); when it is spent the bar empties.
+static void mad_special_tick(Mad *mad, Control *control) {
+  if (mad->im > 0 && mad->powerup <= 100.0f) mad->spatk += mad->powerup / 500.0f;
+  else mad->spatk += mad->powerup / 3500.0f;
+  if (control->spatk && mad->spatk < 120.0f) control->spatk = false;
+  if (mad->spatk > 120.0f) mad->spatk = 120.0f;
+  if (mad->spatk < 0.0f) mad->spatk = 0.0f;
+  const float drain = 343000.0f / 2500000.0f;
+  if ((control->spatk && mad->speclast <= 120.0f && mad->spatk == 120.0f) ||
+      (!control->spatk && mad->speclast != 120.0f && mad->spatk == 120.0f)) {
+    mad->speclast -= drain;
+    mad->speclast2 -= drain;
+  }
+  if (mad->speclast2 < 0.0f) mad->speclast2 = 0.0f;
+  if (mad->speclast > 120.0f) mad->speclast = 120.0f;
+  if (mad->speclast < 0.0f) mad->speclast = 0.0f;
+  if (mad->speclast == 0.0f && mad->spatk == 120.0f) {
+    mad->spatk = 0.0f;
+    mad->specialact = false;
+  }
+  if (mad->speclast == 0.0f && mad->spatk == 0.0f) {
+    mad->speclast = 120.0f;
+    mad->speclast2 = 120.0f;
+  }
 }
 
 void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, CheckPoints *checkPoints) {
@@ -1868,6 +1903,13 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
           if (abs(mad->travxz) > 90) mad->powerup = mad->powerup + (float)abs(mad->travxz) / 18.0f;
           if (mad->surfer) mad->powerup = mad->powerup + (mad->xt->extended ? 15.0f : 30.0f);   // Extended halves it (Madness.java:2869)
           mad->power = mad->power + mad->powerup;
+          // Extended (Madness.java:2900-2916): a landed stunt charges the
+          // special bar too -- a third of it for the AI's ordinary stunts, a
+          // fifth for the player's and for big ones -- unless one is running.
+          if (mad->xt->extended && !control->spatk) {
+            if (mad->im > 0 && mad->powerup <= 100.0f) mad->spatk += mad->powerup / 3.0f;
+            else mad->spatk += mad->powerup / 5.0f;
+          }
           if (mad->im == mad->xt->im && jtrunc(mad->powerup) > mad->rpd->powered && mad->rpd->wasted == 0 &&
               (mad->powerup > 60.0f || checkPoints->stage == 1 || checkPoints->stage == 2)) {
             mad->rpdcatch = 30;
@@ -1949,4 +1991,6 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
       }
     }
   }
+  if (mad->xt->extended) mad_special_tick(mad, control);
+
 }

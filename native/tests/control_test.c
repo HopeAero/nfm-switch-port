@@ -28,6 +28,7 @@
 #include "../core/cont_o.h"
 #include "../core/car_define.h"
 #include "../core/trackers.h"
+#include "../core/xt_graphics.h"
 
 static int failures = 0;
 #define CHECK(cond, msg) do { \
@@ -239,6 +240,87 @@ static void run_forget_flag_scenario(bool special_flag, bool *out_forget) {
   medium_free(&m);
 }
 
+
+// Extended Mode's decision cycle (xt.extended): one preform() on the probe's
+// scaffolding, random() pinned at 0.5, the AI (im 1) in first and the player
+// in fourth, Tornado Shark (NFM 2's car 0, Extended's 23).
+static void run_decide(bool ext, int32_t stage, Control *out) {
+  Medium m;
+  medium_init(&m);
+  m.interpolating = true;
+  m.rlog[0] = 0.5f;
+  m.rn = 1;
+  m.rp = 0;
+  CarDefine cd;
+  memset(&cd, 0, sizeof(cd));
+  cd.maxmag[0] = 1000;
+  XtGraphicsStub xt;
+  xt_graphics_stub_init(&xt);
+  xt.extended = ext;
+  xt.classicmode = ext;
+  Mad mad;
+  memset(&mad, 0, sizeof(mad));
+  mad.mtouch = true;
+  mad.im = 1;
+  mad.cn = 0;
+  mad.power = 90.0f;
+  mad.cd = &cd;
+  mad.xt = &xt;
+  ContO contO;
+  memset(&contO, 0, sizeof(contO));
+  contO.x = 500;
+  contO.z = 500;
+  contO.xz = 45;
+  CheckPoints cp;
+  memset(&cp, 0, sizeof(cp));
+  cp.stage = stage;
+  int32_t posArr[7] = {3, 0, 1, 2, 4, 5, 6};
+  for (int i = 0; i < 7; i++) {
+    cp.pos[i] = posArr[i];
+    cp.opx[i] = 1000 * i;
+    cp.opz[i] = 1000 * i;
+  }
+  cp.typ[0] = 1;
+  cp.fn = 2;
+  cp.n = 10;
+  cp.nsp = 4;
+  for (int i = 0; i < 10; i++) { cp.x[i] = 100 * (i + 1); cp.z[i] = 100 * (i + 1) + 50; }
+  Trackers trackers;
+  trackers_init(&trackers);
+  Control c;
+  control_init(&c, &m);
+  c.stcnt = 10;
+  c.statusque = 5;
+  control_preform(&c, &mad, &contO, &cp, &trackers);
+  *out = c;
+  medium_free(&m);
+}
+
+static void test_preform_extended(void) {
+  Control base, ext;
+  // Classic 1 (stage 11): NFM 2 makes a leading AI wait for the player
+  // (upwait = 3^3 * 2.0 = 54); Extended has no rubber-banding.
+  run_decide(false, 11, &base);
+  run_decide(true, 11, &ext);
+  CHECK(base.upwait == 54, "NFM 2: a leading AI waits on stage 11");
+  CHECK(ext.upwait == 0 && ext.acuracy == 0, "Extended: no rubber-banding (upwait/acuracy 0)");
+  // Classic 2 (stage 12): NFM 2 lets a leading AI skip up to 1.0, Extended
+  // caps it at 0 (only Classic 4 and 5 keep a cap).
+  run_decide(false, 12, &base);
+  run_decide(true, 12, &ext);
+  CHECK(base.skiplev == 1.0f && ext.skiplev == 0.0f, "skiplev cap: stage 12 is 1.0 in NFM 2, 0 in Extended");
+  run_decide(true, 14, &ext);
+  CHECK(ext.skiplev == 0.5f, "Extended keeps Classic 4's 0.5 cap");
+  run_decide(true, 15, &ext);
+  CHECK(ext.skiplev == 0.2f, "Extended keeps Classic 5's 0.2 cap");
+  // Classic 3 (stage 13): turn type 1 for every car in Extended; in NFM 2
+  // only Sword of Justice (car 9) gets it, Tornado Shark rolls (int)(0.5*4).
+  run_decide(false, 13, &base);
+  run_decide(true, 13, &ext);
+  CHECK(base.turntyp == 2 && ext.turntyp == 1, "stage 3's turn type 1 for every car in Extended");
+  CHECK(!ext.usebounce && ext.clrnce == 5, "Extended: usebounce never rolled, clrnce 5");
+}
+
 int main(void) {
   for (int32_t i = 0; i < 33; i++) {
     const Expect *e = &kExpect[i];
@@ -293,6 +375,7 @@ int main(void) {
   CHECK(control_py(10, 3, 20, 7) == (10 - 3) * (10 - 3) + (20 - 7) * (20 - 7), "py");
 
   test_preform_matches_java_probe();
+  test_preform_extended();
 
   {
     bool forget_special = false, forget_normal = false;

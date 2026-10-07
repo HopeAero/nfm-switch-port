@@ -125,6 +125,7 @@ bool platform_poll(bool held[BTN_COUNT]) {
   // taking that away would leave no way out of the window, so pause is
   // Return-only here.
   held[BTN_PAUSE] = keys[SDL_SCANCODE_RETURN];
+  held[BTN_SPECIAL] = keys[SDL_SCANCODE_Q];
   return running;
 }
 

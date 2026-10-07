@@ -221,6 +221,7 @@ bool platform_poll(bool held[BTN_COUNT]) {
   // platform, and SELECT goes back to being the SFX mute it was before
   // pause needed a home.
   held[BTN_PAUSE] = (pad.buttons & SCE_CTRL_START) != 0;
+  held[BTN_SPECIAL] = (pad.buttons & SCE_CTRL_RTRIGGER) != 0;
 
   // No window-close/OS-quit event on this platform, and START now pauses
   // instead of quitting (see BTN_PAUSE above), so nothing here ever ends

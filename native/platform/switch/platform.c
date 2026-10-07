@@ -230,5 +230,6 @@ bool platform_poll(bool held[BTN_COUNT]) {
   held[BTN_ARRACE] = (b & g_bind[BIND_ARRACE]) != 0;
   held[BTN_RADAR] = (b & g_bind[BIND_RADAR]) != 0;
   held[BTN_PAUSE] = (b & g_bind[BIND_PAUSE]) != 0;
+  held[BTN_SPECIAL] = (b & g_bind[BIND_SPECIAL]) != 0;
   return running;
 }

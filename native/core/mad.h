@@ -116,6 +116,13 @@ typedef struct Mad {
   int32_t shakedam, outshakedam;
   bool colidim;
 
+  // Extended's special (Madness.java): the bar (`spatk`, 0..120, filled by
+  // stunts), what is left of a running special (`speclast`, 120 down to 0),
+  // and the conditions specials.c puts on cars.
+  float spatk, speclast, speclast2;
+  bool specialact, frozen, strswap, leech, redstr;
+  float strengthreduce;  // the strength a swap hands over
+
   CarDefine *cd;   // borrowed
   Medium *m;       // borrowed
   Record *rpd;     // borrowed

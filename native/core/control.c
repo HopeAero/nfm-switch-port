@@ -166,6 +166,406 @@ static bool control_rand_gt_rand(Medium *m) {
   return a > b;
 }
 
+// ---- Extended Mode (xt->extended) ------------------------------------------
+//
+// Extended's Control.preform is NFM 2's with its per-stage tuning rewritten
+// (decompilation/extended/java-src/Control.java; research/extended-mode/
+// engine-analysis.md sections 3 and 6). Ported here for Classic Mode: career
+// and tourney branches are left out. Extended numbers NFM 2's stages 1-17
+// (this port races them as 11-27) and its cars 23-38 (NFM 2's 0-15 here), so
+// the code below compares Extended's own numbers through `st` and ext_cn().
+
+// Extended's number for a car: NFM 2's 0-15 are its 23-38; its own 0-22
+// will sit at 16-38 here.
+static int32_t ext_cn(int32_t cn) { return cn < 16 ? cn + 23 : cn - 16; }
+
+#define EXT_NPLAYERS 7 // Classic Mode races seven cars
+
+/** One decision cycle (stcnt > statusque) of Extended's preform,
+ * Control.java:159-4894 in Classic Mode. Rubber-banding is gone: acuracy and
+ * upwait are never computed here, so they stay at reset's 0. */
+static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
+  Medium *m = c->m;
+  const int32_t st = cp->stage - 10;
+  const int32_t cn = ext_cn(mad->cn);
+  const int32_t im = mad->im;
+
+  // :159-271 -- clrnce only changes in career and the tourney.
+  c->clrnce = 5;
+
+  // :272-305 -- skiplev: of NFM 2's per-stage caps only Classic 4 and 5 stay.
+  float f = 0.0f;
+  if (st == 4) f = 0.5f;
+  if (st == 5) f = 0.2f;
+  if (cp->pos[im] - cp->pos[0] < -1) {
+    c->skiplev = (float)((double)c->skiplev + 0.2);
+    if (c->skiplev > f) c->skiplev = f;
+  } else {
+    c->skiplev = (float)((double)c->skiplev - 0.1);
+    if (c->skiplev < 0.0f) c->skiplev = 0.0f;
+  }
+  if (st == 14) c->skiplev = 1.0f;
+  if (st == 16 || st == 15) c->skiplev = 0.0f;
+
+  // :306-317 -- NFM 2 cleared rampp -1 below 75 power; Extended only at 75.
+  c->rampp = jtrunc(medium_random(m) * 4.0f - 2.0f);
+  if (mad->power == 98.0f) c->rampp = -1;
+  if (mad->power == 75.0f && c->rampp == -1) c->rampp = 0;
+  if (mad->power < 60.0f) c->rampp = 1;
+
+  // :335-440 -- stage 3's turn type now for every car, not one.
+  if (c->cntrn != 0) {
+    c->cntrn--;
+  } else {
+    c->agressed = false;
+    c->turntyp = jtrunc(medium_random(m) * 4.0f);
+    if (st == 3) c->turntyp = 1;
+    if (cp->pos[0] - cp->pos[im] < 0) c->turntyp = jtrunc(medium_random(m) * 2.0f);
+    if (st == 8) c->turntyp = 2;
+    if (st == 14 || st == 20 || st == 6) c->turntyp = 0;
+    if (c->attack != 0) {
+      c->turntyp = 2;
+      if (st == 11) c->turntyp = jtrunc(medium_random(m) * 3.0f);
+      if (st == 16 && cp->clear[im] - cp->clear[0] >= 5) c->turntyp = 0;
+    }
+    if (st == 6 || st == 7 || st == 10 || st == 11 || st == 12 || st == 14 || st == 16 || st == 17) c->agressed = true;
+    c->cntrn = 5;
+  }
+
+  // :441-452
+  c->saftey = jtrunc_d((double)((98.0f - mad->power) / 2.0f) * ((double)(medium_random(m) / 2.0f) + 0.5));
+  if (c->saftey > 20) c->saftey = 20;
+
+  // :453-486 -- no more NFM 2's landing-care multipliers per stage.
+  f = (st == 1) ? 0.9f : 0.0f;
+  c->mustland = f + (float)((double)(medium_random(m) / 2.0f) - 0.25);
+  if (mad->power <= 50.0f) c->mustland -= 0.5f;
+  else c->mustland = 0.0f;
+  if (st == 8 || st == 10 || st == 12 || st == 14 || st == 22 || st == 6) c->mustland = 0.0f;
+
+  // :487-655 -- stunt plans.
+  c->stuntf = 0;
+  if (st == 8 && mad->pcleared == 57) c->stuntf = 1;
+  if (st == 10) {
+    if (cp->pos[0] >= cp->pos[im] && abs(cp->clear[0] - mad->clear) < 2 && mad->clear >= 2) {
+      c->stuntf = 3;
+    } else {
+      c->stuntf = 4;
+      c->saftey = 10;
+    }
+    if (cn == 12) c->stuntf = 1;
+  }
+  if (st == 11 && mad->pcleared == 21) c->stuntf = 1;
+  if (st == 10) c->stuntf = (mad->pcleared != 44 && mad->pcleared < 140) ? 2 : 1;
+  if (st == 14) {
+    c->saftey = 10;
+    if (mad->pcleared >= 4 && mad->pcleared < 70) c->stuntf = 4;
+    else if (cn == 12 || cn == 8) c->stuntf = 2;
+    if (cn == 14) c->stuntf = 6;
+  }
+  if (st == 16) {
+    c->mustland = 0.0f;
+    c->saftey = 10;
+    if ((mad->pcleared == 15 || mad->pcleared == 51) && ((double)medium_random(m) > 0.4 || c->trfix != 0)) c->stuntf = 7;
+    if (mad->pcleared == 42) c->stuntf = 1;
+    if (mad->pcleared == 77) c->stuntf = 7;
+    c->avoidnlev = jtrunc(2700.0f * medium_random(m));
+  }
+
+  // :656-760
+  c->trickprf = (mad->power - 38.0f) / 50.0f - medium_random(m) / 2.0f;
+  if (mad->power < 60.0f) c->trickprf = -1.0f;
+  if (st == 3 && im == 10 && (double)c->trickprf > 0.7) c->trickprf = 0.7f;
+  if (st == 6 && (double)c->trickprf > 0.3) c->trickprf = 0.3f;
+  if (st == 8 && (double)c->trickprf > 0.2) c->trickprf = 0.2f;
+  if (st == 9) {
+    if ((double)c->trickprf > 0.5) c->trickprf = 0.5f;
+    if ((im == 10 || im == 9) && (double)c->trickprf > 0.3) c->trickprf = 0.3f;
+  }
+  if (st == 11 && c->trickprf != -1.0f) c->trickprf *= 0.75f;
+  if (st == 12 && (mad->pcleared == 55 || mad->pcleared == 7)) {
+    c->trickprf = -1.0f;
+    c->stuntf = 5;
+  }
+  if (st == 13 && (double)c->trickprf > 0.4) c->trickprf = 0.4f;
+  if (st == 14 && (double)c->trickprf > 0.5) c->trickprf = 0.5f;
+  if (st == 17) c->trickprf = -1.0f;
+
+  // :761-800 -- usebounce is never rolled in Extended (stays false).
+  const float dmg = 100.0f * (float)mad->hitmag / (float)mad->cd->maxmag[mad->cn];
+  c->perfection = medium_random(m) <= (float)mad->hitmag / (float)mad->cd->maxmag[mad->cn];
+  if (dmg > 60.0f) c->perfection = true;
+  if (st == 6 || st == 8 || st == 9 || st == 10 || st == 11 || st == 12 || st == 14 || st == 16) c->perfection = true;
+
+  // :1220-2420 -- picking a car to attack. No 0.7 cap on the odds, and a
+  // wasted car is never the one aimed at.
+  if (c->attack == 0) {
+    bool flag1 = true;
+    if (st == 1 || st == 4 || st == 9 || st == 13 || st == 16) flag1 = c->afta;
+    if (st == 8 || st == 6 || st == 10 || st == 14) flag1 = false;
+    bool flag2 = false;
+    if (st == 3 && (cn == 9 || cn == 32)) flag2 = true;
+    if (st == 8 && (cn == 11 || cn == 34)) flag2 = true;
+    if (st == 9 && cp->clear[0] >= 20) flag2 = true;
+    if (st == 11 || st == 13 || st == 15 || st == 16) flag2 = true;
+    int32_t j2 = 60;
+    if (st == 3 || st == 11 || st == 17 || st == 10 || st == 8) j2 = 30;
+    if ((st == 2 || st == 13) && (cn == 13 || cn == 36)) j2 = 50;
+    if (st == 4) j2 = 20;
+    if (st == 5 && im != 6) j2 = 40;
+    if (st == 7) j2 = 40;
+    if (st == 8 && (cn == 11 || cn == 34)) j2 = 40;
+    if (st == 9 && flag2) j2 = 30;
+    if (st == 11 && c->bulistc) j2 = 30;
+    if (st == 12) j2 = 50;
+    if (st == 15 && c->bulistc) j2 = 40;
+    if (st == 16) {
+      if (cn == 11 && cp->clear[0] == 27) j2 = 0;
+      if (cn == 15 || cn == 9) j2 = 50;
+      if (cn == 11) j2 = 40;
+      if (cp->pos[0] > cp->pos[im]) j2 = 80;
+    }
+
+    for (int32_t i4 = 0; i4 < EXT_NPLAYERS; i4++) {
+      if (i4 == im || cp->clear[i4] == -1) continue;
+      int32_t heading = contO->xz;
+      if (c->zyinv) heading += 180;
+      while (heading < 0) heading += 360;
+      while (heading > 180) heading -= 360;
+      const int32_t sign = (cp->opx[i4] - contO->x >= 0) ? 180 : 0;
+      int32_t bearing = jtrunc_d(90.0 + (double)sign +
+          atan((double)(cp->opz[i4] - contO->z) / (double)(cp->opx[i4] - contO->x)) / NFM_DEG);
+      while (bearing < 0) bearing += 360;
+      while (bearing > 180) bearing -= 360;
+      int32_t k8 = abs(heading - bearing);
+      if (k8 > 180) k8 = abs(k8 - 360);
+
+      const int32_t dcl = abs(cp->clear[i4] - mad->clear);
+      int32_t l6 = 2000 * (dcl + 1);
+      if (st == 3 && (cn == 9 || cn == 32) && l6 < 12000) l6 = 12000;
+      if (st == 4 && l6 < 4000) l6 = 4000;
+      if (st == 8 && (cn == 11 || cn == 34)) {
+        if (l6 < 12000) l6 = 12000;
+        k8 = 10;
+      }
+      if (st == 9 && (mad->pcleared == 13 || mad->pcleared == 33 || flag2) && l6 < 12000) l6 = 12000;
+      if (st == 11) {
+        if (!c->bulistc) {
+          if (l6 < 6000) l6 = 6000;
+        } else {
+          l6 = 8000;
+          k8 = 10;
+          c->afta = true;
+        }
+      }
+      if (st == 12 && c->bulistc) { l6 = 6000; k8 = 10; }
+      if (st == 13) l6 = 21000;
+      if (st == 15) {
+        l6 *= dcl + 1;
+        if (c->bulistc) { l6 = 4000 * (dcl + 1); k8 = 10; }
+      }
+      if (st == 10) l6 = 16000;
+      if (st == 16) {
+        if (cn == 13 && c->bulistc) {
+          if (c->oupnt == 33) l6 = 17000;
+          if (c->oupnt == 51) l6 = 30000;
+          if (c->oupnt == 15 && cp->clear[0] >= 14) l6 = 60000;
+          k8 = 10;
+        }
+        if (cn == 15 || cn == 9) l6 *= dcl + 1;
+        if (cn == 11) l6 = 4000 * (dcl + 1);
+      }
+      int32_t i6 = 85 + 15 * (dcl + 1);
+      if (st == 13) i6 = 45;
+      if (st == 16 && (cn == 15 || cn == 9 || cn == 11 || cn == 14)) i6 = 50 + 70 * dcl;
+
+      if (k8 < i6 && control_py(contO->x / 100, cp->opx[i4] / 100, contO->z / 100, cp->opz[i4] / 100) < l6 &&
+          mad->power > (float)j2) {
+        float f2 = (float)(35 - dcl * 10);
+        if (f2 < 1.0f) f2 = 1.0f;
+        float f3 = (float)((cp->pos[im] + 1) * (5 - cp->pos[i4])) / f2;
+        if (st == 8) {
+          if (cn == 34 || (cn == 36 && c->bulistc)) f3 *= 1.5f;
+          else f3 = 0.0f;
+        }
+        if (st == 9) {
+          if (i4 != 0) f3 = (float)((double)f3 * 0.5);
+          if (mad->pcleared != 13 && mad->pcleared != 33 && !flag2) f3 *= 0.5f;
+          if ((im == 10 || im == 9) && i4 != 0) f3 = 0.0f;
+        }
+        if (st == 6 || (st == 10 && !c->bulistc) || st == 14) f3 = 0.0f;
+        if (st == 11 && cn == 36 && c->bulistc && i4 == 0) f3 = 1.0f;
+        if (st == 12) {
+          if (cn != 34 && cn != 36) f3 = 0.0f;
+          if (cn == 36 && i4 == 0) f3 = 1.0f;
+        }
+        if (st == 15) {
+          if (cp->pos[im] == 0) f3 = (float)((double)f3 * 0.5);
+          if (cp->pos[0] < cp->pos[im]) f3 *= 2.0f;
+          if (c->bulistc && i4 == 0) f3 = 1.0f;
+        }
+        if (st == 16) {
+          if (cn == 37) f3 = (float)((double)f3 * 0.5);
+          else if (cp->pos[0] < cp->pos[im] && cp->clear[0] - cp->clear[im] != 1) f3 *= 2.0f;
+          if (cn == 36 && i4 == 0) f3 = 1.0f;
+          if (cp->pos[im] == 0 || (cp->pos[im] == 1 && cp->pos[0] == 0)) f3 = 0.0f;
+          if (cp->clear[im] - cp->clear[0] >= 5 && i4 == 0) f3 = 1.0f;
+          if (cn == 33 || cn == 35) f3 = 0.0f;
+        }
+        if (i4 != 0 && cp->pos[0] < cp->pos[im]) f3 = 0.0f;
+        if (i4 != 0 && flag2) f3 = 0.0f;
+        if (st == 7 && im == EXT_NPLAYERS - 1 && i4 == 0) f3 = (float)((double)f3 * 1.5);
+
+        if (medium_random(m) < f3) {
+          c->attack = 40 * (dcl + 1);
+          if (c->attack > 500) c->attack = 500;
+          c->aim = 0.0f;
+          if (st == 3 && im == EXT_NPLAYERS - 1 && control_rand_gt_rand(m)) c->aim = 1.0f;
+          if (st == 4) c->aim = (i4 == 0 && cp->pos[0] < cp->pos[im]) ? 1.5f : medium_random(m);
+          if (st == 5) c->aim = medium_random(m) * 1.5f;
+          if (st == 8 && (cn == 11 || cn == 34) && control_rand_gt_rand(m)) c->aim = 0.76f + medium_random(m) * 0.76f;
+          if (st == 9 && (mad->pcleared == 13 || mad->pcleared == 33)) c->aim = 1.0f;
+          if (st == 12 || st == 6 || st == 15) {
+            if (!c->bulistc) {
+              c->aim = medium_random(m);
+            } else {
+              c->aim = 0.75f + medium_random(m) / 2.0f;
+              if (c->attack > 150) c->attack = 150;
+            }
+          }
+          if (st == 12) {
+            if (control_rand_gt_rand(m)) c->aim = 0.7f;
+            if (c->bulistc && c->attack > 150) c->attack = 150;
+          }
+          if (st == 13 && c->attack > 60) c->attack = 60;
+          if (st == 15) {
+            c->aim = medium_random(m) * 1.5f;
+            c->attack /= 2;
+            c->exitattack = control_rand_gt_rand(m);
+          }
+          if (st == 16) {
+            if (cn != 36) {
+              c->aim = medium_random(m) * 1.5f;
+              if (dcl <= 2 || cn == 37) c->attack /= 3;
+            } else {
+              c->aim = 0.76f;
+              c->attack = 150;
+            }
+          }
+          if (cp->dested[i4] == 0) c->acr = i4;
+          c->turntyp = jtrunc(1.0f + medium_random(m) * 2.0f);
+        }
+      }
+      if (flag1 && k8 > 100 &&
+          control_py(contO->x / 100, cp->opx[i4] / 100, contO->z / 100, cp->opz[i4] / 100) < 300 &&
+          (double)medium_random(m) > 0.6 - (double)((float)cp->pos[im] / 10.0f)) {
+        c->clrnce = 0;
+        c->acuracy = 0;
+      }
+    }
+  }
+
+  // :4535-4610 -- when to go and get fixed.
+  bool flag3 = false;
+  if (st == 6 || st == 10 || st == 17) flag3 = true;
+  if ((st == 8 && mad->pcleared != 73) || st == 14 || st == 20) flag3 = true;
+  if (c->trfix == 3) {
+    c->upwait = 0;
+    c->acuracy = 0;
+    c->skiplev = 1.0f;
+    c->clrnce = 2;
+  } else {
+    c->trfix = 0;
+    const int32_t j3 = (st == 16) ? 40 : 50;
+    if (dmg > (float)j3) c->trfix = 1;
+    if (!flag3) {
+      int32_t k9 = 80;
+      if (st == 9) k9 = 70;
+      if (st == 15 && mad->pcleared == 91) k9 = 50;
+      if (st == 16 && cp->clear[im] - cp->clear[0] >= 5 && cn != 10 && cn != 12 && cn != 33 && cn != 35) k9 = 50;
+      if (dmg > (float)k9) c->trfix = 2;
+      c->fixby = k9;
+    } else {
+      c->fixby = 100;
+    }
+  }
+
+  // :4611-4890 -- bulistc, the scripted detours.
+  if (c->bulistc) {
+    if (st == 8) {
+      c->runbul--;
+      if (mad->pcleared == 10) c->runbul = 0;
+      if (c->runbul <= 0) c->bulistc = false;
+    }
+  } else {
+    if (st == 8 && cn == 34 && mad->pcleared == 35) {
+      mad->pcleared = 73;
+      mad->clear = 0;
+      c->bulistc = true;
+      c->runbul = jtrunc(100.0f * medium_random(m));
+    }
+    if ((st == 11 || st == 12) && cn == 36) c->bulistc = true;
+    if (st == 15 && cp->clear[0] - mad->clear >= 3 && c->trfix == 0) {
+      c->bulistc = true;
+      c->oupnt = -1;
+    }
+    if (st == 16) {
+      if (cn == 36 && cp->pcleared == 8) {
+        c->bulistc = true;
+        c->attack = 0;
+      }
+      if (cn == 34 && cp->clear[0] - mad->clear >= 2 && c->trfix == 0) {
+        c->bulistc = true;
+        c->oupnt = -1;
+      }
+    }
+    if ((st == 2 || st == 3 || st == 4 || st == 8 || st == 10) && (cn == 13 || cn == 36) &&
+        abs(cp->clear[0] - mad->clear) >= 2) {
+      c->bulistc = true;
+    }
+  }
+
+  c->stcnt = 0;
+  c->statusque = jtrunc(20.0f * medium_random(m));
+}
+
+void control_reset_ext(Control *c, CheckPoints *cp, int32_t n) {
+  // NFM 2's per-stage hold/revstart/statusque in control_reset give way to
+  // Extended's (Control.java:9824-9937, Classic Mode).
+  const int32_t hold0 = c->hold, statusque0 = c->statusque;
+  control_reset(c, cp, n);
+  const int32_t st = cp->stage - 10, cn = ext_cn(n);
+  c->hold = hold0;
+  c->statusque = statusque0;
+  c->revstart = 0;
+  c->stuck = 0;
+  c->downuse = 0;
+  c->fewsecs = 0;
+  c->fewsecson = false;
+  c->fixby = 80;
+  if (st == 8) c->hold = 50;
+  if (st == 10) c->hold = 30;
+  if (st == 11) {
+    if (cn != 13 && cn != 18 && cn != 19) {
+      c->hold = 35;
+      c->revstart = 25;
+    } else {
+      c->hold = 5;
+    }
+    c->statusque = 0;
+  }
+  if (st == 12) {
+    if (cn != 13) {
+      c->hold = jtrunc(20.0f + 10.0f * medium_random(c->m));
+      c->revstart = jtrunc(10.0f + 10.0f * medium_random(c->m));
+    } else {
+      c->hold = 5;
+    }
+    c->statusque = 0;
+  }
+  if (st == 16) c->hold = 20;
+}
+
 void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoints, Trackers *trackers) {
   Medium *m = c->m;
   c->left = false;
@@ -173,10 +573,15 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
   c->up = false;
   c->down = false;
   c->handb = false;
+  // Extended Mode: its own decisions and the few per-tick changes below.
+  const bool ext = mad->xt != NULL && mad->xt->extended;
+  if (ext) c->spatk = false; // Control.java:152; the AI's special fires from nitroandspecials
   if (mad->dest) return; // Control.js:219 `if (!mad.dest) { ... }` wraps the entire rest of the method
 
   if (mad->mtouch) {
-    if (c->stcnt > c->statusque) {
+    if (c->stcnt > c->statusque && ext) {
+      decide_ext(c, mad, contO, checkPoints);
+    } else if (c->stcnt > c->statusque) {
       // ======================================================================
       // SECTION 1 -- per-decision-cycle personality/difficulty tuning +
       // attack-target selection. Control.js:221-1065. Only re-rolls when
@@ -711,7 +1116,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
     // and turns it into a `pan` bearing; SECTION 3 (right after) turns
     // that bearing into left/right/handb/down.
     // ======================================================================
-    bool touchingGround = c->usebounce ? mad->wtouch : mad->mtouch;
+    bool touchingGround = (c->usebounce && !ext) ? mad->wtouch : mad->mtouch;
     if (touchingGround) {
       if (c->trickfase != 0) c->trickfase = 0;
       if (c->trfix == 2 || c->trfix == 3) c->attack = 0;
@@ -719,7 +1124,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
       if (c->attack == 0) {
         if (c->upcnt < 30) {
           if (c->revstart <= 0) {
-            c->up = true;
+            if (!ext || !c->fewsecson) c->up = true;
           } else {
             c->down = true;
             c->revstart--;
@@ -800,13 +1205,14 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
               if (waypoint >= checkPoints->n) waypoint = 0;
             }
           }
-          if (checkPoints->stage == 23) {
+          if (checkPoints->stage == 23 && !ext) { // gone in Extended
             while (checkPoints->typ[waypoint] == -1) {
               waypoint++;
               if (waypoint >= checkPoints->n) waypoint = 0;
             }
           }
-          if (checkPoints->stage == 24) {
+          // Extended runs Classic 14's routing on Classic 9 as well (Control.java:~30357).
+          if (checkPoints->stage == 24 || (ext && checkPoints->stage == 19)) {
             while (checkPoints->typ[waypoint] == -1) {
               waypoint++;
               if (waypoint >= checkPoints->n) waypoint = 0;
@@ -881,7 +1287,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
               if (control_py(contO->x / 100, -52, contO->z / 100, 448) < 100 || contO->z > 45000) c->oupnt = 176;
               waypoint = (c->oupnt != 176) ? 41 : 43;
             }
-            if (checkPoints->clear[mad->im] - checkPoints->clear[0] >= 2 &&
+            if (checkPoints->clear[mad->im] - checkPoints->clear[0] >= 2 && (!ext || checkPoints->dested[0] == 0) &&
                 control_py(contO->x / 100, checkPoints->opx[0] / 100, contO->z / 100, checkPoints->opz[0] / 100) < 1000 + c->avoidnlev) {
               int32_t xzB = contO->xz;
               if (c->zyinv) xzB += 180;
@@ -938,7 +1344,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
               c->oupnt = waypoint;
             }
           }
-          if (checkPoints->stage == 22) {
+          if (checkPoints->stage == 22 && !ext) { // Extended dropped this ambush
             if (!c->gowait) {
               if (checkPoints->clear[0] == 0) {
                 c->wtx = -3500; c->wtz = 19000; c->frx = -3500; c->frz = 39000; c->frad = 12000;
@@ -1098,7 +1504,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
         // checkpoint (missedcp==0 signals a fresh miss) it re-targets
         // the nearest FIX point (the anti-stuck waypoints control_reset
         // pre-computed into c->fpnt[]) instead of the normal advance.
-        if (checkPoints->stage != 27) {
+        if (checkPoints->stage != 27 || ext) { // Extended repairs on Classic 17 too
           if (checkPoints->stage == 10 || checkPoints->stage == 19 ||
               (checkPoints->stage == 18 && mad->pcleared == 73) || checkPoints->stage == 26) {
             c->forget = true;
@@ -1164,15 +1570,24 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
         // toward a PREDICTED intercept point ahead of the target (this.acr)
         // rather than its current position, offset along its own heading
         // by aim*(half the closing distance).
-        c->up = true;
-        float n32 = (control_pys(contO->x, checkPoints->opx[c->acr], contO->z, checkPoints->opz[c->acr]) / 2.0f) * c->aim;
-        int32_t n33 = jtrunc_d((double)checkPoints->opx[c->acr] - (double)(n32 * medium_sin(m, (float)checkPoints->omxz[c->acr])));
-        int32_t n34 = jtrunc_d((double)checkPoints->opz[c->acr] + (double)(n32 * medium_cos(m, (float)checkPoints->omxz[c->acr])));
+        if (!ext || !c->fewsecson) c->up = true;
+        int32_t n33, n34;
+        if (ext) {
+          // Extended keeps the lead distance in an int field, l1 (Control.java:~1905).
+          const int32_t l1 = jtrunc((float)control_pys(contO->x, checkPoints->opx[c->acr], contO->z, checkPoints->opz[c->acr]) / 2.0f * c->aim);
+          n33 = jtrunc((float)checkPoints->opx[c->acr] - (float)l1 * medium_sin(m, (float)checkPoints->omxz[c->acr]));
+          n34 = jtrunc((float)checkPoints->opz[c->acr] + (float)l1 * medium_cos(m, (float)checkPoints->omxz[c->acr]));
+        } else {
+          float n32 = (control_pys(contO->x, checkPoints->opx[c->acr], contO->z, checkPoints->opz[c->acr]) / 2.0f) * c->aim;
+          n33 = jtrunc_d((double)checkPoints->opx[c->acr] - (double)(n32 * medium_sin(m, (float)checkPoints->omxz[c->acr])));
+          n34 = jtrunc_d((double)checkPoints->opz[c->acr] + (double)(n32 * medium_cos(m, (float)checkPoints->omxz[c->acr])));
+        }
         int32_t n31 = (n33 - contO->x >= 0) ? 180 : 0;
         c->pan = jtrunc_d(90.0 + (double)n31 + atan((double)(n34 - contO->z) / (double)(n33 - contO->x)) / NFM_DEG);
         c->attack--;
         if (c->attack <= 0) c->attack = 0;
         if (checkPoints->stage == 25 && c->exitattack && !c->bulistc && mad->missedcp != 0) c->attack = 0;
+        if (ext && checkPoints->stage == 11 && c->exitattack) c->attack = 0; // Control.java:~1925
         if (checkPoints->stage == 26 && mad->cn == 13 &&
             (checkPoints->clear[0] == 4 || checkPoints->clear[0] == 13 || checkPoints->clear[0] == 21)) {
           c->attack = 0;
@@ -1205,7 +1620,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
             if (xz2 < c->pan) { c->left = true; c->lastl = true; }
             else { c->right = true; c->lastl = false; }
             if (abs(xz2 - c->pan) > 50 && mad->speed > (float)mad->cd->swits[mad->cn][0] && c->turntyp != 0) {
-              if (c->turntyp == 1) c->down = true;
+              if (c->turntyp == 1 && (!ext || c->stuck == 0)) c->down = true;
               if (c->turntyp == 2) c->handb = true;
               if (!c->agressed) c->up = false;
             }
@@ -1214,7 +1629,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
           if (xz2 < c->pan) { c->right = true; c->lastl = false; }
           else { c->left = true; c->lastl = true; }
           if (abs(xz2 - c->pan) < 310 && mad->speed > (float)mad->cd->swits[mad->cn][0] && c->turntyp != 0) {
-            if (c->turntyp == 1) c->down = true;
+            if (c->turntyp == 1 && (!ext || c->stuck == 0)) c->down = true;
             if (c->turntyp == 2) c->handb = true;
             if (!c->agressed) c->up = false;
           }
@@ -1238,16 +1653,52 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
         } else {
           c->right = true;
         }
+        if (ext) {
+          // Extended (Control.java:~9690-9712): pinned against a wall for
+          // over 70 ticks, the car stops trying to drive on and reverses.
+          if (c->stuck <= 70) {
+            c->down = false;
+            c->fewsecson = false;
+            c->stuck++;
+            c->downuse = 0;
+          } else {
+            c->downuse++;
+            c->up = false;
+            if (c->downuse <= 5) {
+              c->down = false;
+              c->fewsecson = false;
+            } else {
+              c->fewsecson = true;
+            }
+          }
+        }
         if (trackers->dam[c->wall] != 0) {
           int32_t n35 = (trackers->skd[c->wall] == 1) ? 3 : 1;
           c->hold += n35;
           if (c->hold > 10 * n35) c->hold = 10 * n35;
         } else {
-          c->hold = 1;
+          c->hold = ext ? 0 : 1;
         }
         c->wall = -1;
-      } else if (c->hold != 0) {
-        c->hold--;
+      } else {
+        if (c->hold != 0) c->hold--;
+        if (ext) c->stuck = 0;
+      }
+      if (ext) {
+        // ...for 40 ticks, then drives on.
+        if (!c->fewsecson) {
+          c->fewsecs = 0;
+        } else {
+          c->fewsecs++;
+          c->up = false;
+          if (c->fewsecs >= 40) {
+            c->down = false;
+            c->fewsecson = false;
+          } else {
+            c->down = true;
+          }
+        }
+        c->apunch = 0;
       }
     } else {
       // ======================================================================
@@ -1279,7 +1730,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
               c->uddirect = -1;
               c->udstart = 0;
               c->udswt = false;
-            } else if (c->oupnt != 70) {
+            } else if (ext || c->oupnt != 70) {
               c->uddirect = 1;
               c->udstart = 0;
               c->udswt = false;
@@ -1292,7 +1743,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
               c->uddirect = 1;
             }
             c->udstart = jtrunc((10.0f * medium_random(m)) * c->trickprf);
-            if (c->stuntf == 6) c->udstart = 0;
+            if (c->stuntf == 6 || (ext && c->stuntf == 4)) c->udstart = 0;
             if (checkPoints->stage == 26) c->udstart = 0;
             if (checkPoints->stage == 24 && (c->oupnt == 68 || c->oupnt == 69)) {
               c->apunch = 20;
@@ -1329,7 +1780,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
               if (c->uddirect != 0) c->uddirect = -1;
               c->lrdirect = 0;
             }
-            if (checkPoints->stage == 20) {
+            if (checkPoints->stage == 20 && !ext) { // gone in Extended
               c->uddirect = 1;
               c->lrdirect = 0;
             }

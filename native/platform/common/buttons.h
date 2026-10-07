@@ -38,6 +38,7 @@ typedef enum {
   // because BTN_CONFIRM also covers Space on desktop and Space is the
   // handbrake -- braking must not pause the game. Return only.
   BTN_PAUSE,
+  BTN_SPECIAL,  // Extended: fire the special (its S key)
   BTN_COUNT
 } Button;
 

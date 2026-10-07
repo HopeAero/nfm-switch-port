@@ -51,12 +51,26 @@ fixes for many cars in view (trackgrid, archive loading) are reused.
 - NFM 2 numbering stays: its cars are 0-15 here (Extended's 23-38); when
   porting Extended code, car `cn` 23+k is k, and Extended's own 0-22 will be
   16+k.
-- [ ] Specials: bar, charging, S button, AI auto-fire, nitroandspecials
-      (buffs, freeze, strswap, leech, redstr, 1v1 rule), no-knockback.
-- [ ] Specials HUD: Special bar, status lines, buff list, car-list colours,
-      outline glow; car-select description.
-- [ ] Classic AI changes: no rubber-banding, skiplev, rampp, turntyp,
-      setpoint fix targets.
+- [x] Specials (core/specials.c, the bar in mad.c): stunts charge the bar
+      (AI /3, player /5 at landing, a trickle each tick), Settings > Controls'
+      Special (R) fires a full one, the AI fires as soon as it is full;
+      nitroandspecials outside career: per-tick stat rebuild from the car's
+      base table, self boosts, freeze / strswap / leech / redstr with
+      sortpower and randomise, the 1v1 no-attacks rule. NFM_HOOK_SPECIALS=1
+      starts every bar full (headless).
+- [x] Specials HUD: the Special bar under Power (data/port/special.png from
+      Extended's special.GIF + "SPECIAL" in Adventure, tools/bake_special.py),
+      the status lines on the left, the player's +/- stat tabs.
+- [ ] Still: no-knockback for 15/25/38 while active, car-list colours and
+      the outline glow per condition, the car-select description
+      (specials_describe() has the texts).
+- [x] Classic AI changes (control.c, `xt.extended`): decide_ext() ports
+      Extended's whole decision cycle (no rubber-banding, its skiplev, rampp,
+      turntyp, mustland, stuntf, trickprf, attack odds, fix and bulistc
+      rules); per tick: wall "stuck" reversing, stage 13/22 routing dropped,
+      stage 19 routed like 24, fewer air-stunt rules. control_reset_ext()
+      for its hold/revstart. Fix targets stay NFM 2's nearest-hoop (stage
+      files carry no `setpoint` yet).
 - [ ] classictracks.radq stages, 7 cars, unique opponents, all open.
 
 ## Phase 3 -- Extended's content

@@ -94,6 +94,12 @@ typedef struct Control {
   int32_t apunch;
   bool exitattack;
   int32_t avoidnlev;
+  bool spatk;   // Extended: the special's button (toggled), or the AI firing it
+  // Extended Mode's own AI state (Control.java: stuck/downuse/fewsecs back a
+  // car off a wall it is pinned against; fixby is the damage % it repairs at).
+  int32_t stuck, downuse, fewsecs;
+  bool fewsecson;
+  int32_t fixby;
 
   Medium *m; // borrowed, not owned
 } Control;
@@ -109,6 +115,11 @@ void control_falseo(Control *c, int32_t n);
  * (fpnt[]), applies stage-specific AI hold/revstart tuning, clears input
  * flags. */
 void control_reset(Control *c, struct CheckPoints *cp, int32_t n);
+
+/** control_reset, then Extended Mode's own per-stage hold/revstart tuning
+ * (Control.java:9824-9937, Classic Mode) in place of NFM 2's. The extended
+ * build calls this instead of control_reset. */
+void control_reset_ext(Control *c, struct CheckPoints *cp, int32_t n);
 
 int32_t control_py(int32_t n, int32_t n2, int32_t n3, int32_t n4);
 int32_t control_pys(int32_t n, int32_t n2, int32_t n3, int32_t n4);
