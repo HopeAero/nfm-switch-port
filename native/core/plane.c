@@ -81,7 +81,8 @@ void plane_init(Plane *p, Medium *m, Trackers *t, const int32_t *ox, const int32
   }
   if (glass == 1) {
     for (int32_t i = 0; i < 3; i++) {
-      p->c[i] = (m->csky[i] * m->fade[0] * 2 + m->cfade[i] * 3000) / (m->fade[0] * 2 + 3000);
+      // fadefrom(-1500) makes the divisor 0 (Java threw and dropped the stage).
+      p->c[i] = jdiv(m->csky[i] * m->fade[0] * 2 + m->cfade[i] * 3000, m->fade[0] * 2 + 3000);
     }
   }
   if (glass == 2) {

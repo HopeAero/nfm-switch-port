@@ -354,6 +354,26 @@ static int32_t upload_or_refill(HudImg prev, const uint8_t *rgba, int32_t w, int
   return gfx_gl_upload_texture(rgba, w, h);
 }
 
+// Dark-sky HUD (hud_recolor.h): the race's sky when Medium.darksky, set before
+// its HUD sprites load. The Java's answer was boxes behind the HUD; the port
+// recolours the sprites, counters and announcements to read against the sky,
+// as the web port's default does.
+static bool g_hud_dark = false;
+static int32_t g_hud_sky[3];
+// ponytail: the Java's boxes, kept off; a Settings row if anyone wants them.
+static const bool kJavaDarkSkyBoxes = false;
+
+/** gfx_set_color for HUD text: on a dark sky, moved to read against it. */
+static void hud_set_ink(Graphics2D *g, int32_t r, int32_t gg, int32_t b) {
+  if (g_hud_dark) {
+    const int32_t c[3] = {r, gg, b};
+    int32_t o[3];
+    hud_readable(c, g_hud_sky, o);
+    r = o[0], gg = o[1], b = o[2];
+  }
+  gfx_set_color(g, r, gg, b);
+}
+
 static HudImg load_hud_gif(VfsZip *zip, const char *name, const int32_t snap[3], HudImg prev) {
   HudImg result = {-1, 0, 0};
   for (int32_t i = 0; i < zip->count; i++) {
@@ -361,6 +381,7 @@ static HudImg load_hud_gif(VfsZip *zip, const char *name, const int32_t snap[3],
     GifImage img;
     if (gif_decode(zip->entries[i].data, (size_t)zip->entries[i].len, &img)) {
       hud_recolor(img.rgba, img.width, img.height, snap);
+      if (g_hud_dark) hud_adapt_ink(img.rgba, img.width, img.height, g_hud_sky);
       result.tex = upload_or_refill(prev, img.rgba, img.width, img.height);
       result.w = img.width;
       result.h = img.height;
@@ -1198,7 +1219,7 @@ static void hud_say_draw(Graphics2D *g, Medium *m, int32_t y, const char *str,
     gfx_set_color(g, 0, 0, 0);
     draw_centered(g, str, 401, y + 1, 1);
   }
-  gfx_set_color(g, r, gg, b);
+  hud_set_ink(g, r, gg, b);
   draw_centered(g, str, 400, y, 1);
 }
 
@@ -1947,7 +1968,7 @@ static void radar_stat(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad *mad,
   // beyond the four the always-on HUD panels get (see this file's own
   // darksky block up in the HUD draw). Measured unreachable with the
   // shipped stages, same as its siblings; kept for the same reason.
-  if (m->darksky) {
+  if (m->darksky && kJavaDarkSkyBoxes) {
     float hsb[3];
     rgb_to_hsb(m->csky[0], m->csky[1], m->csky[2], hsb);
     hsb[2] = 0.6f;
@@ -1981,7 +2002,7 @@ static void radar_stat(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad *mad,
   float n15 = d / 100000.0f;
   float n16 = n15 * 0.621371f;
   char buf[32];
-  gfx_set_color(g, 0, 0, 100);
+  hud_set_ink(g, 0, 0, 100);
   snprintf(buf, sizeof(buf), "%d", jtrunc(n15));
   bitfont_draw_string(g, buf, 62, 245 - 11);
   snprintf(buf, sizeof(buf), "%d", jtrunc(n16));
@@ -4889,6 +4910,8 @@ int game_run(void) {
       // tints with medium.snap"): m.snap only gets its real per-stage
       // values from the stage file's own `snap(...)` command inside
       // game_sparker_loadstage, just called above.
+      g_hud_dark = m.darksky;
+      for (int32_t c = 0; c < 3; c++) g_hud_sky[c] = m.csky[c];
       {
         VfsZip images_zip;
         if (vfs_read_zip("data/images.zip", &images_zip)) {
@@ -6018,7 +6041,7 @@ int game_run(void) {
         // port already carried -- both are kept because the condition is
         // data-driven (a hand-written or later stage file could trip it),
         // not structurally impossible.
-        if (m.darksky) {
+        if (m.darksky && kJavaDarkSkyBoxes) {
           float hsb_hud[3];
           rgb_to_hsb(m.csky[0], m.csky[1], m.csky[2], hsb_hud);
           hsb_hud[2] = 0.6f;
@@ -6045,7 +6068,7 @@ int game_run(void) {
         draw_hud_img(&g, hud_images.dmg, 600, 7);
         draw_hud_img(&g, hud_images.pwr, 600, 27);
         draw_hud_img(&g, hud_images.lap, 19, 7);
-        gfx_set_color(&g, 0, 0, 100);
+        hud_set_ink(&g, 0, 0, 100);
         char hud[64];
         snprintf(hud, sizeof(hud), "%d / %d", mad[0].nlaps + 1, cp.nlaps);
         // JS drawString y is a BASELINE coord (Canvas convention). bitfont's
@@ -6053,7 +6076,7 @@ int game_run(void) {
         // visually with the JS's own placement.
         bitfont_draw_string(&g, hud, 51, 18 - 11);
         draw_hud_img(&g, hud_images.was, 92, 7);
-        gfx_set_color(&g, 0, 0, 100);
+        hud_set_ink(&g, 0, 0, 100);
         snprintf(hud, sizeof(hud), "%d / %d", cp.wasted, nplayers - 1); // Java: checkPoints.wasted / (nplayers-1)
         bitfont_draw_string(&g, hud, 150, 18 - 11);
         draw_hud_img(&g, hud_images.pos, 42, 27);
@@ -6217,7 +6240,7 @@ int game_run(void) {
             // primitive in gfx.h (same simplification STATE_STAGE_LOADING's
             // panel already makes) -- a plain rect in the same derived
             // colour reads the same at this size.
-            if (m.darksky) {
+            if (m.darksky && kJavaDarkSkyBoxes) {
               float hsb[3];
               rgb_to_hsb(m.csky[0], m.csky[1], m.csky[2], hsb);
               hsb[2] = 0.6f;

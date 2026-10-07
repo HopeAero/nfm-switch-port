@@ -96,7 +96,14 @@ static void test_trig_tables(void) {
   }
 }
 
+static void test_jdiv(void) {
+  CHECK(jdiv(7, 2) == 3 && jdiv(-7, 2) == -3, "jdiv truncates toward zero");
+  CHECK(jdiv(5, 0) == 0, "jdiv by zero is 0 (web idiv)");
+  CHECK(jdiv(INT32_MIN, -1) == INT32_MIN, "jdiv INT_MIN / -1 wraps");
+}
+
 int main(void) {
+  test_jdiv();
   test_jtrunc();
   test_jround();
   test_int32_wrap();

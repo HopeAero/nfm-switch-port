@@ -44,6 +44,16 @@ static inline int32_t jtrunc_d(double x) {
   return (int32_t)x;
 }
 
+/** Java int division, but with web/java.js's idiv where Java throws: x / 0
+ * is 0 (Java: ArithmeticException; C: undefined, SIGFPE on x86, 0 on
+ * AArch64). INT_MIN / -1 wraps to INT_MIN as Java does. For divisors that
+ * come from stage or car data; a constant or clamped divisor needs plain `/`. */
+static inline int32_t jdiv(int32_t a, int32_t b) {
+  if (b == 0) return 0;
+  if (b == -1) return (int32_t)(0u - (uint32_t)a);
+  return a / b;
+}
+
 // Java `Math.round(float)` -> int: floor(x + 0.5), NOT round-half-to-even.
 int32_t jround(float x);
 

@@ -53,6 +53,20 @@ extern "C" {
  */
 void hud_recolor(uint8_t *rgba, int32_t width, int32_t height, const int32_t snap[3]);
 
+// The port's dark-sky HUD (web/images.js's `?hud=auto`): where the Java
+// drew boxes behind the HUD (Medium.darksky), the ink itself is moved along
+// HSB brightness, keeping its hue, until it reads 4.5:1 against the sky.
+#define HUD_MIN_CONTRAST 4.5
+
+/** WCAG 2 contrast ratio of two RGB colours, 1 to 21. */
+double hud_contrast(const int32_t a[3], const int32_t b[3]);
+
+/** `c`, or the nearest brightness of its hue that reads against `bg`. */
+void hud_readable(const int32_t c[3], const int32_t bg[3], int32_t out[3]);
+
+/** hud_readable() on every visible pixel of a hud_recolor()'d sprite; alpha kept. */
+void hud_adapt_ink(uint8_t *rgba, int32_t width, int32_t height, const int32_t bg[3]);
+
 #ifdef __cplusplus
 }
 #endif

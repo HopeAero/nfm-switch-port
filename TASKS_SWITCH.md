@@ -209,6 +209,13 @@ PC with `nxlink -s`.
       ramps and a flat-top Tracker); 31 stages place 47-187 each. Checked against
       web #initModel under Node (cont_o_test). Also `-ffp-contract=off`: AArch64
       GCC fused a*b+c into FMA, which Java's float math never does.
+- [x] Dark-sky HUD (web `?hud=auto`): on Medium.darksky the HUD sprites,
+      lap/wasted/speed counters and announcements are moved along HSB
+      brightness to 4.5:1 WCAG contrast against the sky (`hud_readable`/
+      `hud_adapt_ink` in hud_recolor.c) instead of the Java's boxes
+      (`kJavaDarkSkyBoxes`). No stock stage has a dark sky; custom ones will.
+- [x] `jdiv` (java_compat.h): web idiv's x/0 = 0 for data-driven divisors --
+      the only reachable one was a glass plane's colour with `fadefrom(-1500)`.
 - [ ] Batch 3: visual-only low detail (not `resdown=2`, which drops scenery
       collisions) and the web's lightweight intro; draw distance keeps cars'
       `dist` neutral.

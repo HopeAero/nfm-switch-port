@@ -53,7 +53,27 @@ static void check_recolor(VfsZip *zip, const char *name, const int32_t snap[3],
   gif_free(&img);
 }
 
+// The dark-sky ink rule, same cases as web/hudcontrast.test.js.
+static void test_readable(void) {
+  const int32_t black[3] = {0, 0, 0}, white[3] = {255, 255, 255};
+  double c = hud_contrast(black, white);
+  CHECK(c > 20.999 && c < 21.001, "contrast: black on white is 21:1");
+  const int32_t sky[3] = {64, 32, 96}, ink[3] = {0, 0, 100};
+  CHECK(hud_contrast(sky, sky) == 1.0, "contrast: a colour on itself is 1:1");
+  int32_t out[3];
+  hud_readable(ink, sky, out);
+  CHECK(hud_contrast(out, sky) >= HUD_MIN_CONTRAST, "readable: lifts (0,0,100) off a dark sky");
+  hud_readable(black, white, out);
+  CHECK(out[0] == 0 && out[1] == 0 && out[2] == 0, "readable: leaves black on white alone");
+  uint8_t px[8] = {0, 0, 100, 255, 9, 9, 9, 0};
+  hud_adapt_ink(px, 2, 1, sky);
+  const int32_t got[3] = {px[0], px[1], px[2]};
+  CHECK(hud_contrast(got, sky) >= HUD_MIN_CONTRAST && px[3] == 255, "adapt_ink: visible pixel recoloured");
+  CHECK(px[4] == 9 && px[7] == 0, "adapt_ink: transparent pixel untouched");
+}
+
 int main(void) {
+  test_readable();
   VfsZip zip;
   vfs_set_fpath("../../../");
   bool loaded = vfs_read_zip("data/images.zip", &zip);

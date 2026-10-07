@@ -74,10 +74,11 @@ target_link_libraries(jpeg_decode_test m ZLIB::ZLIB)
 add_executable(hud_recolor_test
   hud_recolor_test.c
   ../core/hud_recolor.c
+  ../core/java_compat.c
   ../core/gif_decode.c
   ../core/vfs.c
 )
-target_link_libraries(hud_recolor_test ZLIB::ZLIB)
+target_link_libraries(hud_recolor_test ZLIB::ZLIB m)
 
 add_executable(plane_test
   plane_test.c
