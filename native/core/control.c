@@ -1,5 +1,6 @@
 // ports web/Control.js -- see control.h for scope.
 #include "control.h"
+#include "new_cars.h"
 #include "java_compat.h"
 #include "trackers.h"
 #include "check_points.h"
@@ -177,7 +178,10 @@ static bool control_rand_gt_rand(Medium *m) {
 
 // Extended's number for a car: NFM 2's 0-15 are its 23-38; its own 0-22
 // will sit at 16-38 here.
-static int32_t ext_cn(int32_t cn) { return cn < 16 ? cn + 23 : cn - 16; }
+static int32_t ext_cn(int32_t cn) {
+  cn = car_identity(cn);   // a new car drives as its donor
+  return cn < 16 ? cn + 23 : cn - 16;
+}
 
 // Extended counts the race's own cars (xtgraphics.nplayers): 7 in Classic,
 // 11 in its normal mode.

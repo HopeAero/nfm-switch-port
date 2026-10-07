@@ -8,8 +8,12 @@
 #include <string.h>
 
 #include "java_compat.h"
+#include "new_cars.h"
 
-int32_t specials_ext_car(int32_t cn) { return cn < 16 ? cn + 23 : (cn < 39 ? cn - 16 : -1); }
+int32_t specials_ext_car(int32_t cn) {
+  cn = car_identity(cn);   // a new car takes its donor's special
+  return cn < 16 ? cn + 23 : (cn < 39 ? cn - 16 : -1);
+}
 
 void specials_reset(Specials *sp) {
   memset(sp, 0, sizeof(*sp));

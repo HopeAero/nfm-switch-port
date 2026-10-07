@@ -88,6 +88,7 @@
 #include "specials.h"
 #include "ext_mode.h"
 #include "ext_pt.h"
+#include "new_cars.h"
 #include "diag.h"
 
 // GameSparker.js's own ContO[610] held NFM 2's stages; Extended's reach 1106
@@ -114,9 +115,17 @@ static const char *CAR_DISPLAY_NAMES[39] = {
 };
 #define CAR_COUNT 39   // NFM 2's 16 and Extended's 23; CUSTOM_CAR_INDEX follows
 
+/** Free Play's last car: the new cars' last, else the custom car (Extended's
+ * normal mode has no custom car: its last is 38). */
+static int32_t car_last_index(bool ext_normal) {
+  if (g_new_car_count > 0) return NEW_CAR_FIRST + g_new_car_count - 1;
+  return ext_normal ? CAR_COUNT - 1 : CUSTOM_CAR_INDEX;
+}
+
 /** A car's name for the HUD; the custom car's, or "Car" off the end. */
 static const char *car_name(int32_t cn) {
   if (cn >= 0 && cn < CAR_COUNT) return CAR_DISPLAY_NAMES[cn];
+  if (cn >= NEW_CAR_FIRST && cn < NEW_CAR_FIRST + g_new_car_count) return g_new_cars[cn - NEW_CAR_FIRST].name;
   return cn == CUSTOM_CAR_INDEX ? "Simple Car" : "Car";
 }
 
@@ -1357,7 +1366,7 @@ static void draw_checkpoint_arrow(Graphics2D *g, Medium *m, XtGraphicsStub *xt,
     // "[" + 32 spaces + "]" in the source.
     hud_say_draw(g, m, 13, "[                                ]", 76, 67, 240, 0);
     if (target >= 0 && target < NFM_MAX_CARS && sc[target] >= 0 && sc[target] < CAR_COUNT) {
-      hud_say_draw(g, m, 13, CAR_DISPLAY_NAMES[sc[target]], 0, 0, 0, 0);
+      hud_say_draw(g, m, 13, car_name(sc[target]), 0, 0, 0, 0);
     }
     return;
   }
@@ -3886,7 +3895,8 @@ int game_run(void) {
   ContO *ext_models = calloc(EXT_NUM_MODELS, sizeof(ContO));
   // A car's model: NFM 2's 16 from models.zip, Extended's own 23 (this
   // port's 16-38) from its models.radq.
-#define CAR_MODEL(cn) ((cn) < EXT_FIRST_CAR ? &base_models[(cn)] : &ext_models[(cn) - EXT_FIRST_CAR])
+#define CAR_MODEL(cn) ((cn) >= NEW_CAR_FIRST ? &new_models[(cn) - NEW_CAR_FIRST] \
+                      : (cn) < EXT_FIRST_CAR ? &base_models[(cn)] : &ext_models[(cn) - EXT_FIRST_CAR])
   if (!ext_models || !ext_loadbase(ext_models, &m, &t)) {
     fprintf(stderr, "could not load ext/data/models.radq\n");
   }
@@ -3906,6 +3916,23 @@ int game_run(void) {
                                            car_base.wh, CUSTOM_CAR_INDEX);
   if (!custom_car_ok) {
     fprintf(stderr, "Simple_Car.rad: loadcar/loadstat failed, custom car entry will use built-in slot 0 stats\n");
+  }
+  // The new cars (new_cars.c): Revised and Recharged's, then the player's
+  // own .rad files in the save folder's cars/ (sdmc:/switch/nfm-extended/
+  // cars on the Switch).
+  ContO *new_models = calloc(NEW_CARS_MAX, sizeof(ContO));
+  {
+    char sd_cars[600] = "";
+    char save_path[512];
+    if (platform_progress_path(save_path, sizeof(save_path))) {
+      char *slash = strrchr(save_path, '/');
+      if (slash) {
+        *slash = '\0';
+        snprintf(sd_cars, sizeof(sd_cars), "%s/cars", save_path);
+      }
+    }
+    new_cars_load(new_models, &cd, &m, &t, sd_cars[0] ? sd_cars : NULL);
+    fprintf(stderr, "new cars: %d\n", (int)g_new_car_count);
   }
   free(car_text);
 
@@ -5170,7 +5197,7 @@ int game_run(void) {
       // branch); this port's extra custom-car slot extends maxsl by one,
       // but only in Free Play, which is the only mode that can select it.
       if (car_flipo == 0) {
-        int32_t car_maxsl = (gmode == GMODE_FREE_PLAY) ? (ext_normal ? CAR_COUNT - 1 : CUSTOM_CAR_INDEX) : 15;
+        int32_t car_maxsl = (gmode == GMODE_FREE_PLAY) ? car_last_index(ext_normal) : 15;
         if (KEY_EDGE(BTN_RIGHT) && car_index != car_maxsl) { car_nextc = 1; car_flipo = 20; }
         if (KEY_EDGE(BTN_LEFT) && car_index != 0) { car_nextc = -1; car_flipo = 20; }
       }
@@ -6437,7 +6464,7 @@ int game_run(void) {
                 race_holdcnt = 0;
                 cp.haltall = true; // :1189 -- freezes all cars' throttle to a coast-down (mad.c:1098)
                 if (!race_winner) {
-                  snprintf(race_lost_car_name, sizeof(race_lost_car_name), "%s", CAR_DISPLAY_NAMES[sc[i]]);
+                  snprintf(race_lost_car_name, sizeof(race_lost_car_name), "%s", car_name(sc[i]));
                 }
                 break;
               }
@@ -8185,8 +8212,9 @@ int game_run(void) {
             // the old wrap-and-skip loop is no longer needed; the bound is
             // recomputed here rather than shared because the two sites run
             // in different phases of the frame.
-            int32_t car_maxsl = (car_gm == GMODE_FREE_PLAY) ? (ext_normal ? CAR_COUNT - 1 : CUSTOM_CAR_INDEX) : 15;
+            int32_t car_maxsl = (car_gm == GMODE_FREE_PLAY) ? car_last_index(ext_normal) : 15;
             car_index += (car_nextc > 0) ? 1 : -1;
+            if (ext_normal && car_index == CUSTOM_CAR_INDEX) car_index += (car_nextc > 0) ? 1 : -1;
             if (car_index < 0) car_index = 0;
             if (car_index > car_maxsl) car_index = car_maxsl;
             car_transition_y = -1100;
@@ -8216,7 +8244,7 @@ int game_run(void) {
       // in.
       font_set(FONT_BOLD, 13); // :5231
       {
-        const char *name = (car_index == CUSTOM_CAR_INDEX) ? "Simple Car (custom)" : CAR_DISPLAY_NAMES[car_index];
+        const char *name = (car_index == CUSTOM_CAR_INDEX) ? "Simple Car (custom)" : car_name(car_index);
         int32_t name_n8 = (car_smoke_warp.flatrstart < 6) ? 2 : 0;
         if (mainmenu_aflk) {
           gfx_set_color(&g, 240, 240, 240);
@@ -8370,7 +8398,7 @@ int game_run(void) {
         gfx_set_color(&g, 176, 41, 0);
         font_set(FONT_BOLD, 13);
         // Extended's own cars carry no NFM 2 class.
-        if (cn < 16 || cn == CUSTOM_CAR_INDEX) font_draw(&g, class_str, 549 - font_width(class_str) / 2, 95);
+        if (cn < 16 || cn >= CUSTOM_CAR_INDEX) font_draw(&g, class_str, 549 - font_width(class_str) / 2, 95);
 
         // Extended's "SPECIAL ATTACK:" panel (its carselect, xtGraphics.java:
         // 16120-16330), top left: a white tab sized to the lines. Moved by
@@ -8405,7 +8433,7 @@ int game_run(void) {
       // to draw both unconditionally, which advertised a move that the
       // (then-wrapping) list would make in the wrong direction.
       {
-        int32_t car_maxsl = (gmode == GMODE_FREE_PLAY) ? (ext_normal ? CAR_COUNT - 1 : CUSTOM_CAR_INDEX) : 15;
+        int32_t car_maxsl = (gmode == GMODE_FREE_PLAY) ? car_last_index(ext_normal) : 15;
         if (menu_back.tex >= 0 && car_index != 0) {
           gfx_draw_image(&g, menu_back.tex, 95, 275, menu_back.w, menu_back.h);
         }

@@ -122,7 +122,19 @@ fixes for many cars in view (trackgrid, archive loading) are reused.
       the car list, the scoreboard, points after each match, the champion
       after five; taking it opens stage 27. v2.8's dead ends are mended
       (kills score, match 5 eliminates the last car, it can end).
-- [ ] Revised and Recharged cars; cars and stages from the SD card.
+- [x] New cars (new_cars.c), Free Play only, numbered 40 on: Revised and
+      Recharged's ten with numbers (Bugatti Veyron, Lightning Rod, The
+      Phantom carry stat(); seven take NFM World's numbers as raw
+      "Recharged stats", web carstore.RR_STATS), then every .rad in the save
+      folder's cars/ (sdmc:/switch/nfm-extended/cars). car_define_loadstat
+      reads raw stat lines (web readRawStats): a car with them needs no
+      stat(), with raw maxmag no physics(). extspecial(n) borrows Extended
+      car n's special and AI quirks (car_identity), by class when missing;
+      exthealth/extdamage scale health and damage. R&R's own models skip the
+      Car Maker's load checks (ROCKET M A S H E E N's wheels sit at 144 >
+      140); a player's .rad must pass them. R&R's other 15 have no numbers
+      anywhere and stay out, as in the web port.
+- [ ] Stages from the SD card.
 
 ## Phase 4 -- RPG / career
 

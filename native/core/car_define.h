@@ -30,7 +30,7 @@
 extern "C" {
 #endif
 
-#define CAR_DEFINE_NUM_CARS 56 // 16 built-in + 40 user-car slots (unused here, all zero)
+#define CAR_DEFINE_NUM_CARS 128 // NFM 2's 16, Extended's 23 (16-38), the custom car (39), new cars (40-103)
 
 typedef struct {
   int32_t handb[CAR_DEFINE_NUM_CARS];

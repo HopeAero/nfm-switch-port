@@ -1,5 +1,6 @@
 // ports web/Mad.js -- see mad.h for scope.
 #include "mad.h"
+#include "new_cars.h"
 #include "java_compat.h"
 #include <math.h>
 #include <string.h>
@@ -630,7 +631,8 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
     // Extended (Madness.java:867, 918): Wow Caninaro, DR Monstaa and its own
     // car 15 take no knockback from their own hits while their special runs.
     // Extended numbers them 25, 38 and 15; NFM 2's cars are its 23-38.
-    const int32_t ext_cn = mad->cn < 16 ? mad->cn + 23 : mad->cn - 16;
+    const int32_t ident = car_identity(mad->cn);   // a new car counts as its donor
+    const int32_t ext_cn = ident < 16 ? ident + 23 : ident - 16;
     const bool no_knockback = ext && mad->specialact && (ext_cn == 15 || ext_cn == 25 || ext_cn == 38);
     for (int32_t j = 0; j < 4; j++) {
       for (int32_t k = 0; k < 4; k++) {

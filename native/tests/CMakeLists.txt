@@ -124,6 +124,7 @@ add_executable(game_sparker_test
   ../core/check_points.c
   ../core/record.c
   ../core/mad.c
+  ../core/car_identity.c
   ../core/car_define.c
   ../core/xt_graphics.c
   ../core/cont_o.c
@@ -144,6 +145,7 @@ add_executable(ext_stage_test
   ../core/check_points.c
   ../core/record.c
   ../core/mad.c
+  ../core/car_identity.c
   ../core/car_define.c
   ../core/xt_graphics.c
   ../core/cont_o.c
@@ -166,6 +168,7 @@ add_executable(check_points_test
   ../core/trig.c
   ../core/record.c
   ../core/mad.c
+  ../core/car_identity.c
   ../core/cont_o.c
   ../core/wheels.c
   ../core/plane.c
@@ -180,6 +183,7 @@ target_link_libraries(check_points_test m ZLIB::ZLIB)
 add_executable(control_test
   control_test.c
   ../core/control.c
+  ../core/car_identity.c
   ../core/check_points.c
   ../core/medium.c
   ../core/trackers.c
@@ -188,6 +192,7 @@ add_executable(control_test
   ../core/gfx.c
   ../core/record.c
   ../core/mad.c
+  ../core/car_identity.c
   ../core/cont_o.c
   ../core/wheels.c
   ../core/plane.c
@@ -216,6 +221,7 @@ add_executable(record_test
   record_test.c
   ../core/record.c
   ../core/mad.c
+  ../core/car_identity.c
   ../core/cont_o.c
   ../core/wheels.c
   ../core/plane.c
@@ -228,6 +234,7 @@ add_executable(record_test
   ../core/car_define.c
   ../core/xt_graphics.c
   ../core/control.c
+  ../core/car_identity.c
   ../core/check_points.c
 )
 target_link_libraries(record_test m ZLIB::ZLIB)
@@ -268,6 +275,7 @@ target_link_libraries(bots_test m)
 add_executable(mad_test
   mad_test.c
   ../core/mad.c
+  ../core/car_identity.c
   ../core/cont_o.c
   ../core/wheels.c
   ../core/plane.c
@@ -281,6 +289,7 @@ add_executable(mad_test
   ../core/record.c
   ../core/xt_graphics.c
   ../core/control.c
+  ../core/car_identity.c
   ../core/check_points.c
 )
 target_link_libraries(mad_test m ZLIB::ZLIB)

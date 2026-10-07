@@ -125,9 +125,25 @@ static void test_loadcar_simple_car(void) {
   free(text);
 }
 
+// "Recharged stats": raw lines alone make a car (no stat()/physics()), and
+// replace what loadstat computed; an incomplete line is ignored.
+static void test_raw_stats(void) {
+  CarDefine cd;
+  car_define_init(&cd);
+  const char *text = "swits(50,160,1000)\nacelf(9.0,9.0,9.0)\nturn(4)\nmaxmag(11700)\n"
+                     "dammult(0.5)\npowerloss(2147483647)\nenginsignature(6)\nswits(1,2)\n";
+  CHECK(car_define_loadstat(&cd, text, 130, -50, 30, 40), "raw stats load");
+  CHECK(cd.swits[40][2] == 1000 && cd.acelf[40][0] == 9.0f && cd.turn[40] == 4.0f, "raw swits, acelf, turn");
+  CHECK(cd.maxmag[40] == 11700 && cd.dammult[40] == 0.5f && cd.powerloss[40] == 2147483647, "raw maxmag, dammult, powerloss");
+  CHECK(cd.enginsignature[40] == 0, "engine outside 0-4 falls back to 0");
+  CHECK(cd.swits[40][0] == 50, "incomplete line ignored");
+  CHECK(!car_define_loadstat(&cd, "turn(4)\n", 130, -50, 30, 41), "raw stats without maxmag: no car");
+}
+
 int main(void) {
   test_init();
   test_loadcar_simple_car();
+  test_raw_stats();
 
   if (failures == 0) {
     printf("all tests passed\n");

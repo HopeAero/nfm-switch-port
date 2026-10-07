@@ -156,33 +156,34 @@ static const float acelf_data[56][3] = {
 };
 
 void car_define_init(CarDefine *cd) {
-  memcpy(cd->handb, handb_data, sizeof(cd->handb));
-  memcpy(cd->airs, airs_data, sizeof(cd->airs));
-  memcpy(cd->airc, airc_data, sizeof(cd->airc));
-  memcpy(cd->turn, turn_data, sizeof(cd->turn));
-  memcpy(cd->grip, grip_data, sizeof(cd->grip));
-  memcpy(cd->bounce, bounce_data, sizeof(cd->bounce));
-  memcpy(cd->simag, simag_data, sizeof(cd->simag));
-  memcpy(cd->moment, moment_data, sizeof(cd->moment));
-  memcpy(cd->comprad, comprad_data, sizeof(cd->comprad));
-  memcpy(cd->push, push_data, sizeof(cd->push));
-  memcpy(cd->revpush, revpush_data, sizeof(cd->revpush));
-  memcpy(cd->lift, lift_data, sizeof(cd->lift));
-  memcpy(cd->revlift, revlift_data, sizeof(cd->revlift));
-  memcpy(cd->powerloss, powerloss_data, sizeof(cd->powerloss));
-  memcpy(cd->flipy, flipy_data, sizeof(cd->flipy));
-  memcpy(cd->msquash, msquash_data, sizeof(cd->msquash));
-  memcpy(cd->clrad, clrad_data, sizeof(cd->clrad));
-  memcpy(cd->dammult, dammult_data, sizeof(cd->dammult));
-  memcpy(cd->maxmag, maxmag_data, sizeof(cd->maxmag));
-  memcpy(cd->enginsignature, enginsignature_data, sizeof(cd->enginsignature));
-  memcpy(cd->acelf, acelf_data, sizeof(cd->acelf));
-  memcpy(cd->swits, swits_data, sizeof(cd->swits));
+  memset(cd, 0, sizeof(*cd));   // the tables below fill the first 56 slots; the rest start empty
+  memcpy(cd->handb, handb_data, sizeof(handb_data));
+  memcpy(cd->airs, airs_data, sizeof(airs_data));
+  memcpy(cd->airc, airc_data, sizeof(airc_data));
+  memcpy(cd->turn, turn_data, sizeof(turn_data));
+  memcpy(cd->grip, grip_data, sizeof(grip_data));
+  memcpy(cd->bounce, bounce_data, sizeof(bounce_data));
+  memcpy(cd->simag, simag_data, sizeof(simag_data));
+  memcpy(cd->moment, moment_data, sizeof(moment_data));
+  memcpy(cd->comprad, comprad_data, sizeof(comprad_data));
+  memcpy(cd->push, push_data, sizeof(push_data));
+  memcpy(cd->revpush, revpush_data, sizeof(revpush_data));
+  memcpy(cd->lift, lift_data, sizeof(lift_data));
+  memcpy(cd->revlift, revlift_data, sizeof(revlift_data));
+  memcpy(cd->powerloss, powerloss_data, sizeof(powerloss_data));
+  memcpy(cd->flipy, flipy_data, sizeof(flipy_data));
+  memcpy(cd->msquash, msquash_data, sizeof(msquash_data));
+  memcpy(cd->clrad, clrad_data, sizeof(clrad_data));
+  memcpy(cd->dammult, dammult_data, sizeof(dammult_data));
+  memcpy(cd->maxmag, maxmag_data, sizeof(maxmag_data));
+  memcpy(cd->enginsignature, enginsignature_data, sizeof(enginsignature_data));
+  memcpy(cd->acelf, acelf_data, sizeof(acelf_data));
+  memcpy(cd->swits, swits_data, sizeof(swits_data));
   // The car-select screen's Handling and Endurance bars, and the class
   // (CarDefine.java:108-110); loadstat() sets them for a .rad car.
-  memcpy(cd->dishandle, dishandle_data, sizeof(cd->dishandle));
-  memcpy(cd->outdam, outdam_data, sizeof(cd->outdam));
-  memcpy(cd->cclass, cclass_data, sizeof(cd->cclass));
+  memcpy(cd->dishandle, dishandle_data, sizeof(dishandle_data));
+  memcpy(cd->outdam, outdam_data, sizeof(outdam_data));
+  memcpy(cd->cclass, cclass_data, sizeof(cclass_data));
 }
 
 // --- loadstat --------------------------------------------------------
@@ -416,7 +417,78 @@ static void cd_acelf_keyframes(int32_t arr1, int32_t arr0, int32_t *out_n16, int
   *out_n16 = n16; *out_n17 = n17; *out_n18 = n18;
 }
 
+// "Recharged stats" (web CarDefine.readRawStats, WORK.md): raw CarDefine
+// values in the .rad, as NFM World stores its cars. loadstat computes
+// everything as before, then each raw line present replaces its value; a
+// car with raw stats needs no stat() (the 128x5 defaults stand in) and,
+// with a raw maxmag, no physics() either.
+typedef struct {
+  const char *name;
+  int32_t count;
+  int32_t *i;   // the int table, or NULL
+  float *f;     // the float table, or NULL
+} CdRawStat;
+
+static int32_t cd_raw_table(CarDefine *cd, int32_t s, CdRawStat *out) {
+  const CdRawStat t[] = {
+      {"swits", 3, cd->swits[s], NULL},        {"acelf", 3, NULL, cd->acelf[s]},
+      {"handb", 1, &cd->handb[s], NULL},       {"airs", 1, NULL, &cd->airs[s]},
+      {"airc", 1, &cd->airc[s], NULL},         {"turn", 1, NULL, &cd->turn[s]},
+      {"grip", 1, NULL, &cd->grip[s]},         {"bounce", 1, NULL, &cd->bounce[s]},
+      {"simag", 1, NULL, &cd->simag[s]},       {"moment", 1, NULL, &cd->moment[s]},
+      {"comprad", 1, NULL, &cd->comprad[s]},   {"push", 1, NULL, &cd->push[s]},
+      {"revpush", 1, NULL, &cd->revpush[s]},   {"lift", 1, &cd->lift[s], NULL},
+      {"revlift", 1, &cd->revlift[s], NULL},   {"powerloss", 1, &cd->powerloss[s], NULL},
+      {"flipy", 1, &cd->flipy[s], NULL},       {"msquash", 1, &cd->msquash[s], NULL},
+      {"clrad", 1, &cd->clrad[s], NULL},       {"dammult", 1, NULL, &cd->dammult[s]},
+      {"maxmag", 1, &cd->maxmag[s], NULL},     {"dishandle", 1, NULL, &cd->dishandle[s]},
+      {"outdam", 1, NULL, &cd->outdam[s]},     {"enginsignature", 1, &cd->enginsignature[s], NULL},
+  };
+  const int32_t n = (int32_t)(sizeof(t) / sizeof(t[0]));
+  memcpy(out, t, sizeof(t));
+  return n;
+}
+
+#define CD_RAW_MAX 24
+
+typedef struct {
+  CdRawStat stats[CD_RAW_MAX];
+  int32_t nstats;
+  double v[CD_RAW_MAX][3];
+  bool have[CD_RAW_MAX];
+} CdRawParse;
+
+static void cd_raw_visit(char *line, void *cookie) {
+  CdRawParse *r = (CdRawParse *)cookie;
+  for (int32_t k = 0; k < r->nstats; k++) {
+    const size_t len = strlen(r->stats[k].name);
+    if (strncmp(line, r->stats[k].name, len) != 0 || line[len] != '(') continue;
+    const char *q = line + len + 1;
+    double v[3];
+    int32_t got = 0;
+    while (got < r->stats[k].count) {
+      char *end;
+      v[got] = strtod(q, &end);
+      if (end == q) break;
+      got++;
+      while (*end == ' ') end++;
+      if (*end != ',') break;
+      q = end + 1;
+    }
+    if (got < r->stats[k].count) continue;   // incomplete: ignored, as the web's
+    for (int32_t i = 0; i < got; i++) r->v[k][i] = v[i];
+    r->have[k] = true;
+  }
+}
+
 bool car_define_loadstat(CarDefine *cd, const char *text, int32_t maxR, int32_t roofat, int32_t wh, int32_t slot) {
+  CdRawParse raw;
+  memset(&raw, 0, sizeof(raw));
+  raw.nstats = cd_raw_table(cd, slot, raw.stats);
+  cd_for_each_line(text, cd_raw_visit, &raw);
+  bool any_raw = false;
+  for (int32_t k = 0; k < raw.nstats; k++) any_raw = any_raw || raw.have[k];
+
   CdLoadstatParse p;
   memset(&p, 0, sizeof(p));
   for (int32_t i = 0; i < 5; i++) p.array[i] = 128;
@@ -437,6 +509,12 @@ bool car_define_loadstat(CarDefine *cd, const char *text, int32_t maxR, int32_t 
   }
   if (p.handling >= 0) {
     cd->dishandle[slot] = (float)p.handling / 200.0f;
+  }
+  if (any_raw) {
+    p.have_stat = true;
+    for (int32_t k = 0; k < raw.nstats; k++) {
+      if (raw.have[k] && strcmp(raw.stats[k].name, "maxmag") == 0) p.have_physics = true;
+    }
   }
   if (!(p.have_stat && p.have_physics)) {
     // JS: `this.names[n4] = '';` -- we don't track names, so nothing to
@@ -608,6 +686,14 @@ bool car_define_loadstat(CarDefine *cd, const char *text, int32_t maxR, int32_t 
   // simag = fr((wh - 17) * 0.0167 + 0.85)
   cd->simag[slot] = (float)(wh - 17) * 0.0167f + 0.85f;
 
+  for (int32_t k = 0; k < raw.nstats; k++) {
+    if (!raw.have[k]) continue;
+    for (int32_t i = 0; i < raw.stats[k].count; i++) {
+      if (raw.stats[k].f) raw.stats[k].f[i] = (float)raw.v[k][i];
+      else raw.stats[k].i[i] = jtrunc_d(raw.v[k][i]);
+    }
+  }
+  if (cd->enginsignature[slot] > 4 || cd->enginsignature[slot] < 0) cd->enginsignature[slot] = 0;
   return true;
 }
 
