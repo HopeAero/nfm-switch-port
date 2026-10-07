@@ -71,7 +71,17 @@ fixes for many cars in view (trackgrid, archive loading) are reused.
       stage 19 routed like 24, fewer air-stunt rules. control_reset_ext()
       for its hold/revstart. Fix targets stay NFM 2's nearest-hoop (stage
       files carry no `setpoint` yet).
-- [ ] classictracks.radq stages, 7 cars, unique opponents, all open.
+- [x] All open: both campaigns count as cleared at boot, so every stage
+      and car can be picked.
+- [x] Stages: NFM 2's own files stay (the user wants the 2015 look).
+      classictracks.radq is the same tracks from the older NFM 2: no
+      decoration or piles, and its AI repair targets marked with
+      `setpoint` (13 of 17 stages; stage 16 also moves a fix hoop).
+- [ ] The setpoint repair targets for the AI (Extended's contva.fixpoint):
+      match each classictracks setpoint to the NFM 2 file's `set(...)p` at
+      the same place, hand control.c the checkpoint numbers.
+- [ ] 7 cars and opponents as sortcars already picks them (Extended keeps
+      NFM 2's rules); verify against Extended's sortcars for Classic.
 
 ## Phase 3 -- Extended's content
 

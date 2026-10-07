@@ -4320,6 +4320,10 @@ int game_run(void) {
   } else {
     game_progress_reset(&progress);
   }
+  // Need for Madness 2 Extended: every stage and car open from the start
+  // (both campaigns as if cleared: NFM 1's 10 stages, NFM 2's 17).
+  progress.unlocked[0] = 11;
+  progress.unlocked[1] = 17;
 
   // Track backdrop scroll state -- see draw_trackbg() above. Persistent
   // across state transitions so the two tiles keep sliding smoothly
