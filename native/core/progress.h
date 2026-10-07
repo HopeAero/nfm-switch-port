@@ -169,8 +169,9 @@ bool game_progress_load_from_disk(GameProgress *p, const char *path);
 // format stays exactly what it was.
 
 /** Motion-blur intensity, 0..100 in steps of 20; 100 is the original's
- * trail strength, 0 turns the trail off. */
-#define GAME_SETTINGS_BLUR_DEFAULT 100
+ * trail strength, 0 turns the trail off. The extended build starts with it
+ * off, as it does the screen shake (the user, 2026-10-07). */
+#define GAME_SETTINGS_BLUR_DEFAULT 0
 
 /** How the race (and the car/stage selects) reach the screen: drawn at the
  * original 800x450 and stretched with no filtering, the same stretched with
@@ -207,7 +208,7 @@ typedef struct {
   int32_t bind[BIND_COUNT];    // per BindAction, an index into game.c's kPadNames
 } GameSettings;
 
-/** Defaults: the original's trail and shake, vibration on, and `graphics`
+/** Defaults: no trail and no shake (the extended build), vibration on, and `graphics`
  * as the caller passes (each platform picks its own). */
 GameSettings game_settings_defaults(int32_t graphics);
 

@@ -218,7 +218,7 @@ GameSettings game_settings_defaults(int32_t graphics) {
   s.sfx_vol = 100;
   s.show_fps = 0;
   s.board_names = 0;
-  s.shake = 1;
+  s.shake = 0;   // the extended build starts without it
   s.rumble = 1;
   s.steer_dpad = 0;
   // Indices into game.c's Switch button list: ZR, ZL, B, X, D-Pad Up,
