@@ -36,6 +36,7 @@ typedef struct {
   int32_t multion; // 0 = single-player; most of drive()'s xt.multion-gated code is dead at 0
   bool extended;    // Extended Mode's gameplay changes (mad.c), on in the extended build
   bool classicmode; // Extended's Classic Mode: NFM 2's stages and cars (M A S H E E N's own rules)
+  int32_t ptmatch;   // Extended's Premier Tournament match 1..5, 0 otherwise
   bool lan;
   int32_t starcnt;
   bool mutes;

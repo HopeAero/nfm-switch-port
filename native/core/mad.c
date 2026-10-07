@@ -25,6 +25,7 @@ void mad_init(Mad *mad, CarDefine *cd, Medium *m, Record *rpd, XtGraphicsStub *x
 
 void mad_reseto(Mad *mad, int32_t cn, ContO *contO, CheckPoints *checkPoints) {
   mad->cn = cn;
+  mad->lastcolider = -1;
   // Extended (Madness.java:1154-1155): an empty bar; the next tick refills
   // speclast (an empty bar and no special left).
   mad->spatk = 0.0f;
@@ -683,6 +684,7 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
             }
           }
           if (xt_graphics_stub_human(mad->xt, mad->im)) mad2->lastcolido = 70;
+          mad2->lastcolider = mad->im;
           if (xt_graphics_stub_human(mad->xt, mad2->im)) mad->lastcolido = 70;
           mad2->scy[k] = mad2->scy[k] - (float)cd->lift[mad->cn];
         }

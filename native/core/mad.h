@@ -124,6 +124,7 @@ typedef struct Mad {
   bool specialact, frozen, strswap, leech, redstr;
   float strengthreduce;  // the strength a swap hands over
   double wxzd;           // Extended's double ContO.wxz (its cars turn 7.5 a tick); contO->wxz is its int
+  int32_t lastcolider;   // the car that last hit this one (its im), -1 none: who a wasting is credited to
 
   CarDefine *cd;   // borrowed
   Medium *m;       // borrowed

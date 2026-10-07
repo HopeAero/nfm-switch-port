@@ -107,7 +107,21 @@ fixes for many cars in view (trackgrid, archive loading) are reused.
       Headless: NFM_EXT_STAGE=tracks:1.
 - [ ] specialchk (checkpoint that repairs) and the floating checkpoint height
       window in mad.c; Extended's fadefrom 12000 left out (C fog kept).
-- [ ] Normal-mode stages (tracks.radq), Premier Tournament.
+- [x] Extended's normal mode (docs/extended-normal-mode.md): the game-mode
+      menu's fourth row "Extended" (data/port/extended_label.png); Free Play's
+      flow with ext_normal: all 39 cars, stages 1-28 of tracks.radq with
+      their names and previews, unlocked by winning (ext_progress.txt), 11
+      cars from Extended's sortcars (ext_mode.c), its music (stageN.radq with
+      its loadMod numbers), "Stage N is now unlocked!" / "Stage N
+      Completed!". The AI knows the mode (control.c: classic-only branches
+      off, Extended's own stage numbers, the tournament's per-match tuning).
+      Headless: NFM_EXT_NORMAL=1 NFM_STAGE_NUM=n (NFM_PTMATCH=m).
+- [x] Premier Tournament (ext_pt.c): stage 26 opens a rules screen per match,
+      races matchtracks 26m1-5 with every car the match's, tourney()'s rules
+      (revives, no damage, eliminations, no specials), the drivers' names in
+      the car list, the scoreboard, points after each match, the champion
+      after five; taking it opens stage 27. v2.8's dead ends are mended
+      (kills score, match 5 eliminates the last car, it can end).
 - [ ] Revised and Recharged cars; cars and stages from the SD card.
 
 ## Phase 4 -- RPG / career

@@ -184,21 +184,31 @@ static int32_t ext_cn(int32_t cn) { return cn < 16 ? cn + 23 : cn - 16; }
 #define EXT_NPLAYERS (cp->nplayers)
 
 /** One decision cycle (stcnt > statusque) of Extended's preform,
- * Control.java:159-4894 in Classic Mode. Rubber-banding is gone: acuracy and
- * upwait are never computed here, so they stay at reset's 0. */
+ * Control.java:159-4894, outside career. Rubber-banding is gone: acuracy and
+ * upwait are never computed here, so they stay at reset's 0.
+ *
+ * `st` is Extended's own stage number: Classic's 1-17 (this port races them
+ * as 11-27) or, in its normal mode, tracks.radq's 1-28 as they are. Checks
+ * Extended wraps in `if (xtgraphics.classicmode)` are written `classic &&`;
+ * the rest it runs in every mode. `ptm` is the Premier Tournament's match
+ * (normal-mode stage 26, Extended's `dontdisplay`), 0 otherwise. */
 static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
   Medium *m = c->m;
-  const int32_t st = cp->stage - 10;
+  const bool classic = mad->xt->classicmode;
+  const int32_t st = classic ? cp->stage - 10 : cp->stage;
+  const int32_t ptm = (!classic && cp->stage == 26) ? mad->xt->ptmatch : 0;
+  const bool pt_race = ptm == 2 || ptm == 3;   // the tourney's racing matches
   const int32_t cn = ext_cn(mad->cn);
   const int32_t im = mad->im;
 
-  // :159-271 -- clrnce only changes in career and the tourney.
+  // :159-271 -- clrnce only changes in career and the tourney (:161-166).
   c->clrnce = 5;
+  if (pt_race) c->clrnce = 3;
 
   // :272-305 -- skiplev: of NFM 2's per-stage caps only Classic 4 and 5 stay.
   float f = 0.0f;
-  if (st == 4) f = 0.5f;
-  if (st == 5) f = 0.2f;
+  if (classic && st == 4) f = 0.5f;
+  if (classic && st == 5) f = 0.2f;
   if (cp->pos[im] - cp->pos[0] < -1) {
     c->skiplev = (float)((double)c->skiplev + 0.2);
     if (c->skiplev > f) c->skiplev = f;
@@ -223,14 +233,16 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
     c->turntyp = jtrunc(medium_random(m) * 4.0f);
     if (st == 3) c->turntyp = 1;
     if (cp->pos[0] - cp->pos[im] < 0) c->turntyp = jtrunc(medium_random(m) * 2.0f);
-    if (st == 8) c->turntyp = 2;
+    if (classic && st == 8) c->turntyp = 2;
+    if (pt_race) c->turntyp = 0;   // :377-385
     if (st == 14 || st == 20 || st == 6) c->turntyp = 0;
     if (c->attack != 0) {
       c->turntyp = 2;
-      if (st == 11) c->turntyp = jtrunc(medium_random(m) * 3.0f);
+      if (classic && st == 11) c->turntyp = jtrunc(medium_random(m) * 3.0f);
       if (st == 16 && cp->clear[im] - cp->clear[0] >= 5) c->turntyp = 0;
     }
     if (st == 6 || st == 7 || st == 10 || st == 11 || st == 12 || st == 14 || st == 16 || st == 17) c->agressed = true;
+    if (pt_race) c->agressed = true;   // :430-438
     c->cntrn = 5;
   }
 
@@ -244,10 +256,11 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
   if (mad->power <= 50.0f) c->mustland -= 0.5f;
   else c->mustland = 0.0f;
   if (st == 8 || st == 10 || st == 12 || st == 14 || st == 22 || st == 6) c->mustland = 0.0f;
+  if (pt_race) c->mustland = 0.0f;   // :482-490
 
   // :487-655 -- stunt plans.
   c->stuntf = 0;
-  if (st == 8 && mad->pcleared == 57) c->stuntf = 1;
+  if (classic && st == 8 && mad->pcleared == 57) c->stuntf = 1;
   if (st == 10) {
     if (cp->pos[0] >= cp->pos[im] && abs(cp->clear[0] - mad->clear) < 2 && mad->clear >= 2) {
       c->stuntf = 3;
@@ -257,15 +270,20 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
     }
     if (cn == 12) c->stuntf = 1;
   }
-  if (st == 11 && mad->pcleared == 21) c->stuntf = 1;
+  if (pt_race) c->stuntf = 2;   // :524-532
+  if (classic && st == 11 && mad->pcleared == 21) c->stuntf = 1;
   if (st == 10) c->stuntf = (mad->pcleared != 44 && mad->pcleared < 140) ? 2 : 1;
-  if (st == 14) {
+  if (classic && st == 14) {
     c->saftey = 10;
     if (mad->pcleared >= 4 && mad->pcleared < 70) c->stuntf = 4;
     else if (cn == 12 || cn == 8) c->stuntf = 2;
     if (cn == 14) c->stuntf = 6;
   }
-  if (st == 16) {
+  if (pt_race) {   // :886-895
+    c->saftey = 10;
+    c->stuntf = 4;
+  }
+  if (classic && st == 16) {
     c->mustland = 0.0f;
     c->saftey = 10;
     if ((mad->pcleared == 15 || mad->pcleared == 51) && ((double)medium_random(m) > 0.4 || c->trfix != 0)) c->stuntf = 7;
@@ -277,20 +295,20 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
   // :656-760
   c->trickprf = (mad->power - 38.0f) / 50.0f - medium_random(m) / 2.0f;
   if (mad->power < 60.0f) c->trickprf = -1.0f;
-  if (st == 3 && im == 10 && (double)c->trickprf > 0.7) c->trickprf = 0.7f;
+  if (classic && st == 3 && im == 10 && (double)c->trickprf > 0.7) c->trickprf = 0.7f;
   if (st == 6 && (double)c->trickprf > 0.3) c->trickprf = 0.3f;
   if (st == 8 && (double)c->trickprf > 0.2) c->trickprf = 0.2f;
-  if (st == 9) {
+  if (classic && st == 9) {
     if ((double)c->trickprf > 0.5) c->trickprf = 0.5f;
     if ((im == 10 || im == 9) && (double)c->trickprf > 0.3) c->trickprf = 0.3f;
   }
-  if (st == 11 && c->trickprf != -1.0f) c->trickprf *= 0.75f;
-  if (st == 12 && (mad->pcleared == 55 || mad->pcleared == 7)) {
+  if (classic && st == 11 && c->trickprf != -1.0f) c->trickprf *= 0.75f;
+  if (classic && st == 12 && (mad->pcleared == 55 || mad->pcleared == 7)) {
     c->trickprf = -1.0f;
     c->stuntf = 5;
   }
-  if (st == 13 && (double)c->trickprf > 0.4) c->trickprf = 0.4f;
-  if (st == 14 && (double)c->trickprf > 0.5) c->trickprf = 0.5f;
+  if (classic && st == 13 && (double)c->trickprf > 0.4) c->trickprf = 0.4f;
+  if (classic && st == 14 && (double)c->trickprf > 0.5) c->trickprf = 0.5f;
   if (st == 17) c->trickprf = -1.0f;
 
   // :761-800 -- usebounce is never rolled in Extended (stays false).
@@ -298,18 +316,21 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
   c->perfection = medium_random(m) <= (float)mad->hitmag / (float)mad->cd->maxmag[mad->cn];
   if (dmg > 60.0f) c->perfection = true;
   if (st == 6 || st == 8 || st == 9 || st == 10 || st == 11 || st == 12 || st == 14 || st == 16) c->perfection = true;
+  if (pt_race) c->perfection = true;   // :1197-1205
 
   // :1220-2420 -- picking a car to attack. No 0.7 cap on the odds, and a
   // wasted car is never the one aimed at.
   if (c->attack == 0) {
     bool flag1 = true;
-    if (st == 1 || st == 4 || st == 9 || st == 13 || st == 16) flag1 = c->afta;
+    if (st == 1 || st == 4 || st == 9 || st == 13 || (classic && st == 16)) flag1 = c->afta;
     if (st == 8 || st == 6 || st == 10 || st == 14) flag1 = false;
     bool flag2 = false;
     if (st == 3 && (cn == 9 || cn == 32)) flag2 = true;
-    if (st == 8 && (cn == 11 || cn == 34)) flag2 = true;
-    if (st == 9 && cp->clear[0] >= 20) flag2 = true;
-    if (st == 11 || st == 13 || st == 15 || st == 16) flag2 = true;
+    if (classic) {   // :1249-1278
+      if (st == 8 && (cn == 11 || cn == 34)) flag2 = true;
+      if (st == 9 && cp->clear[0] >= 20) flag2 = true;
+      if (st == 11 || st == 13 || st == 15 || st == 16) flag2 = true;
+    }
     int32_t j2 = 60;
     if (st == 3 || st == 11 || st == 17 || st == 10 || st == 8) j2 = 30;
     if ((st == 2 || st == 13) && (cn == 13 || cn == 36)) j2 = 50;
@@ -321,7 +342,7 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
     if (st == 11 && c->bulistc) j2 = 30;
     if (st == 12) j2 = 50;
     if (st == 15 && c->bulistc) j2 = 40;
-    if (st == 16) {
+    if (classic && st == 16) {
       if (cn == 11 && cp->clear[0] == 27) j2 = 0;
       if (cn == 15 || cn == 9) j2 = 50;
       if (cn == 11) j2 = 40;
@@ -351,7 +372,7 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
         k8 = 10;
       }
       if (st == 9 && (mad->pcleared == 13 || mad->pcleared == 33 || flag2) && l6 < 12000) l6 = 12000;
-      if (st == 11) {
+      if (classic && st == 11) {
         if (!c->bulistc) {
           if (l6 < 6000) l6 = 6000;
         } else {
@@ -362,12 +383,13 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
       }
       if (st == 12 && c->bulistc) { l6 = 6000; k8 = 10; }
       if (st == 13) l6 = 21000;
-      if (st == 15) {
+      if (classic && st == 15) {
         l6 *= dcl + 1;
         if (c->bulistc) { l6 = 4000 * (dcl + 1); k8 = 10; }
       }
       if (st == 10) l6 = 16000;
-      if (st == 16) {
+      if (ptm == 1 || ptm == 4) l6 = 80000;   // :1476-1485, the tourney's wasting matches
+      if (classic && st == 16) {
         if (cn == 13 && c->bulistc) {
           if (c->oupnt == 33) l6 = 17000;
           if (c->oupnt == 51) l6 = 30000;
@@ -378,14 +400,15 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
         if (cn == 11) l6 = 4000 * (dcl + 1);
       }
       int32_t i6 = 85 + 15 * (dcl + 1);
-      if (st == 13) i6 = 45;
-      if (st == 16 && (cn == 15 || cn == 9 || cn == 11 || cn == 14)) i6 = 50 + 70 * dcl;
+      if (classic && st == 13) i6 = 45;
+      if (classic && st == 16 && (cn == 15 || cn == 9 || cn == 11 || cn == 14)) i6 = 50 + 70 * dcl;
 
       if (k8 < i6 && control_py(contO->x / 100, cp->opx[i4] / 100, contO->z / 100, cp->opz[i4] / 100) < l6 &&
           mad->power > (float)j2) {
         float f2 = (float)(35 - dcl * 10);
         if (f2 < 1.0f) f2 = 1.0f;
         float f3 = (float)((cp->pos[im] + 1) * (5 - cp->pos[i4])) / f2;
+        if (classic) {   // :1558-1683
         if (st == 8) {
           if (cn == 34 || (cn == 36 && c->bulistc)) f3 *= 1.5f;
           else f3 = 0.0f;
@@ -414,9 +437,14 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
           if (cp->clear[im] - cp->clear[0] >= 5 && i4 == 0) f3 = 1.0f;
           if (cn == 33 || cn == 35) f3 = 0.0f;
         }
+        }
+        // :1684-1700 -- the tourney: the wasting matches always attack, the
+        // racing ones never.
+        if (ptm == 1 || ptm == 4 || ptm == 5) f3 = 900.0f;
+        if (pt_race) f3 = 0.0f;
         if (i4 != 0 && cp->pos[0] < cp->pos[im]) f3 = 0.0f;
         if (i4 != 0 && flag2) f3 = 0.0f;
-        if (st == 7 && im == EXT_NPLAYERS - 1 && i4 == 0) f3 = (float)((double)f3 * 1.5);
+        if (classic && st == 7 && im == EXT_NPLAYERS - 1 && i4 == 0) f3 = (float)((double)f3 * 1.5);
 
         if (medium_random(m) < f3) {
           c->attack = 40 * (dcl + 1);
@@ -435,17 +463,17 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
               if (c->attack > 150) c->attack = 150;
             }
           }
-          if (st == 12) {
+          if (classic && st == 12) {
             if (control_rand_gt_rand(m)) c->aim = 0.7f;
             if (c->bulistc && c->attack > 150) c->attack = 150;
           }
-          if (st == 13 && c->attack > 60) c->attack = 60;
-          if (st == 15) {
+          if (classic && st == 13 && c->attack > 60) c->attack = 60;
+          if (classic && st == 15) {
             c->aim = medium_random(m) * 1.5f;
             c->attack /= 2;
             c->exitattack = control_rand_gt_rand(m);
           }
-          if (st == 16) {
+          if (classic && st == 16) {
             if (cn != 36) {
               c->aim = medium_random(m) * 1.5f;
               if (dcl <= 2 || cn == 37) c->attack /= 3;
@@ -469,8 +497,9 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
 
   // :4535-4610 -- when to go and get fixed.
   bool flag3 = false;
-  if (st == 6 || st == 10 || st == 17) flag3 = true;
-  if ((st == 8 && mad->pcleared != 73) || st == 14 || st == 20) flag3 = true;
+  if (st == 6 || st == 10 || (classic && st == 17)) flag3 = true;
+  if ((classic && st == 8 && mad->pcleared != 73) || st == 14 || st == 20) flag3 = true;
+  if (ptm >= 1 && ptm <= 5) flag3 = true;   // :4231-4235, no fixing in the tourney
   if (c->trfix == 3) {
     c->upwait = 0;
     c->acuracy = 0;
@@ -483,8 +512,8 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
     if (!flag3) {
       int32_t k9 = 80;
       if (st == 9) k9 = 70;
-      if (st == 15 && mad->pcleared == 91) k9 = 50;
-      if (st == 16 && cp->clear[im] - cp->clear[0] >= 5 && cn != 10 && cn != 12 && cn != 33 && cn != 35) k9 = 50;
+      if (classic && st == 15 && mad->pcleared == 91) k9 = 50;
+      if (classic && st == 16 && cp->clear[im] - cp->clear[0] >= 5 && cn != 10 && cn != 12 && cn != 33 && cn != 35) k9 = 50;
       if (dmg > (float)k9) c->trfix = 2;
       c->fixby = k9;
     } else {
@@ -494,24 +523,24 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
 
   // :4611-4890 -- bulistc, the scripted detours.
   if (c->bulistc) {
-    if (st == 8) {
+    if (classic && st == 8) {
       c->runbul--;
       if (mad->pcleared == 10) c->runbul = 0;
       if (c->runbul <= 0) c->bulistc = false;
     }
   } else {
-    if (st == 8 && cn == 34 && mad->pcleared == 35) {
+    if (classic && st == 8 && cn == 34 && mad->pcleared == 35) {
       mad->pcleared = 73;
       mad->clear = 0;
       c->bulistc = true;
       c->runbul = jtrunc(100.0f * medium_random(m));
     }
-    if ((st == 11 || st == 12) && cn == 36) c->bulistc = true;
-    if (st == 15 && cp->clear[0] - mad->clear >= 3 && c->trfix == 0) {
+    if (classic && (st == 11 || st == 12) && cn == 36) c->bulistc = true;
+    if (classic && st == 15 && cp->clear[0] - mad->clear >= 3 && c->trfix == 0) {
       c->bulistc = true;
       c->oupnt = -1;
     }
-    if (st == 16) {
+    if (classic && st == 16) {
       if (cn == 36 && cp->pcleared == 8) {
         c->bulistc = true;
         c->attack = 0;
@@ -521,7 +550,7 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
         c->oupnt = -1;
       }
     }
-    if ((st == 2 || st == 3 || st == 4 || st == 8 || st == 10) && (cn == 13 || cn == 36) &&
+    if ((st == 2 || st == 3 || st == 4 || (classic && st == 8) || st == 10) && (cn == 13 || cn == 36) &&
         abs(cp->clear[0] - mad->clear) >= 2) {
       c->bulistc = true;
     }
@@ -531,12 +560,12 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
   c->statusque = jtrunc(20.0f * medium_random(m));
 }
 
-void control_reset_ext(Control *c, CheckPoints *cp, int32_t n) {
+void control_reset_ext(Control *c, CheckPoints *cp, int32_t n, bool classic) {
   // NFM 2's per-stage hold/revstart/statusque in control_reset give way to
-  // Extended's (Control.java:9824-9937, Classic Mode).
+  // Extended's (Control.java:9824-9937, outside career).
   const int32_t hold0 = c->hold, statusque0 = c->statusque;
   control_reset(c, cp, n);
-  const int32_t st = cp->stage - 10, cn = ext_cn(n);
+  const int32_t st = classic ? cp->stage - 10 : cp->stage, cn = ext_cn(n);
   c->hold = hold0;
   c->statusque = statusque0;
   c->revstart = 0;
@@ -545,7 +574,7 @@ void control_reset_ext(Control *c, CheckPoints *cp, int32_t n) {
   c->fewsecs = 0;
   c->fewsecson = false;
   c->fixby = 80;
-  if (st == 8) c->hold = 50;
+  if (classic && st == 8) c->hold = 50;
   if (st == 10) c->hold = 30;
   if (st == 11) {
     if (cn != 13 && cn != 18 && cn != 19) {
@@ -556,7 +585,7 @@ void control_reset_ext(Control *c, CheckPoints *cp, int32_t n) {
     }
     c->statusque = 0;
   }
-  if (st == 12) {
+  if (classic && st == 12) {
     if (cn != 13) {
       c->hold = jtrunc(20.0f + 10.0f * medium_random(c->m));
       c->revstart = jtrunc(10.0f + 10.0f * medium_random(c->m));
@@ -577,6 +606,12 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
   c->handb = false;
   // Extended Mode: its own decisions and the few per-tick changes below.
   const bool ext = mad->xt != NULL && mad->xt->extended;
+  // Extended's normal mode races its own stages 1-28. The per-tick checks
+  // below are in NFM 2's numbers (Extended Classic 1-17 = 11-27), so `pst`
+  // lifts a normal stage onto them; those Extended keeps to Classic Mode
+  // add `!ext_normal`.
+  const bool ext_normal = ext && !mad->xt->classicmode;
+  const int32_t pst = ext_normal ? checkPoints->stage + 10 : checkPoints->stage;
   if (ext) c->spatk = false; // Control.java:152; the AI's special fires from nitroandspecials
   if (mad->dest) return; // Control.js:219 `if (!mad.dest) { ... }` wraps the entire rest of the method
 
@@ -1141,10 +1176,10 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
 
         int32_t waypoint = mad->point;
         int32_t bulPowerThresh = 50;
-        if (checkPoints->stage == 9) bulPowerThresh = 20;
-        if (checkPoints->stage == 18) bulPowerThresh = 20;
-        if (checkPoints->stage == 25) bulPowerThresh = 40;
-        if (checkPoints->stage == 26) bulPowerThresh = 20;
+        if (pst == 9) bulPowerThresh = 20;
+        if (pst == 18) bulPowerThresh = 20;
+        if (pst == 25) bulPowerThresh = 40;
+        if (pst == 26) bulPowerThresh = 20;
 
         if (!c->bulistc || c->trfix == 2 || c->trfix == 3 || c->trfix == 4 || mad->power < (float)bulPowerThresh) {
           // Control.js:1113-1375 -- normal forward waypoint advance, with
@@ -1193,15 +1228,15 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
             }
           }
 
-          if (checkPoints->stage == 18 && mad->pcleared == 73 && c->trfix == 0 && mad->clear != 0) waypoint = 10;
-          if (checkPoints->stage == 19 && mad->pcleared == 18 && c->trfix == 0) waypoint = 27;
-          if (checkPoints->stage == 21) {
+          if (!ext_normal && checkPoints->stage == 18 && mad->pcleared == 73 && c->trfix == 0 && mad->clear != 0) waypoint = 10;
+          if (!ext_normal && checkPoints->stage == 19 && mad->pcleared == 18 && c->trfix == 0) waypoint = 27;
+          if (!ext_normal && checkPoints->stage == 21) {
             if (mad->pcleared == 5 && c->trfix == 0 && mad->power < 70.0f) {
               waypoint = (waypoint <= 16) ? 16 : 21;
             }
             if (mad->pcleared == 50) waypoint = 57;
           }
-          if (checkPoints->stage == 22 && (mad->pcleared == 27 || mad->pcleared == 37)) {
+          if (!ext_normal && checkPoints->stage == 22 && (mad->pcleared == 27 || mad->pcleared == 37)) {
             while (checkPoints->typ[waypoint] == -1) {
               waypoint++;
               if (waypoint >= checkPoints->n) waypoint = 0;
@@ -1214,7 +1249,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
             }
           }
           // Extended runs Classic 14's routing on Classic 9 as well (Control.java:~30357).
-          if (checkPoints->stage == 24 || (ext && checkPoints->stage == 19)) {
+          if (!ext_normal && (checkPoints->stage == 24 || (ext && checkPoints->stage == 19))) {
             while (checkPoints->typ[waypoint] == -1) {
               waypoint++;
               if (waypoint >= checkPoints->n) waypoint = 0;
@@ -1231,7 +1266,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
               c->oupnt = waypoint;
             }
           }
-          if (checkPoints->stage == 25) {
+          if (!ext_normal && checkPoints->stage == 25) {
             if ((mad->pcleared != 91 && checkPoints->pos[0] < checkPoints->pos[mad->im] && mad->cn != 13) ||
                 (checkPoints->pos[mad->im] == 0 && (mad->clear == 12 || mad->clear == 20))) {
               while (checkPoints->typ[waypoint] == -4) {
@@ -1252,7 +1287,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
               waypoint = (c->oupnt == 3) ? 91 : 89;
             }
           }
-          if (checkPoints->stage == 26) {
+          if (!ext_normal && checkPoints->stage == 26) {
             if (mad->pcleared == 128) {
               if (control_py(contO->x / 100, 0, contO->z / 100, 229) < 1500 || contO->z > 23000) c->oupnt = 128;
               if (c->oupnt != 128) waypoint = 3;
@@ -1325,7 +1360,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
           // Stages 21/22/26 script full ambush encounters here with
           // hardcoded world coordinates -- see this file's own top
           // comment on why these aren't hand-wavable/generalizable.
-          if ((checkPoints->stage != 25 && checkPoints->stage != 26) || c->runbul == 0) {
+          if ((pst != 25 && pst != 26) || c->runbul == 0) {
             waypoint -= 2;
             if (waypoint < 0) waypoint += checkPoints->n;
             if (checkPoints->stage == 9 && waypoint > 76) waypoint = 76;
@@ -1334,7 +1369,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
               if (waypoint < 0) waypoint += checkPoints->n;
             }
           }
-          if (checkPoints->stage == 21) {
+          if (!ext_normal && checkPoints->stage == 21) {
             if (waypoint >= 14 && waypoint <= 19) waypoint = 13;
             if (c->oupnt == 72 && waypoint != 56) {
               waypoint = 57;
@@ -1390,7 +1425,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
               }
             }
           }
-          if (checkPoints->stage == 25) {
+          if (!ext_normal && checkPoints->stage == 25) {
             if (c->oupnt == -1) {
               int32_t py = -10;
               for (int32_t o = 0; o < checkPoints->n; o++) {
@@ -1412,7 +1447,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
             if (c->oupnt < -1) c->oupnt++;
             if (c->runbul != 0) c->runbul--;
           }
-          if (checkPoints->stage == 26) {
+          if (!ext_normal && checkPoints->stage == 26) {
             bool b4 = false;
             if (mad->cn == 13) {
               if (!c->gowait) {
@@ -1507,13 +1542,12 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
         // the nearest FIX point (the anti-stuck waypoints control_reset
         // pre-computed into c->fpnt[]) instead of the normal advance.
         if (checkPoints->stage != 27 || ext) { // Extended repairs on Classic 17 too
-          if (checkPoints->stage == 10 || checkPoints->stage == 19 ||
-              (checkPoints->stage == 18 && mad->pcleared == 73) || checkPoints->stage == 26) {
+          if (pst == 10 || pst == 19 || (pst == 18 && mad->pcleared == 73) || pst == 26) {
             c->forget = true;
           }
           if ((mad->missedcp == 0 || c->forget || c->trfix == 4) && c->trfix != 0) {
             int32_t n25 = 0;
-            if (checkPoints->stage == 25 || checkPoints->stage == 26) n25 = 3;
+            if (!ext_normal && (checkPoints->stage == 25 || checkPoints->stage == 26)) n25 = 3;
             if (c->trfix == 2) {
               int32_t py3 = -10;
               int32_t n26 = 0;
@@ -1523,6 +1557,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
                 if (d < py3 || py3 == -10) { py3 = d; n26 = n27; }
               }
               if (checkPoints->stage == 18 || checkPoints->stage == 22) n26 = 1;
+              if (ext_normal) n26 = 0;   // Control.java:9279, whichfix 0 outside Classic and career
               waypoint = c->fpnt[n26];
               // Java Control.java:1794 -- `forget` is a PERSISTENT field
               // that gates re-entry into this exact block on later ticks,
@@ -1588,17 +1623,18 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
         c->pan = jtrunc_d(90.0 + (double)n31 + atan((double)(n34 - contO->z) / (double)(n33 - contO->x)) / NFM_DEG);
         c->attack--;
         if (c->attack <= 0) c->attack = 0;
-        if (checkPoints->stage == 25 && c->exitattack && !c->bulistc && mad->missedcp != 0) c->attack = 0;
-        if (ext && checkPoints->stage == 11 && c->exitattack) c->attack = 0; // Control.java:~1925
-        if (checkPoints->stage == 26 && mad->cn == 13 &&
+        if (pst == 25 && c->exitattack && !c->bulistc && mad->missedcp != 0) c->attack = 0;
+        if (ext && pst == 11 && c->exitattack) c->attack = 0; // Control.java:~1925
+        // Control.java:5813, Extended's cars 13 and 36 (this port's 29 and 13)
+        if (pst == 26 && (mad->cn == 13 || (ext && mad->cn == 29)) &&
             (checkPoints->clear[0] == 4 || checkPoints->clear[0] == 13 || checkPoints->clear[0] == 21)) {
           c->attack = 0;
         }
-        if (checkPoints->stage == 26 && mad->missedcp != 0 &&
+        if (pst == 26 && mad->missedcp != 0 &&
             (checkPoints->pos[mad->im] == 0 || (checkPoints->pos[mad->im] == 1 && checkPoints->pos[0] == 0))) {
           c->attack = 0;
         }
-        if (checkPoints->stage == 26 && checkPoints->pos[0] > checkPoints->pos[mad->im] && mad->power < 80.0f) {
+        if (pst == 26 && checkPoints->pos[0] > checkPoints->pos[mad->im] && mad->power < 80.0f) {
           c->attack = 0;
         }
       }
@@ -1641,7 +1677,7 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
       // ======================================================================
       // SECTION 4 -- wall-avoidance/recovery. Control.js:1790-1828.
       // ======================================================================
-      if (checkPoints->stage == 24 && c->wall != -1) {
+      if (!ext_normal && checkPoints->stage == 24 && c->wall != -1) {
         if (trackers->dam[c->wall] == 0 || mad->pcleared == 45) c->wall = -1;
         if (mad->pcleared == 58 && checkPoints->opz[mad->im] < 36700) { c->wall = -1; c->hold = 0; }
       }
@@ -1716,9 +1752,9 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
         float n36f = (mad->scy[0] + mad->scy[1] + mad->scy[2] + mad->scy[3]) * (float)(contO->y - 300);
         int32_t n36 = jtrunc(n36f / 4000.0f);
         int32_t n37 = 3;
-        if (checkPoints->stage == 25) n37 = 10;
+        if (pst == 25) n37 = 10;
         if (n36 > 7 && (medium_random(m) > (c->trickprf / (float)n37) || c->stuntf == 4 || c->stuntf == 3 ||
-                        c->stuntf == 5 || c->stuntf == 6 || checkPoints->stage == 26)) {
+                        c->stuntf == 5 || c->stuntf == 6 || pst == 26)) {
           c->oxy = mad->pxy;
           c->ozy = mad->pzy;
           c->flycnt = 0;
@@ -1746,13 +1782,13 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
             }
             c->udstart = jtrunc((10.0f * medium_random(m)) * c->trickprf);
             if (c->stuntf == 6 || (ext && c->stuntf == 4)) c->udstart = 0;
-            if (checkPoints->stage == 26) c->udstart = 0;
-            if (checkPoints->stage == 24 && (c->oupnt == 68 || c->oupnt == 69)) {
+            if (pst == 26) c->udstart = 0;
+            if (!ext_normal && checkPoints->stage == 24 && (c->oupnt == 68 || c->oupnt == 69)) {
               c->apunch = 20;
               c->oupnt = 70;
             }
             if (medium_random(m) > 0.85f && c->stuntf != 4 && c->stuntf != 3 && c->stuntf != 6 &&
-                c->stuntf != 17 && checkPoints->stage != 26) {
+                c->stuntf != 17 && pst != 26) {
               c->udswt = true;
             }
             if (medium_random(m) > (c->trickprf + 0.3f) && c->stuntf != 4 && c->stuntf != 6) {
@@ -1763,14 +1799,14 @@ void control_preform(Control *c, Mad *mad, ContO *contO, CheckPoints *checkPoint
           } else {
             c->lrdirect = control_rand_gt_rand(m) ? -1 : 1;
             c->lrstart = jtrunc((10.0f * medium_random(m)) * c->trickprf);
-            if (medium_random(m) > 0.75f && checkPoints->stage != 26) c->lrswt = true;
+            if (medium_random(m) > 0.75f && pst != 26) c->lrswt = true;
             if (medium_random(m) > (c->trickprf + 0.3f)) {
               c->uddirect = control_rand_gt_rand(m) ? -1 : 1;
               c->udstart = jtrunc(30.0f * medium_random(m));
               if (medium_random(m) > 0.85f) c->udswt = true;
             }
           }
-          if (c->trfix == 3 || c->trfix == 4) {
+          if ((c->trfix == 3 || c->trfix == 4) && !ext_normal) {   // Extended's normal mode adds nothing here
             if (checkPoints->stage != 18 && checkPoints->stage != 8) {
               if (checkPoints->stage != 25 && c->lrdirect == -1) {
                 c->uddirect = (checkPoints->stage != 19) ? -1 : 1;

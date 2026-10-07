@@ -117,9 +117,10 @@ void control_falseo(Control *c, int32_t n);
 void control_reset(Control *c, struct CheckPoints *cp, int32_t n);
 
 /** control_reset, then Extended Mode's own per-stage hold/revstart tuning
- * (Control.java:9824-9937, Classic Mode) in place of NFM 2's. The extended
- * build calls this instead of control_reset. */
-void control_reset_ext(Control *c, struct CheckPoints *cp, int32_t n);
+ * (Control.java:9824-9937, outside career) in place of NFM 2's. The extended
+ * build calls this instead of control_reset; `classic` is xt.classicmode
+ * (cp->stage is then NFM 2's 11-27, else Extended's own 1-28). */
+void control_reset_ext(Control *c, struct CheckPoints *cp, int32_t n, bool classic);
 
 int32_t control_py(int32_t n, int32_t n2, int32_t n3, int32_t n4);
 int32_t control_pys(int32_t n, int32_t n2, int32_t n3, int32_t n4);

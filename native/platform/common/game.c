@@ -86,6 +86,8 @@
 #include "bots.h"
 #include "nfm_limits.h"
 #include "specials.h"
+#include "ext_mode.h"
+#include "ext_pt.h"
 #include "diag.h"
 
 // GameSparker.js's own ContO[610] held NFM 2's stages; Extended's reach 1106
@@ -201,11 +203,44 @@ static bool load_stage_objects(ContO **objects_ptr, int32_t *count_ptr, int32_t 
   return ok;
 }
 
+// Extended's normal-mode stage `stage` as a "pack:entry" spec (26 is the
+// Premier Tournament's match `ptmatch`).
+static void ext_stage_spec(int32_t stage, int32_t ptmatch, char *out, size_t outsz) {
+  char pack[16], entry[16];
+  ext_stage_entry(stage, ptmatch, pack, sizeof(pack), entry, sizeof(entry));
+  snprintf(out, outsz, "%s:%s", pack, entry);
+}
+
+/** A normal-mode stage's name, from its file's name(...) line. */
+static void ext_read_name(int32_t stage, char *out, size_t outsz) {
+  if (stage == EXT_PT_STAGE) {
+    snprintf(out, outsz, "The Premier Tournament");
+    return;
+  }
+  char pack[16], entry[16];
+  ext_stage_entry(stage, 1, pack, sizeof(pack), entry, sizeof(entry));
+  char *text = ext_stage_text(pack, entry);
+  snprintf(out, outsz, "Stage %d", stage);
+  if (!text) return;
+  char *start = strstr(text, "name(");
+  if (start) {
+    start += 5;
+    char *end = strchr(start, ')');
+    if (end && (size_t)(end - start) < outsz) {
+      memcpy(out, start, (size_t)(end - start));
+      out[end - start] = '\0';
+      for (char *c = out; *c; c++) if (*c == '|') *c = ',';
+    }
+  }
+  free(text);
+}
+
 // ---- One of Extended's stages, `spec` "pack:entry" ("tracks:1" is
 // ext/data/Files/tracks.radq's 1.txt), through ext_loadstage from Extended's
 // model table; `player_ext_car` is the player's car in Extended's numbering.
 static bool load_ext_stage_objects(ContO **objects_ptr, int32_t *count_ptr, int32_t previous_count, ContO *ext_models,
-                                   Medium *m, Trackers *t, CheckPoints *cp, const char *spec, int32_t player_ext_car) {
+                                   Medium *m, Trackers *t, CheckPoints *cp, const char *spec, int32_t player_ext_car,
+                                   ExtStageInfo *out_info) {
   char pack[32] = "tracks", entry[48] = "1.txt";
   const char *colon = strchr(spec, ':');
   if (colon) {
@@ -221,9 +256,10 @@ static bool load_ext_stage_objects(ContO **objects_ptr, int32_t *count_ptr, int3
   }
   *objects_ptr = calloc(STAGE_OBJECT_CAPACITY, sizeof(ContO));
   check_points_init(cp);
-  ExtStageInfo info;
+  ExtStageInfo local;
+  ExtStageInfo *info = out_info ? out_info : &local;
   const bool ok = ext_loadstage(*objects_ptr, STAGE_OBJECT_CAPACITY, count_ptr, ext_models, m, t, cp, text,
-                                player_ext_car, &info);
+                                player_ext_car, info);
   free(text);
   check_points_calprox(cp);
   m->resdown = g_resdown_setting;
@@ -292,6 +328,8 @@ typedef enum {
   STATE_STAGE_INTRO,     // fase 5 + 6 -- loadmusic()/musicomp() (xtGraphics.java:2935, :3105), the
                          //   stage's presentation card: hint, music playing, "Press Start to begin"
   STATE_BENCH_RESULT,    // this port's Performance Test summary (Settings > Performance Test)
+  STATE_PT_INFO,         // Extended's ptstart (fase 49): the Premier Tournament's next match and its rules
+  STATE_PT_SCORES,       // Extended's scoreshow (fase 51): points after a match, the champion after five
 } GameState;
 
 // On-screen names for the physical controls, so the help text can say
@@ -1094,6 +1132,7 @@ static void boot_loading_frame(Graphics2D *g, const BootImages *bi, int32_t done
 // Returned as an id so a re-race on the same track skips the re-render:
 // 1..32 are music/stageN.zip, 33 is party.zip.
 static int32_t stage_music_id(int32_t stage_num, int32_t gmode) {
+  if (gmode == 3) return 100 + stage_num;   // Extended's normal mode (callers pass 3), ext_stage_music
   if (stage_num == 27 && gmode == 2) return 33;
   return stage_num;
 }
@@ -1110,6 +1149,22 @@ static bool load_music_track(int32_t id, RadicalTrack *out) {
       {220, 8000, 125}, {261, 8000, 125}, {276, 8800, 145}, {182, 8000, 125}, {220, 8000, 125},
       {200, 8000, 125}, {350, 7900, 125}, {310, 8000, 125}, {400, 7600, 125}};
   memset(out, 0, sizeof(*out));
+  if (id > 100 && id <= 100 + EXT_NORMAL_STAGES) {
+    // Extended's normal mode: ext/data/Files/music/stageN.radq, its own
+    // loadMod(amp, rate, tempo) (ext_mode.c).
+    const ExtMusic mu = ext_stage_music(id - 100);
+    char path[96];
+    snprintf(path, sizeof(path), "ext/data/Files/music/%s.radq", mu.file);
+    VfsZip zip;
+    if (!vfs_read_zip(path, &zip)) {
+      fprintf(stderr, "could not load %s -- no music this stage\n", path);
+      return false;
+    }
+    bool ok = zip.count > 0 &&
+              radical_render_stage(zip.entries[0].data, (size_t)zip.entries[0].len, mu.amp, mu.rate, mu.tempo, out);
+    vfs_free_zip(&zip);
+    return ok;
+  }
   if (id < 1 || id > 33) return false;
   char zip_path[64];
   if (id == 33) snprintf(zip_path, sizeof(zip_path), "music/party.zip");
@@ -2639,7 +2694,7 @@ static void draw_main_menu(Graphics2D *g,
 static void draw_gamemode_menu(Graphics2D *g,
                                  HudImg bgmain, HudImg logomadbg, HudImg logomadnes,
                                  HudImg dude, HudImg logocars, HudImg opback, HudImg opti2,
-                                 HudImg byrd, HudImg nfmcoms,
+                                 HudImg byrd, HudImg nfmcoms, HudImg extlabel,
                                  int32_t *bgmy_ptr, int32_t *flkat_ptr,
                                  int32_t *gxdu_ptr, int32_t *gydu_ptr, int32_t *movly_ptr,
                                  int32_t opselect, bool *aflk_ptr) {
@@ -2665,13 +2720,14 @@ static void draw_gamemode_menu(Graphics2D *g,
   // Drawing all rows unconditionally is therefore the FAITHFUL
   // behaviour, not a simplification of one.
   struct MenuOpt { int32_t x, y, w; int32_t r_aflk, g_aflk, b_aflk; int32_t r_solid, g_solid, b_solid; };
-  const struct MenuOpt opts[3] = {
+  const struct MenuOpt opts[4] = {
     { 358, 262,  82, 200,  64,   0, 255, 128,  0 },  // NFM 1     (Java opselect=0)
     { 358, 290,  82, 200,  64,   0, 255,  95,  0 },  // NFM 2     (Java opselect=1)
     { 348, 318, 102, 200,  64,   0, 255, 128,  0 },  // Free Play (Java opselect=3, moved from y=346)
+    { 354, 346,  90, 200,  64,   0, 255, 128,  0 },  // Extended (its normal mode), the original's 4th slot
   };
 
-  for (int32_t i = 0; i < 3; i++) {
+  for (int32_t i = 0; i < 4; i++) {
     const struct MenuOpt *o = &opts[i];
     draw_menu_option_rect(g, o->x, o->y, o->w, 22, i == opselect,
                            o->r_aflk, o->g_aflk, o->b_aflk,
@@ -2706,6 +2762,7 @@ static void draw_gamemode_menu(Graphics2D *g,
     gfx_draw_image_sub(g, opti2.tex, 346, 322, opti2.w, 15,
                         0, 85, opti2.w, 15, opti2.w, opti2.h);
   }
+  if (extlabel.tex >= 0) gfx_draw_image(g, extlabel.tex, 400 - extlabel.w / 2, 349, extlabel.w, extlabel.h);
 
   // Footer bylines, same positions as main menu.
   if (byrd.tex >= 0) {
@@ -3622,7 +3679,8 @@ static void draw_specials_hud(Graphics2D *g, Medium *m, const Specials *sp, cons
 // the arrow points at cars, power while it points at the track, and the
 // special's charge after the List Bars button (its D).
 static void draw_ext_board(Graphics2D *g, const Medium *m, const CheckPoints *cp, const Mad *mads, int32_t nplayers,
-                           const int32_t *sc, const Specials *sp, bool arrace, bool listbars, bool step) {
+                           const int32_t *sc, const Specials *sp, bool arrace, bool listbars, bool step,
+                           const char *const *driver_names) {
   static int32_t glowg[SPECIALS_MAX], glowg2[SPECIALS_MAX];
   static bool glowphase[SPECIALS_MAX], glowphase2[SPECIALS_MAX];
   static bool glow_ready;
@@ -3670,6 +3728,7 @@ static void draw_ext_board(Graphics2D *g, const Medium *m, const CheckPoints *cp
       }
       const int32_t c = sc[a];
       const char *name = c == 9 ? "SoJ" : (c == 2 ? "Wow C." : (car_name(c)));
+      if (driver_names) name = driver_names[a];   // the tournament's drivers (XT 6421)
       font_draw(g, name, 750 - font_width(name) / 2, 131 + y);
 
       // The bar.
@@ -3950,6 +4009,7 @@ int game_run(void) {
   HudImg menu_kenter = {-1, 0, 0}, menu_km = {-1, 0, 0}, menu_kn = {-1, 0, 0}, menu_ks = {-1, 0, 0};
   HudImg menu_opback = {-1, 0, 0};                          // opback.png -- brown pill
   HudImg menu_opti = {-1, 0, 0};                            // options.png -- main menu 4-option label block
+  HudImg menu_extlabel = {-1, 0, 0};                        // data/port/extended_label.png -- the Extended row
   HudImg menu_opti2 = {-1, 0, 0};                           // options2.png -- gamemode submenu 4-option label block
   HudImg menu_opsettings = {-1, 0, 0};                      // data/port/opsettings.png -- this port's Settings row
   HudImg menu_byrd = {-1, 0, 0};                            // byrd.png -- byline
@@ -4081,6 +4141,7 @@ int game_run(void) {
       menu_opback = load_menu_png(&images_zip, "opback.png");
       menu_opti = load_menu_png(&images_zip, "options.png");
       menu_opti2 = load_menu_png(&images_zip, "options2.png");
+      menu_extlabel = load_menu_png_file("data/port/extended_label.png");
       // This port's fourth main-menu row. Not an original asset: options.png's
       // style redrawn (tools/gen_menu_label.py), a loose file beside data/vita/.
       menu_opsettings = load_menu_png_file("data/port/opsettings.png");
@@ -4377,6 +4438,22 @@ int game_run(void) {
   int32_t mainmenu_movly = 0;
   int32_t mainmenu_opselect = 0;
   int32_t gamemode_opselect = 0;
+  // Extended's normal mode (the game-mode menu's fourth row): Free Play's
+  // flow with Extended's stages, 11 cars and its own unlocking (ext_mode.c).
+  bool ext_normal = false;
+  bool ext_justwon = false;      // this race unlocked the next normal-mode stage
+  int32_t ptmatch = 0;           // the Premier Tournament's match, 1..5 (stage 26)
+  ExtProgress ext_prog;
+  ext_progress_reset(&ext_prog);
+  // NFM_EXT_NORMAL=1 (with NFM_STAGE_NUM, NFM_PTMATCH): race Extended's
+  // normal mode headless.
+  if (getenv("NFM_EXT_NORMAL")) {
+    ext_normal = true;
+    if (getenv("NFM_PTMATCH")) ptmatch = atoi(getenv("NFM_PTMATCH"));
+  }
+  static ExtPT pt;               // the Premier Tournament (ext_pt.c)
+  // The tournament is on: normal mode's stage 26 with a match picked.
+#define PT_ACTIVE (ext_normal && stage_num == EXT_PT_STAGE && ptmatch > 0)
   bool mainmenu_aflk = false;
   // Java xtGraphics.java:416 (`firstime = true`) + :44 (`oldfase`) -- the
   // first-run Instructions gate. The VERY first time the player picks
@@ -4469,6 +4546,7 @@ int game_run(void) {
   GameState settings_return = STATE_PAUSED;
   if (progress_path_ok) {
     game_progress_load_from_disk(&progress, progress_path);
+    ext_progress_load(progress_path, &ext_prog);
   } else {
     game_progress_reset(&progress);
   }
@@ -4836,8 +4914,8 @@ int game_run(void) {
             if (OVERON(kRows[i][0], kRows[i][1], kRows[i][2], 22)) HIT(&mainmenu_opselect, i, BTN_CONFIRM);
         } else if (state == STATE_GAMEMODE_MENU) {
           // draw_gamemode_menu's rows.
-          static const int32_t kRows[3][3] = {{358, 262, 82}, {358, 290, 82}, {348, 318, 102}};
-          for (int32_t i = 0; i < 3; i++)
+          static const int32_t kRows[4][3] = {{358, 262, 82}, {358, 290, 82}, {348, 318, 102}, {354, 346, 90}};
+          for (int32_t i = 0; i < 4; i++)
             if (OVERON(kRows[i][0], kRows[i][1], kRows[i][2], 22)) HIT(&gamemode_opselect, i, BTN_CONFIRM);
         } else if (state == STATE_INSTRUCTIONS) {
           if (inst_flipo >= 1 && inst_flipo <= 15 && OVER(menu_next, 665, 395)) HIT(NULL, 0, BTN_RIGHT);
@@ -4989,8 +5067,10 @@ int game_run(void) {
     } else if (state == STATE_GAMEMODE_MENU) {
       // 3 selectable options (NFM 1 / NFM 2 / Free Play) -- Multiplayer
       // hidden same as main menu.
-      if (KEY_EDGE(BTN_DOWN)) gamemode_opselect = (gamemode_opselect + 1) % 3;
-      if (KEY_EDGE(BTN_UP)) gamemode_opselect = (gamemode_opselect + 2) % 3;
+      // A fourth row, Extended (its normal mode), where the original's own
+      // fourth row sat.
+      if (KEY_EDGE(BTN_DOWN)) gamemode_opselect = (gamemode_opselect + 1) % 4;
+      if (KEY_EDGE(BTN_UP)) gamemode_opselect = (gamemode_opselect + 3) % 4;
       if (KEY_EDGE(BTN_CANCEL)) {
         state = STATE_MAIN_MENU;
       }
@@ -5004,7 +5084,9 @@ int game_run(void) {
           case 0: gmode = 1; break;  // NFM 1
           case 1: gmode = 2; break;  // NFM 2
           case 2: gmode = 0; break;  // Free Play
+          case 3: gmode = 0; break;  // Extended (Free Play's flow, ext_normal)
         }
+        ext_normal = gamemode_opselect == 3;
         // :4646-4659 -- Java resets its cursor to 0 when confirming NFM2
         // or Free Play (its own opselect 1 and 3); the NFM1 branch does
         // not, but it is already 0 there so all three paths leave the
@@ -5022,8 +5104,9 @@ int game_run(void) {
         if (gmode != 0 && progress.scm[gmode - 1] != 0) {
           car_index = progress.scm[gmode - 1];
         } else {
-          car_index = 0;
+          car_index = ext_normal ? EXT_FIRST_CAR : 0;   // Extended starts on its car 0, Remington
         }
+        if (ext_normal) stage_num = ext_prog.normal_unlocked;
         // Java stageselect :1914/:1925 -- entering the picker starts at
         // the next-to-unlock stage for the gmode. Free Play stays at
         // whatever stage_num already was so screenshot hooks keep working.
@@ -5087,7 +5170,7 @@ int game_run(void) {
       // branch); this port's extra custom-car slot extends maxsl by one,
       // but only in Free Play, which is the only mode that can select it.
       if (car_flipo == 0) {
-        int32_t car_maxsl = (gmode == GMODE_FREE_PLAY) ? CUSTOM_CAR_INDEX : 15;
+        int32_t car_maxsl = (gmode == GMODE_FREE_PLAY) ? (ext_normal ? CAR_COUNT - 1 : CUSTOM_CAR_INDEX) : 15;
         if (KEY_EDGE(BTN_RIGHT) && car_index != car_maxsl) { car_nextc = 1; car_flipo = 20; }
         if (KEY_EDGE(BTN_LEFT) && car_index != 0) { car_nextc = -1; car_flipo = 20; }
       }
@@ -5119,6 +5202,11 @@ int game_run(void) {
           if (gmode == GMODE_NFM1) progress.scm[0] = car_index;
           else if (gmode == GMODE_NFM2) progress.scm[1] = car_index;
           if (progress_path_ok) game_progress_save_to_disk(&progress, progress_path);
+          if (ext_normal) {
+            if (stage_num < 1 || stage_num > ext_prog.normal_unlocked) stage_num = ext_prog.normal_unlocked;
+            ext_read_name(stage_num, stage_name_buf, sizeof(stage_name_buf));
+            stage_preview_loaded_num = -1;
+          }
           state = STATE_STAGE_SELECT;
         }
       }
@@ -5146,22 +5234,27 @@ int game_run(void) {
       int32_t frontier = (gm == GMODE_NFM1) ? progress.unlocked[0]
                        : (gm == GMODE_NFM2) ? progress.unlocked[1] + 10
                        : -1;
+      // Extended's normal mode: stages 1..28, up to the one reached.
+      const int32_t last_stage = ext_normal ? EXT_NORMAL_STAGES : 27;
+      if (ext_normal) frontier = ext_prog.normal_unlocked;
       if (KEY_EDGE(BTN_RIGHT)) {
-        if (frontier >= 0 && stage_num == frontier && stage_num != 27) {
+        if (frontier >= 0 && stage_num == frontier && stage_num != last_stage) {
           // :2614-2616 -- at the frontier, RIGHT shows the locked card.
           state = STATE_STAGE_LOCKED;
           stage_lockcnt = 100;
-        } else if (stage_num != 27) {
+        } else if (stage_num != last_stage) {
           stage_num++;
           if (gm == GMODE_NFM1 && stage_num == 11) stage_num = 27; // :2600-2602
-          stage_read_name(stage_num, stage_name_buf, sizeof(stage_name_buf));
+          if (ext_normal) ext_read_name(stage_num, stage_name_buf, sizeof(stage_name_buf));
+          else stage_read_name(stage_num, stage_name_buf, sizeof(stage_name_buf));
         }
       }
       if (KEY_EDGE(BTN_LEFT)) {
-        if (stage_num != 1 && (stage_num != 11 || gm != GMODE_NFM2)) {
+        if (stage_num != 1 && (stage_num != 11 || gm != GMODE_NFM2 || ext_normal)) {
           stage_num--;
           if (gm == GMODE_NFM1 && stage_num == 26) stage_num = 10; // :2623-2625
-          stage_read_name(stage_num, stage_name_buf, sizeof(stage_name_buf));
+          if (ext_normal) ext_read_name(stage_num, stage_name_buf, sizeof(stage_name_buf));
+          else stage_read_name(stage_num, stage_name_buf, sizeof(stage_name_buf));
         }
       }
       if (KEY_EDGE(BTN_CANCEL)) {
@@ -5169,7 +5262,7 @@ int game_run(void) {
         car_select_needs_intro = true;
       }
       if (KEY_EDGE(BTN_CONFIRM)) {
-        if (!game_progress_can_pick_stage(&progress, gm, stage_num)) {
+        if (ext_normal ? stage_num > ext_prog.normal_unlocked : !game_progress_can_pick_stage(&progress, gm, stage_num)) {
           // Java cantgo() -- xtGraphics.java:1993, armed at :2615-2616.
           // The countdown is 100 frames, not the 40 this port used (its
           // comment asserted Java used 40; :2616 is `lockcnt = 100`).
@@ -5183,8 +5276,46 @@ int game_run(void) {
           // for ~30 frames (~1.6s at our 18.9 FPS tick rate; feels close
           // to the original applet's actual asset-fetch time on the JS's
           // own frame rate). Then flip to STATE_RACING.
-          state = STATE_STAGE_LOADING;
-          stage_loadcnt = 30;
+          if (ext_normal && stage_num == EXT_PT_STAGE) {
+            // Extended's Premier Tournament (ext_pt.c): five matches, each
+            // shown with its rules first.
+            ext_pt_start_tournament(&pt);
+            ptmatch = 1;
+            state = STATE_PT_INFO;
+          } else {
+            state = STATE_STAGE_LOADING;
+            stage_loadcnt = 30;
+          }
+        }
+      }
+    } else if (state == STATE_PT_INFO) {
+      if (KEY_EDGE(BTN_CONFIRM)) {
+        stage_preview_loaded_num = -1;   // the match's own track
+        state = STATE_STAGE_LOADING;
+        stage_loadcnt = 30;
+      }
+      if (KEY_EDGE(BTN_CANCEL) && pt.match == 1) {
+        ptmatch = 0;
+        state = STATE_STAGE_SELECT;
+      }
+    } else if (state == STATE_PT_SCORES) {
+      if (KEY_EDGE(BTN_CONFIRM)) {
+        audio_stop_music(&audio);
+        stage_music_loaded_for = -1;
+        if (pt.match < EXT_PT_MATCHES) {
+          pt.match++;
+          ext_pt_start_match(&pt);
+          ptmatch = pt.match;
+          state = STATE_PT_INFO;
+        } else {
+          // The tournament is over: taking it counts as winning stage 26.
+          if (ext_pt_champion(&pt) == 0 && ext_prog.normal_unlocked < EXT_PT_STAGE + 1) {
+            ext_prog.normal_unlocked = EXT_PT_STAGE + 1;
+            if (progress_path_ok) ext_progress_save(progress_path, &ext_prog);
+          }
+          ptmatch = 0;
+          gamemode_opselect = 3;
+          state = STATE_GAMEMODE_MENU;
         }
       }
     } else if (state == STATE_STAGE_LOCKED) {
@@ -5212,7 +5343,7 @@ int game_run(void) {
       // loaded, i.e. as the "Please Wait" card gives way to musicomp().
       if (intro_frame >= 1 && stage_music_pending) {
         stage_music_pending = false;
-        if (stage_music_loaded_for == stage_music_id(stage_num, gmode)) {
+        if (stage_music_loaded_for == stage_music_id(stage_num, ext_normal ? 3 : gmode)) {
           audio_start_music(&audio, &stage_music);
           audio_set_music_muted(&audio, control[0].mutem);
           interface_playing = false;
@@ -5238,6 +5369,10 @@ int game_run(void) {
         last_ticks_ms = platform_ticks_ms();
         accumulator_ms = 0.0;
       }
+    } else if (state == STATE_POST_RACE && PT_ACTIVE) {
+      // A tournament match: its points (scoreshow), not finish().
+      ext_pt_award(&pt);
+      state = STATE_PT_SCORES;
     } else if (state == STATE_POST_RACE) {
       // Java's finish() screen (fase -5), :6994-7027: ENTER or handbrake
       // (our SPACE binding -- Java checks `control.enter || control.handb`)
@@ -5249,7 +5384,7 @@ int game_run(void) {
       if (KEY_EDGE(BTN_CONFIRM)) {
         if (gmode == 1) gamemode_opselect = 0;
         else if (gmode == 2) gamemode_opselect = 1;
-        else gamemode_opselect = 2;
+        else gamemode_opselect = ext_normal ? 3 : 2;
         // Java :6995-6997 -- `if (this.loadedt) { this.strack.unload(); }`
         // stops the stage's music on the way back to the menu.
         audio_stop_music(&audio);
@@ -5337,7 +5472,7 @@ int game_run(void) {
           stage_music_loaded_for = -1;
           if (gmode == 1) gamemode_opselect = 0;
           else if (gmode == 2) gamemode_opselect = 1;
-          else gamemode_opselect = 2;
+          else gamemode_opselect = ext_normal ? 3 : 2;
           state = STATE_GAMEMODE_MENU;
         }
       }
@@ -5476,10 +5611,16 @@ int game_run(void) {
       DIAG_PHASE("race setup: loading the stage");
       // ---- NFM_EXT_STAGE=pack:entry (e.g. tracks:1, matchtracks:26m3.txt):
       // race one of Extended's stages, headless (ext_stage.c).
+      // Extended's normal mode races its own stages the same way.
       const char *ext_stage_env = getenv("NFM_EXT_STAGE");
-      bool stage_ok = ext_stage_env
-          ? load_ext_stage_objects(&stage_objects, &stage_count, stage_count, ext_models, &m, &t, &cp, ext_stage_env,
-                                   car_index < 16 ? car_index + 23 : car_index - EXT_FIRST_CAR)
+      char ext_spec[48] = "";
+      if (ext_stage_env) snprintf(ext_spec, sizeof(ext_spec), "%s", ext_stage_env);
+      else if (ext_normal) ext_stage_spec(stage_num, ptmatch, ext_spec, sizeof(ext_spec));
+      ExtStageInfo ext_info;
+      memset(&ext_info, 0, sizeof(ext_info));
+      bool stage_ok = ext_spec[0]
+          ? load_ext_stage_objects(&stage_objects, &stage_count, stage_count, ext_models, &m, &t, &cp, ext_spec,
+                                   ext_car_of(car_index), &ext_info)
           : load_stage_objects(&stage_objects, &stage_count, stage_count,
                                base_models, &m, &t, &cp, stage_num, NULL, NULL);
       // ----
@@ -5508,7 +5649,7 @@ int game_run(void) {
       // campaign slot, shouldn't restart the track from 0 -- though in
       // practice this whole setup block only runs once per STATE_RACING
       // entry anyway, so this guard mainly documents intent).
-      const int32_t music_id = stage_music_id(stage_num, gmode);
+      const int32_t music_id = stage_music_id(stage_num, ext_normal ? 3 : gmode);
       if (stage_music_loaded_for != music_id) {
         audio_stop_music(&audio); // stop referencing the OLD track before freeing it
         interface_playing = false;
@@ -5530,7 +5671,8 @@ int game_run(void) {
       // GameSparker.java:2755-2767 -- the card's title line.
       {
         int32_t shown = stage_num;
-        if (shown > 27) shown -= 27;
+        if (ext_normal) shown = stage_num;
+        else if (shown > 27) shown -= 27;
         else if (shown > 10) shown -= 10;
         snprintf(stage_asay, sizeof(stage_asay), "Stage %d:  %s ", shown, stage_name_buf);
       }
@@ -5637,7 +5779,10 @@ int game_run(void) {
       }
       xt_graphics_stub_init(&xt);
       xt.extended = true;      // Extended's gameplay (mad.c)
-      xt.classicmode = true;   // every race is Classic Mode until Extended's own stages arrive
+      // Classic Mode is NFM 2's stages; Extended's own (its normal mode, or a
+      // headless NFM_EXT_STAGE other than classictracks) are not.
+      xt.classicmode = !ext_spec[0] || strncmp(ext_spec, "classictracks", 13) == 0;
+      xt.ptmatch = (ext_normal && stage_num == EXT_PT_STAGE) ? ptmatch : 0;
       xt.im = 0;
 
       // xtGraphics.java:2354-2358 (loadstage(), top of the function) --
@@ -5646,7 +5791,7 @@ int game_run(void) {
       // set BEFORE the u[].reset() loop below, matching Java exactly, so
       // every per-race loop from here on (reset, sortcars, construction,
       // collision, checkstat, AI, cleanup) sees the right car count.
-      nplayers = race_nplayers > 0 ? race_nplayers : BOTS_MAX_PLAYERS;
+      nplayers = race_nplayers > 0 ? race_nplayers : (ext_normal ? EXT_NORMAL_PLAYERS : BOTS_MAX_PLAYERS);
       // The starting grid, rows of three: Extended's (GameSparker.java:
       // 1555-1574), which for the first seven is exactly NFM 2's
       // inishcarselect() grid (xtGraphics.java:4847-4860): x 0/-350/350,
@@ -5672,14 +5817,18 @@ int game_run(void) {
       // actually constructed/reseto'd against the FRESH sc[].
       for (int32_t i = 0; i < nplayers; i++) {
         control_init(&control[i], &m);
-        if (xt.extended) control_reset_ext(&control[i], &cp, sc[i]);   // Extended Classic's AI
+        if (xt.extended) control_reset_ext(&control[i], &cp, sc[i], xt.classicmode);   // Extended's AI
         else control_reset(&control[i], &cp, sc[i]);
       }
       // Extended's AI repair target: its classictracks mark a route point
       // with `setpoint` (Contva.fixpoint, Control.java:9785 fpnt[0]); the
       // same point is in NFM 2's file, so find it by its place. 13 of the
       // 17 stages have one; the others keep NFM 2's nearest-hoop target.
-      if (xt.extended && stage_num >= 11 && stage_num <= 27) {
+      if (ext_spec[0]) {
+        // Extended's own stages carry it themselves (ext_loadstage).
+        if (ext_info.numfixes > 0)
+          for (int32_t i = 1; i < nplayers; i++) control[i].fpnt[0] = ext_info.fixpoint[0];
+      } else if (xt.extended && stage_num >= 11 && stage_num <= 27) {
         VfsZip tracks;
         if (vfs_read_zip("ext/data/Files/classictracks.radq", &tracks)) {
           char want[16];
@@ -5717,6 +5866,17 @@ int game_run(void) {
           if (!used || i >= 16) break;
         }
         sc[i] = pick;
+      }
+      // Extended's normal mode: its own sortcars (ext_mode.c), 11 cars; on
+      // stage 26 every car, the player's too, is the match's.
+      if (ext_normal) {
+        ext_sortcars(sc, nplayers, stage_num, ext_prog.normal_unlocked, stage_num == EXT_PT_STAGE ? ptmatch : 0);
+      }
+      // A tournament match reached straight from a hook (NFM_PTMATCH).
+      if (PT_ACTIVE && pt.match != ptmatch) {
+        ext_pt_start_tournament(&pt);
+        pt.match = ptmatch;
+        ext_pt_start_match(&pt);
       }
 
       for (int32_t i = 0; i < nplayers; i++) {
@@ -6093,6 +6253,31 @@ int game_run(void) {
           // rewrite each car's live stats (xtGraphics.nitroandspecials).
           if (xt.extended) {
             specials_tick(&specials, mad, control, nplayers, &cp, &cd);
+            if (PT_ACTIVE) {
+              // tourney() (ext_pt.c): wasting matches revive cars and score
+              // kills, the racing ones hold damage at 0, eliminated cars go.
+              ExtPTCar ptc[EXT_PT_CARS];
+              memset(ptc, 0, sizeof(ptc));
+              for (int32_t i = 0; i < EXT_PT_CARS && i < nplayers; i++) {
+                ptc[i].dest = mad[i].dest;
+                ptc[i].hitmag = mad[i].hitmag;
+                ptc[i].killer = mad[i].lastcolider;
+              }
+              ext_pt_tick(&pt, ptc, cp.pos, cp.clear, cp.nlaps * cp.nsp, cp.wasted, starcnt == 0);
+              for (int32_t i = 0; i < EXT_PT_CARS && i < nplayers; i++) {
+                if (ptc[i].revive_now) {
+                  mad[i].hitmag = 0;
+                  mad[i].cntdest = 0;
+                  mad[i].squash = 0;
+                  mad[i].dest = false;
+                  mad[i].newcar = true;
+                  cp.dested[i] = 0;
+                }
+                if (ptc[i].force_wreck) mad[i].hitmag = 100000;
+                if (ptc[i].no_damage) { mad[i].hitmag = 0; mad[i].squash = 0; }
+                if (ptc[i].no_special) mad[i].spatk = 0.0f;
+              }
+            }
             for (int32_t i = 0; i < nplayers; i++) {
               co[i].spec_on = specials.spec_on[i];
               memcpy(co[i].spec, specials.spec[i], sizeof(co[i].spec));
@@ -6138,6 +6323,15 @@ int game_run(void) {
             stop_all_sfx_loops(&audio, engine_channel, &last_engine_bank, &air_channel, &wasted_channel);
             game_progress_finish_stage(&progress, (GameMode)gmode, stage_num, race_winner);
             if (progress_path_ok) game_progress_save_to_disk(&progress, progress_path);
+            // Extended's finish() (XT 12648-12672): winning the newest
+            // normal-mode stage opens the next.
+            ext_justwon = false;
+            if (ext_normal && race_winner && stage_num != EXT_PT_STAGE) {
+              const int32_t nu = ext_unlock_after_win(ext_prog.normal_unlocked, stage_num);
+              ext_justwon = nu != ext_prog.normal_unlocked;
+              ext_prog.normal_unlocked = nu;
+              if (progress_path_ok) ext_progress_save(progress_path, &ext_prog);
+            }
             // GameSparker.java stat():7565-7570 advances holdit into
             // fase==-2 (xtGraphics.java:3179/7568/7602), whose own body
             // (:1347-1386) decides between the fase==-3 highlight reel and
@@ -6195,7 +6389,18 @@ int game_run(void) {
         // did before) started holdcnt at 1 on the very tick the card
         // appears instead of 0, and let a CONFIRM edge on that same tick
         // skip a card the player had not yet seen a single frame of.
-        if (!race_holdit && state == STATE_RACING) {
+        if (!race_holdit && state == STATE_RACING && PT_ACTIVE) {
+          if (pt.over) {
+            // "MATCH OVER / X WON!" (tourney()); the points come next.
+            race_winner = pt.winner == 0;
+            race_end_kind = RACE_END_FINISH;
+            race_holdit = true;
+            race_holdcnt = 0;
+            cp.haltall = true;
+            if (!race_winner && pt.winner > 0)
+              snprintf(race_lost_car_name, sizeof(race_lost_car_name), "%s", kExtPTOpponents[pt.winner]);
+          }
+        } else if (!race_holdit && state == STATE_RACING) {
           if (cp.wasted == nplayers - 1 && nplayers != 1) {
             // :7683 -- every other car destroyed. Single-player-only
             // port, so this.multion<2 and !b2 (clan mode) always hold --
@@ -6796,8 +7001,35 @@ int game_run(void) {
         draw_hud_img(&g, hud_images.lap, 19, 7);
         hud_set_ink(&g, 0, 0, 100);
         char hud[64];
-        snprintf(hud, sizeof(hud), "%d / %d", mad[0].nlaps + 1, cp.nlaps);
+        if (cp.nlaps > 0) snprintf(hud, sizeof(hud), "%d / %d", mad[0].nlaps + 1, cp.nlaps);
+        else snprintf(hud, sizeof(hud), "-");
         font_draw(&g, hud, 51, 18);
+        if (PT_ACTIVE && (pt.match == 1 || pt.match == 4 || pt.match == 5)) {
+          // tourney()'s scoreboard (XT 5718-5733): the top three and yours,
+          // bottom left, moved from its 480-tall screen.
+          int32_t top[3] = {-1, -1, -1};
+          for (int32_t a = 0; a < EXT_PT_CARS; a++) {
+            if (pt.position[a] >= 0 && pt.position[a] < 3) top[pt.position[a]] = a;
+          }
+          static const int32_t kTopRgb[3][3] = {{233, 187, 0}, {170, 170, 170}, {210, 105, 0}};
+          font_set(FONT_BOLD, 16);
+          for (int32_t r = 0; r < 3; r++) {
+            if (top[r] < 0) continue;
+            char line[48];
+            gfx_set_color(&g, kTopRgb[r][0], kTopRgb[r][1], kTopRgb[r][2]);
+            font_draw(&g, kExtPTOpponents[top[r]], 25, 345 + r * 27);
+            snprintf(line, sizeof(line), "%d", pt.score[top[r]]);
+            gfx_set_color(&g, 0, 100, 0);
+            font_draw(&g, line, 190, 345 + r * 27);
+          }
+          char mine[32];
+          snprintf(mine, sizeof(mine), "%d", pt.score[0]);
+          gfx_set_color(&g, 0, 0, 0);
+          font_draw(&g, "Your score:", 25, 426);
+          gfx_set_color(&g, 0, 100, 0);
+          font_draw(&g, mine, 190, 426);
+          font_set(FONT_BOLD, 12);
+        }
         draw_hud_img(&g, hud_images.was, 92, 7);
         hud_set_ink(&g, 0, 0, 100);
         snprintf(hud, sizeof(hud), "%d / %d", cp.wasted, nplayers - 1); // Java: checkPoints.wasted / (nplayers-1)
@@ -6907,7 +7139,7 @@ int game_run(void) {
           // Extended keeps its car list up all race, under the Special bar.
           if (starcnt == 0 && !race_holdit) {
             draw_ext_board(&g, &m, &cp, mad, nplayers, sc, &specials, control[0].arrace, ext_listbars,
-                           race_ticked);
+                           race_ticked, PT_ACTIVE ? kExtPTOpponents : NULL);
           }
         } else if (control[0].arrace && starcnt < 38 && !race_holdit && cp.stage != 10) {
           if (xt.alocked != -1 && cp.dested[xt.alocked] != 0) {
@@ -7291,6 +7523,67 @@ int game_run(void) {
       // and the replayed cars drove straight out of shot -- the replay
       // looked like it did nothing.
       medium_around(&m, &co[0], false);
+    } else if (state == STATE_PT_INFO || state == STATE_PT_SCORES) {
+      // Extended's ptstart / scoreshow, as plain panels on the game's dark
+      // blue: the match and its rules, then the points.
+      gfx_set_color(&g, 12, 18, 40);
+      gfx_fill_rect(&g, 0, 0, 800, 450);
+      gfx_set_color(&g, 255, 196, 0);
+      font_set(FONT_BOLD, 22);
+      draw_centered(&g, "THE PREMIER TOURNAMENT", 400, 50);
+      if (state == STATE_PT_INFO) {
+        const char *const *rules = ext_pt_rules(pt.match);
+        font_set(FONT_BOLD, 18);
+        gfx_set_color(&g, 255, 255, 255);
+        draw_centered(&g, rules[0], 400, 90);
+        font_set(FONT_BOLD, 13);
+        int32_t y = 125;
+        for (int32_t li = 1; rules[li]; li++) {
+          gfx_set_color(&g, li <= 2 ? 120 : 220, li <= 2 ? 200 : 220, li <= 2 ? 255 : 220);
+          font_draw(&g, rules[li], 120, y);
+          y += li == 2 ? 30 : 22;
+        }
+        if (pt.match == 1) {
+          gfx_set_color(&g, 170, 170, 170);
+          font_set(FONT_BOLD, 12);
+          font_draw(&g, "OPPONENTS: Motion, Redline, Crash, Swift, Omega, Olsie820,", 120, 330);
+          font_draw(&g, "RadicalRacer, Kaffeinated (contender), InsanElite (contender), Grimjow (favourite)", 120, 348);
+        }
+      } else {
+        // The table, most points first.
+        int32_t order[EXT_PT_CARS];
+        for (int32_t a = 0; a < EXT_PT_CARS; a++) order[a] = a;
+        for (int32_t a = 0; a < EXT_PT_CARS; a++)
+          for (int32_t b = a + 1; b < EXT_PT_CARS; b++)
+            if (pt.points[order[b]] > pt.points[order[a]]) { int32_t t2 = order[a]; order[a] = order[b]; order[b] = t2; }
+        font_set(FONT_BOLD, 16);
+        gfx_set_color(&g, 255, 255, 255);
+        char head[64];
+        snprintf(head, sizeof(head), "AFTER MATCH %d", pt.match);
+        draw_centered(&g, head, 400, 85);
+        font_set(FONT_BOLD, 13);
+        for (int32_t r = 0; r < EXT_PT_CARS; r++) {
+          const int32_t a = order[r];
+          char row[96];
+          snprintf(row, sizeof(row), "%2d.  %s", r + 1, kExtPTOpponents[a]);
+          if (a == 0) gfx_set_color(&g, 255, 196, 0); else gfx_set_color(&g, 220, 220, 220);
+          font_draw(&g, row, 230, 118 + r * 24);
+          snprintf(row, sizeof(row), "%d  (+%d)", pt.points[a], pt.gained[a]);
+          font_draw(&g, row, 500, 118 + r * 24);
+        }
+        if (pt.match == EXT_PT_MATCHES) {
+          const int32_t champ = ext_pt_champion(&pt);
+          char line[96];
+          snprintf(line, sizeof(line), champ == 0 ? "You won the Premier Tournament!" : "%s won the Premier Tournament!",
+                   kExtPTOpponents[champ]);
+          gfx_set_color(&g, 255, 196, 0);
+          font_set(FONT_BOLD, 16);
+          draw_centered(&g, line, 400, 395);
+        }
+      }
+      gfx_set_color(&g, 150, 150, 150);
+      font_set(FONT_BOLD, 12);
+      draw_centered(&g, state == STATE_PT_INFO ? "Press " KEY_CONTINUE " to start the match" : "Press " KEY_CONTINUE " to continue", 400, 430);
     } else if (state == STATE_SETTINGS) {
       // Opaque, the whole 800x450 (see settings_screen_draw()).
       settings_screen_draw(&g, &settings_ui, &settings, platform_has_rumble());
@@ -7443,7 +7736,7 @@ int game_run(void) {
       draw_gamemode_menu(&g,
                           menu_bgmain, menu_logomadbg, menu_logomadnes,
                           menu_dude[0], menu_logocars, menu_opback, menu_opti2,
-                          menu_byrd, menu_nfmcoms_asset,
+                          menu_byrd, menu_nfmcoms_asset, menu_extlabel,
                           mainbg_bgmy, &mainmenu_flkat,
                           &mainmenu_gxdu, &mainmenu_gydu, &mainmenu_movly,
                           gamemode_opselect, &mainmenu_aflk);
@@ -7607,6 +7900,16 @@ int game_run(void) {
       // campaign finale, reached when the threshold no longer applies, so
       // it must not be filtered out by the latch. The body then splits on
       // :6778's `if (stage != 27)` exactly as the source does.
+      if (ext_normal && race_winner) {
+        // Extended's finish(): "Stage N+1 is now unlocked!" or, on a stage
+        // already beaten, "Stage N Completed!" (XT 12448-12452).
+        char line[64];
+        if (ext_justwon) snprintf(line, sizeof(line), "Stage %d is now unlocked!", stage_num + 1);
+        else snprintf(line, sizeof(line), "Stage %d Completed!", stage_num);
+        gfx_set_color(&g, xt.aflk ? 196 : 255, xt.aflk ? 176 : 247, xt.aflk ? 0 : 165);
+        font_set(FONT_BOLD, 13);
+        draw_centered(&g, line, 400, 260);
+      }
       bool just_crossed_threshold = (gmode == 1) ? progress.justwon1 : (gmode == 2 ? progress.justwon2 : false);
       if (race_winner && gmode != 0 && (just_crossed_threshold || stage_num == 27)) {
        if (stage_num != 27) {
@@ -7882,7 +8185,7 @@ int game_run(void) {
             // the old wrap-and-skip loop is no longer needed; the bound is
             // recomputed here rather than shared because the two sites run
             // in different phases of the frame.
-            int32_t car_maxsl = (car_gm == GMODE_FREE_PLAY) ? CUSTOM_CAR_INDEX : 15;
+            int32_t car_maxsl = (car_gm == GMODE_FREE_PLAY) ? (ext_normal ? CAR_COUNT - 1 : CUSTOM_CAR_INDEX) : 15;
             car_index += (car_nextc > 0) ? 1 : -1;
             if (car_index < 0) car_index = 0;
             if (car_index > car_maxsl) car_index = car_maxsl;
@@ -8102,7 +8405,7 @@ int game_run(void) {
       // to draw both unconditionally, which advertised a move that the
       // (then-wrapping) list would make in the wrong direction.
       {
-        int32_t car_maxsl = (gmode == GMODE_FREE_PLAY) ? CUSTOM_CAR_INDEX : 15;
+        int32_t car_maxsl = (gmode == GMODE_FREE_PLAY) ? (ext_normal ? CAR_COUNT - 1 : CUSTOM_CAR_INDEX) : 15;
         if (menu_back.tex >= 0 && car_index != 0) {
           gfx_draw_image(&g, menu_back.tex, 95, 275, menu_back.w, menu_back.h);
         }
@@ -8165,9 +8468,19 @@ int game_run(void) {
       // in from hit=45000, orbiting the stage's bounding-box center.
       if (stage_preview_loaded_num != stage_num) {
         int32_t center_x = 0, center_z = 0;
-        bool loaded = load_stage_objects(&stage_objects, &stage_count, stage_count,
-                                          base_models, &m, &t, &cp, stage_num,
-                                          &center_x, &center_z);
+        bool loaded;
+        if (ext_normal) {
+          char spec[32];
+          ext_stage_spec(stage_num, ptmatch, spec, sizeof(spec));
+          ExtStageInfo info;
+          loaded = load_ext_stage_objects(&stage_objects, &stage_count, stage_count, ext_models, &m, &t, &cp, spec,
+                                          ext_car_of(car_index), &info);
+          center_x = info.center_x;
+          center_z = info.center_z;
+        } else {
+          loaded = load_stage_objects(&stage_objects, &stage_count, stage_count, base_models, &m, &t, &cp, stage_num,
+                                      &center_x, &center_z);
+        }
         stage_preview_loaded_num = stage_num;
         stage_preview_ok = loaded;
         if (loaded) {
@@ -8344,7 +8657,7 @@ int game_run(void) {
       // unlocked when stage N is complete!" where N = unlocked[gmode-1].
       {
         char msg[128];
-        int32_t nfrom = (gmode == 1) ? progress.unlocked[0] : progress.unlocked[1];
+        int32_t nfrom = ext_normal ? ext_prog.normal_unlocked : (gmode == 1) ? progress.unlocked[0] : progress.unlocked[1];
         snprintf(msg, sizeof(msg), "This stage will be unlocked when stage %d is complete!", nfrom);
         // :2000 -- (177,177,177), a LIGHT grey that reads against the dark
         // track backdrop. This port used (60,60,60), which is dark on dark.
@@ -8357,7 +8670,8 @@ int game_run(void) {
       {
         char lbl[64];
         int32_t nto;
-        if (gmode == 1) nto = progress.unlocked[0] + 1;
+        if (ext_normal) nto = ext_prog.normal_unlocked + 1;
+        else if (gmode == 1) nto = progress.unlocked[0] + 1;
         else if (gmode == 2) nto = progress.unlocked[1] + 1;
         else nto = stage_num; // shouldn't happen (Free Play never locks)
         snprintf(lbl, sizeof(lbl), "[ Stage %d Locked ]", nto);
@@ -8452,7 +8766,7 @@ int game_run(void) {
                   "This track is actually a 4D object projected onto the 3D world.",
                   "It's been broken down, separated and, in many ways, it is also a", "maze!  GOOD LUCK!"},
       };
-      const bool has_hint = stage_num >= 1 && stage_num < 28 && kHints[stage_num][0] != NULL;
+      const bool has_hint = !ext_normal && stage_num >= 1 && stage_num < 28 && kHints[stage_num][0] != NULL;
       const int32_t n3 = has_hint ? 0 : -90;
       if (has_hint) {
         if (intro_dudo > 0) {

@@ -243,8 +243,9 @@ static void run_forget_flag_scenario(bool special_flag, bool *out_forget) {
 
 // Extended Mode's decision cycle (xt.extended): one preform() on the probe's
 // scaffolding, random() pinned at 0.5, the AI (im 1) in first and the player
-// in fourth, Tornado Shark (NFM 2's car 0, Extended's 23).
-static void run_decide(bool ext, int32_t stage, Control *out) {
+// in fourth, Tornado Shark (NFM 2's car 0, Extended's 23). `classic` off is
+// Extended's normal mode (`stage` then its own 1-28, `ptmatch` the tourney's).
+static void run_decide_xt(bool ext, bool classic, int32_t stage, int32_t ptmatch, Control *out) {
   Medium m;
   medium_init(&m);
   m.interpolating = true;
@@ -257,7 +258,8 @@ static void run_decide(bool ext, int32_t stage, Control *out) {
   XtGraphicsStub xt;
   xt_graphics_stub_init(&xt);
   xt.extended = ext;
-  xt.classicmode = ext;
+  xt.classicmode = classic;
+  xt.ptmatch = ptmatch;
   Mad mad;
   memset(&mad, 0, sizeof(mad));
   mad.mtouch = true;
@@ -296,6 +298,8 @@ static void run_decide(bool ext, int32_t stage, Control *out) {
   medium_free(&m);
 }
 
+static void run_decide(bool ext, int32_t stage, Control *out) { run_decide_xt(ext, ext, stage, 0, out); }
+
 static void test_preform_extended(void) {
   Control base, ext;
   // Classic 1 (stage 11): NFM 2 makes a leading AI wait for the player
@@ -319,6 +323,38 @@ static void test_preform_extended(void) {
   run_decide(true, 13, &ext);
   CHECK(base.turntyp == 2 && ext.turntyp == 1, "stage 3's turn type 1 for every car in Extended");
   CHECK(!ext.usebounce && ext.clrnce == 5, "Extended: usebounce never rolled, clrnce 5");
+
+  // Normal mode: ungated checks fire on Extended's own stage numbers,
+  // classicmode-only ones (Classic 4's skiplev cap) do not.
+  Control nrm;
+  run_decide_xt(true, false, 3, 0, &nrm);
+  CHECK(nrm.turntyp == 1, "normal mode: stage 3's turn type 1 too");
+  run_decide_xt(true, false, 4, 0, &nrm);
+  CHECK(nrm.skiplev == 0.0f, "normal mode: no Classic 4 skiplev cap");
+  // Premier Tournament (normal stage 26): racing matches 2/3 drive clean.
+  run_decide_xt(true, false, 26, 2, &nrm);
+  CHECK(nrm.clrnce == 3 && nrm.turntyp == 0 && nrm.stuntf == 4 && nrm.saftey == 10 && nrm.perfection &&
+            nrm.agressed,
+        "Premier Tournament match 2: clrnce 3, turntyp 0, stuntf 4, saftey 10");
+  run_decide_xt(true, false, 26, 0, &nrm);
+  CHECK(nrm.clrnce == 5 && nrm.stuntf != 4, "normal stage 26 outside the tourney: no tourney tuning");
+
+  // control_reset_ext: Classic 8's hold 50 (stage 18) is classicmode-only.
+  for (int32_t k = 0; k < 2; k++) {
+    Medium m;
+    medium_init(&m);
+    CheckPoints cp;
+    check_points_init(&cp);
+    cp.stage = k == 0 ? 18 : 8;
+    cp.n = 6;
+    cp.fn = 3;
+    Control c;
+    control_init(&c, &m);
+    control_reset_ext(&c, &cp, 0, k == 0);
+    if (k == 0) CHECK(c.hold == 50, "Classic 8 holds the start 50 ticks");
+    else CHECK(c.hold != 50, "normal stage 8 does not");
+    medium_free(&m);
+  }
 }
 
 int main(void) {
