@@ -107,6 +107,9 @@ radar pasan entonces al stick izquierdo.
   `sdmc:/switch/nfm/benchmark.txt` (fps promedio y 1% low, percentiles,
   cuadros lentos, trabajo por cuadro).
 
+**Menú de pausa**: Restart Race (mismo auto y pista, desde la pantalla de carga).
+La carrera también se pausa sola al ir al menú HOME o al poner la consola en reposo.
+
 **Ajustes** (desde el menú principal y desde la pausa)
 - **Graphics**: calidad de imagen (Original / Smooth / HD), distancia de
   dibujo, detalle del escenario, sombras, partículas, motion blur, Smooth

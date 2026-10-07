@@ -256,6 +256,12 @@ PC with `nxlink -s`.
       stick's directions are HID's StickL pseudo-buttons). Switching the
       steering swaps D-pad <-> L Stick binds so the arrow/map follow. A clash
       shows red; the help text names the current buttons (key_*()).
+- [x] Pause > Restart Race (row 5, a plate under Settings): frees the world
+      like a return to the menu and goes to STATE_STAGE_LOADING, so the race
+      is set up anew by the usual path. Headless: NFM_SCREENSHOT_MENU=
+      pausereplay with NFM_HOOK_PAUSE_ROW=5.
+- [x] Auto-pause on HOME / sleep: libnx applet hook (focus lost or resume)
+      -> platform_take_focus_lost() -> the race's pause, as the + button.
 - [ ] Batch 3: visual-only low detail (not `resdown=2`, which drops scenery
       collisions) and the web's lightweight intro; draw distance keeps cars'
       `dist` neutral.

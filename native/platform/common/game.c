@@ -4256,6 +4256,7 @@ int game_run(void) {
   // `pause_replay_tick` is fase -1's own n7 cursor over the 300-tick ring,
   // and `cantreply_cnt` counts fase -8's 150-frame auto-dismiss (:1679).
   int32_t pause_opselect = 0;
+  bool restart_race = false;   // Restart Race picked: free the world and load the stage again
   int32_t pause_replay_tick = 0;
   int32_t cantreply_cnt = 0;
   // fleximg: fase -6's one-frame pauseimage() of the frame underneath,
@@ -4425,6 +4426,8 @@ int game_run(void) {
     bool held[BTN_COUNT];
     bool race_ticked = false; // this frame consumed at least one physics tick
     running = platform_poll(held);
+    // Left for the HOME menu or sleep: a race in progress pauses.
+    const bool focus_pause = platform_take_focus_lost();
 #define KEY_EDGE(b) (held[(b)] && !previous_held[(b)])
 
     if (state == STATE_BOOT_CLICK) {
@@ -4795,21 +4798,26 @@ int game_run(void) {
       // the direct equivalent. Confirm is `enter || handb` in the source,
       // and BTN_CONFIRM already covers both of this port's bindings for
       // that (Return and Space).
-      // Five rows: the original's four, plus this port's Settings (4).
+      // Six rows: the original's four, plus this port's Settings (4) and
+      // Restart Race (5).
       if (KEY_EDGE(BTN_UP)) {
         pause_opselect--;
-        if (pause_opselect == -1) pause_opselect = 4;
+        if (pause_opselect == -1) pause_opselect = 5;
       }
       if (KEY_EDGE(BTN_DOWN)) {
         pause_opselect++;
-        if (pause_opselect == 5) pause_opselect = 0;
+        if (pause_opselect == 6) pause_opselect = 0;
       }
       // NFM_SCREENSHOT_MENU=pausereplay: headless stand-in for picking
       // Instant Replay (see the matching pause trigger in the race block).
       bool hook_replay = screenshot_menu && strcmp(screenshot_menu, "pausereplay") == 0 &&
                          frame == hook_replay_frame;
       // A real press, edge and all, so the replay sees what a player sends.
-      if (hook_replay) { pause_opselect = 1; held[BTN_CONFIRM] = true; }
+      // NFM_HOOK_PAUSE_ROW picks another row (5: Restart Race).
+      if (hook_replay) {
+        pause_opselect = getenv("NFM_HOOK_PAUSE_ROW") ? atoi(getenv("NFM_HOOK_PAUSE_ROW")) : 1;
+        held[BTN_CONFIRM] = true;
+      }
       // NFM_SCREENSHOT_MENU=settings: open the Settings screen headless.
       if (screenshot_menu && strcmp(screenshot_menu, "settings") == 0 && frame == screenshot_frame - 3) {
         settings_ui = (SettingsUi){SET_MAIN, 0};
@@ -4840,6 +4848,14 @@ int game_run(void) {
           settings_ui = (SettingsUi){SET_MAIN, 0};
           settings_return = STATE_PAUSED;
           state = STATE_SETTINGS;
+        } else if (pause_opselect == 5) {
+          // Restart Race: the same car and stage from the loading card, as
+          // if picked again in the stage list.
+          audio_stop_music(&audio);
+          stage_music_loaded_for = -1;
+          restart_race = true;
+          state = STATE_STAGE_LOADING;
+          stage_loadcnt = 30;
         } else if (pause_opselect == 2) {
           // :4780-4786 -- Game Instructions, with oldfase = -7 so it comes
           // back here. instructions_return_to is this port's own oldfase.
@@ -4955,7 +4971,9 @@ int game_run(void) {
     // to it, so freeing there would pull the world out from under it.
     // Both qualifying states are reached only at boot, when this is
     // already NULL, or after a race is genuinely over.
-    if (all_objs && (state == STATE_MAIN_MENU || state == STATE_GAMEMODE_MENU)) {
+    // Restart Race (the pause menu) frees it too, so the race is set up anew.
+    if (all_objs && (state == STATE_MAIN_MENU || state == STATE_GAMEMODE_MENU || restart_race)) {
+      restart_race = false;
       free(all_objs); all_objs = NULL;
       free(visible_idx); visible_idx = NULL;
       free(rank); rank = NULL;
@@ -5814,7 +5832,7 @@ int game_run(void) {
                          (strcmp(screenshot_menu, "pausereplay") == 0 && frame == hook_replay_frame - 3) ||
                          (strcmp(screenshot_menu, "settings") == 0 && frame == screenshot_frame - 6));
       if (state == STATE_RACING && !race_holdit && frame != intro_confirm_frame &&
-          (KEY_EDGE(BTN_PAUSE) || hook_pause)) {
+          (KEY_EDGE(BTN_PAUSE) || hook_pause || focus_pause)) {
         audio_set_music_muted(&audio, true);
         stop_all_sfx_loops(&audio, engine_channel, &last_engine_bank, &air_channel, &wasted_channel);
         pause_opselect = 0;
@@ -6732,9 +6750,12 @@ int game_run(void) {
       // This port's fifth row, Settings, on its own plate under the panel.
       draw_pause_plate(&g, 320, 202, 160, 30);
       if (pause_opselect == 4) draw_pause_highlight(&g, 345, 206, 110, 22);
+      draw_pause_plate(&g, 320, 236, 160, 30);
+      if (pause_opselect == 5) draw_pause_highlight(&g, 345, 240, 110, 22);
       gfx_set_color(&g, 255, 255, 255);
       font_set(FONT_BOLD, 13);
       draw_centered(&g, "Settings", 400, 221);
+      draw_centered(&g, "Restart Race", 400, 255);
       font_set(FONT_BOLD, 12);
 
       if (state == STATE_CANTREPLY) {

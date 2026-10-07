@@ -104,6 +104,9 @@ stick.
   `sdmc:/switch/nfm/benchmark.txt` (average and 1% low fps, percentiles, slow
   frames, work per frame).
 
+**Pause menu**: Restart Race (same car and stage, from the loading card). A race
+also pauses itself when you go to the HOME menu or put the console to sleep.
+
 **Settings** (from the main menu and from the pause menu)
 - **Graphics**: Image Quality (Original / Smooth / HD), Draw Distance, Scenery
   Detail, Shadows, Particles, Motion Blur, Smooth Frames.

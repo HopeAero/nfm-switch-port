@@ -129,6 +129,10 @@ bool platform_poll(bool held[BTN_COUNT]) {
 }
 
 // No controller vibration on this target (see common/platform.h).
+bool platform_take_focus_lost(void) {
+  return false;
+}
+
 bool platform_has_rumble(void) {
   return false;
 }

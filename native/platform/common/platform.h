@@ -77,6 +77,10 @@ void platform_display_size(int32_t *out_width, int32_t *out_height);
  * once per frame, before reading `held[]` or calling input_poll(). */
 bool platform_poll(bool held[BTN_COUNT]);
 
+/** True once after the app lost focus (the Switch's HOME menu or sleep), so
+ * a race can pause; false where the platform does not report it. */
+bool platform_take_focus_lost(void);
+
 /** Prefix game.c passes straight to vfs_set_fpath() (core/vfs.h) before
  * reading any asset, so every "data/images.zip"/"stages/N.txt"/
  * "music/stageN.zip" literal in game.c stays platform-neutral: "" on

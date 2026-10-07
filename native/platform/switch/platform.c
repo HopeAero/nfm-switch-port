@@ -150,6 +150,25 @@ bool platform_progress_path(char *buf, size_t buf_len) {
   return n > 0 && (size_t)n < buf_len;
 }
 
+// Set from libnx's applet hooks: HOME and sleep take the focus away (the
+// OS then suspends the app), and the race should be paused on the way back.
+static bool g_focus_lost;
+static AppletHookCookie g_focus_cookie;
+
+static void on_applet_hook(AppletHookType hook, void *param) {
+  (void)param;
+  if ((hook == AppletHookType_OnFocusState && appletGetFocusState() != AppletFocusState_InFocus) ||
+      hook == AppletHookType_OnResume) {
+    g_focus_lost = true;
+  }
+}
+
+bool platform_take_focus_lost(void) {
+  const bool lost = g_focus_lost;
+  g_focus_lost = false;
+  return lost;
+}
+
 bool platform_has_rumble(void) {
   return true;
 }
@@ -164,6 +183,11 @@ void platform_rumble(float strength, uint32_t ms) {
 extern uint64_t g_bind[BIND_COUNT];   // input.c
 
 bool platform_poll(bool held[BTN_COUNT]) {
+  static bool hooked;
+  if (!hooked) {
+    appletHook(&g_focus_cookie, on_applet_hook, NULL);
+    hooked = true;
+  }
   bool running = appletMainLoop();   // false when HOME > close asks the app to quit
   if (g_rumble_end_ms && SDL_GetTicks64() >= g_rumble_end_ms) {
     rumble_send(0.0f);
