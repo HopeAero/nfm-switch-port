@@ -55,7 +55,7 @@ fixes for many cars in view (trackgrid, archive loading) are reused.
   16+k.
 - [x] Specials (core/specials.c, the bar in mad.c): stunts charge the bar
       (AI /3, player /5 at landing, a trickle each tick), Settings > Controls'
-      Special (R) fires a full one, the AI fires as soon as it is full;
+      Special (L) fires a full one, the AI fires as soon as it is full;
       nitroandspecials outside career: per-tick stat rebuild from the car's
       base table, self boosts, freeze / strswap / leech / redstr with
       sortpower and randomise, the 1v1 no-attacks rule. NFM_HOOK_SPECIALS=1
@@ -69,7 +69,7 @@ fixes for many cars in view (trackgrid, archive loading) are reused.
 - [x] Extended's car list, always up under the Special bar (draw_ext_board):
       ordinals, names in their condition's glow, a bar per car -- damage
       (arrow on cars), power (arrow on track), the special's charge after
-      Settings > Controls' Car List Bars (L, its D).
+      Settings > Controls' Car List Bars (D-Pad Right, its D).
 - [x] Extended's far camera (its view 1, medium_watch_far): a fourth view in
       the camera cycle. NFM_HOOK_VIEW=n / NFM_HOOK_LISTBARS=1 headless.
 - [x] Classic AI changes (control.c, `xt.extended`): decide_ext() ports

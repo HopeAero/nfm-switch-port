@@ -223,7 +223,7 @@ GameSettings game_settings_defaults(int32_t graphics) {
   s.steer_dpad = 0;
   // Indices into game.c's Switch button list: ZR, ZL, B, X, D-Pad Up,
   // D-Pad Down, Plus, Y, Minus -- the scheme v1.0 shipped with.
-  static const int32_t kBindDefaults[BIND_COUNT] = {7, 6, 1, 2, 12, 13, 9, 3, 8, 5, 4};   // ..., Special R, list bars L
+  static const int32_t kBindDefaults[BIND_COUNT] = {7, 6, 1, 2, 12, 13, 9, 3, 8, 4, 15};   // ..., Special L, list bars D-Pad Right
   memcpy(s.bind, kBindDefaults, sizeof(s.bind));
   return s;
 }
