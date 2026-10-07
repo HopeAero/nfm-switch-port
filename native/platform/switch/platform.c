@@ -163,6 +163,15 @@ static void on_applet_hook(AppletHookType hook, void *param) {
   }
 }
 
+bool platform_pointer(int32_t *x, int32_t *y) {
+  // The handheld screen, 1280x720, which the game fills edge to edge.
+  HidTouchScreenState ts = {0};
+  if (hidGetTouchScreenStates(&ts, 1) == 0 || ts.count < 1) return false;
+  *x = (int32_t)ts.touches[0].x * 800 / 1280;
+  *y = (int32_t)ts.touches[0].y * 450 / 720;
+  return true;
+}
+
 bool platform_take_focus_lost(void) {
   const bool lost = g_focus_lost;
   g_focus_lost = false;
@@ -186,6 +195,7 @@ bool platform_poll(bool held[BTN_COUNT]) {
   static bool hooked;
   if (!hooked) {
     appletHook(&g_focus_cookie, on_applet_hook, NULL);
+    hidInitializeTouchScreen();
     hooked = true;
   }
   bool running = appletMainLoop();   // false when HOME > close asks the app to quit

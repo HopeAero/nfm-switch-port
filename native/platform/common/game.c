@@ -275,14 +275,15 @@ typedef enum {
 // The Switch's buttons as platform/switch/{platform,input}.c bind them: the
 // same names and places on the Joy-Cons (handheld or paired) and on the Pro
 // Controller, which libnx all reads as player 1. Settings > Controls can move
-// the race ones, so the help text names wherever they are now (key_*()).
+// the race ones, so the help text shows wherever they are now (key_*()), as
+// button icons (pad_icon()).
 #define KEY_STEER    key_steer()
-#define KEY_STUNT    (key_settings()->steer_dpad ? "D-Pad" : "Left Stick")
-#define KEY_HANDB    kPadNames[key_settings()->bind[BIND_HANDB]]
+#define KEY_STUNT    (key_settings()->steer_dpad ? ICON_DPAD : ICON_LSTICK)
+#define KEY_HANDB    kPadIcons[key_settings()->bind[BIND_HANDB]]
 #define KEY_ARRACE   key_arrace("press")
-#define KEY_CONTINUE "A"
-#define KEY_BACK     "B"
-#define KEY_START_PROMPT "Press A to Start"
+#define KEY_CONTINUE PAD_ICON(a)
+#define KEY_BACK     PAD_ICON(b)
+#define KEY_START_PROMPT "Press " PAD_ICON(a) " to Start"
 #define KEY_ARRACE_HINT  key_arrace("Press")
 #else
 #define KEY_STEER    "Arrow Keys"
@@ -313,6 +314,88 @@ static const char *const kPadNames[] = {
 #define PAD_COUNT 20
 #define PAD_DPAD_UP 12
 #define PAD_STICK_UP 16
+
+// The same buttons as inline icons in text (font.h's FONT_ICON), drawn by
+// pad_icon(); two more for the D-pad and the left stick as a whole.
+#define PAD_ICON(c) "\x1b" #c
+#define ICON_DPAD PAD_ICON(u)
+#define ICON_LSTICK PAD_ICON(v)
+static const char *const kPadIcons[PAD_COUNT] = {
+    PAD_ICON(a), PAD_ICON(b), PAD_ICON(c), PAD_ICON(d), PAD_ICON(e), PAD_ICON(f), PAD_ICON(g),
+    PAD_ICON(h), PAD_ICON(i), PAD_ICON(j), PAD_ICON(k), PAD_ICON(l), PAD_ICON(m), PAD_ICON(n),
+    PAD_ICON(o), PAD_ICON(p), PAD_ICON(q), PAD_ICON(r), PAD_ICON(s), PAD_ICON(t)};
+
+/** FontIconFn: a Switch button in the text's own colour -- round face buttons
+ * and +/-, pill-shaped shoulders, ringed sticks (an arrow beside for a
+ * direction), and a cross for the D-pad with the pressed arm cut out. */
+static int32_t pad_icon(Graphics2D *g, int32_t icon, int32_t x, int32_t y, int32_t size) {
+  static const char *const kLabel[] = {"A", "B", "X", "Y", "L", "R", "ZL", "ZR", "-", "+", "L", "R"};
+  const int32_t d = (size * 13 + 5) / 10;                      // the button's height
+  const int32_t cy = y - (size * 36 + 50) / 100;               // a capital letter's middle
+  const int32_t top = cy - d / 2, lsize = (size * 3 + 2) / 4;
+  const bool shoulder = icon >= 4 && icon <= 7;
+  const bool stick = icon == 10 || icon == 11 || (icon >= 16 && icon <= 19) || icon == 21;
+  const bool dpad = (icon >= 12 && icon <= 15) || icon == 20;
+  int32_t w = d;
+  font_set(FONT_BOLD, lsize);
+  if (shoulder) {
+    w = font_width(kLabel[icon]) + d / 2;
+    if (w < d) w = d;
+  }
+  if (icon >= 16 && icon <= 19) w = d + d / 2 + 1;
+  if (!g) return w + 3;
+
+  const int32_t ir = (int32_t)(g->r * 255.0f + 0.5f), ig = (int32_t)(g->g * 255.0f + 0.5f),
+                ib = (int32_t)(g->b * 255.0f + 0.5f);
+  const int32_t paper = (ir * 299 + ig * 587 + ib * 114 < 128000) ? 255 : 24;
+  const int32_t x0 = x + 1;
+  const char *label = icon < 12 ? kLabel[icon] : (stick ? "L" : NULL);
+  if (dpad) {
+    const int32_t t = d / 3 > 3 ? d / 3 : 3, a = (d - t) / 2;
+    gfx_fill_rect(g, x0 + a, top, t, d);
+    gfx_fill_rect(g, x0, top + a, d, t);
+    if (icon != 20) {
+      static const int32_t kArm[4][2] = {{1, 0}, {1, 2}, {0, 1}, {2, 1}};  // up, down, left, right
+      const int32_t *arm = kArm[icon - 12];
+      const int32_t ax = arm[0] == 0 ? x0 + 1 : (arm[0] == 1 ? x0 + a + 1 : x0 + d - a + 1);
+      const int32_t ay = arm[1] == 0 ? top + 1 : (arm[1] == 1 ? top + a + 1 : top + d - a + 1);
+      gfx_set_color(g, paper, paper, paper);
+      gfx_fill_rect(g, ax, ay, (arm[0] == 1 ? t : a) - 2, (arm[1] == 1 ? t : a) - 2);
+    }
+  } else if (stick) {
+    gfx_fill_oval(g, x0, top, d, d);
+    gfx_set_color(g, paper, paper, paper);
+    gfx_fill_oval(g, x0 + 2, top + 2, d - 4, d - 4);
+    gfx_set_color(g, ir, ig, ib);
+    if (icon == 11) label = "R";
+    if (icon >= 16 && icon <= 19) {
+      // The arrow beside the stick, pointing its way.
+      const int32_t h = d / 2, ax = x0 + d + 1, ac = ax + h / 2;
+      int32_t xs[3], ys[3];
+      if (icon == 16 || icon == 17) {
+        const int32_t s = icon == 16 ? -1 : 1;
+        xs[0] = ax; xs[1] = ax + h; xs[2] = ac;
+        ys[0] = ys[1] = cy - s * h / 2; ys[2] = cy + s * h / 2;
+      } else {
+        const int32_t s = icon == 18 ? -1 : 1;
+        ys[0] = cy - h / 2; ys[1] = cy + h / 2; ys[2] = cy;
+        xs[0] = xs[1] = ac - s * h / 2; xs[2] = ac + s * h / 2;
+      }
+      gfx_fill_polygon(g, xs, ys, 3);
+    }
+  } else if (shoulder) {
+    gfx_fill_round_rect(g, x0, top, w, d, d / 2, d / 2);
+  } else {
+    gfx_fill_oval(g, x0, top, d, d);
+  }
+  if (label) {
+    if (!stick) gfx_set_color(g, paper, paper, paper);
+    const int32_t lw = stick ? d : w;
+    font_draw(g, label, x0 + (lw - font_width(label) + 1) / 2, cy + (lsize * 36 + 50) / 100);
+  }
+  gfx_set_color(g, ir, ig, ib);
+  return w + 3;
+}
 #ifdef NFM_TARGET_SWITCH
 static const uint8_t kPadBits[PAD_COUNT] = {0, 1, 2, 3, 6, 7, 8, 9, 11, 10, 4, 5,
                                             13, 15, 12, 14, 17, 19, 16, 18};
@@ -329,14 +412,14 @@ static const GameSettings *key_settings(void) {
 static const char *key_steer(void) {
   static char buf[64];
   const GameSettings *s = key_settings();
-  snprintf(buf, sizeof(buf), "%s/%s and %s", kPadNames[s->bind[BIND_ACCEL]], kPadNames[s->bind[BIND_BRAKE]],
-           s->steer_dpad ? "D-Pad" : "Left Stick");
+  snprintf(buf, sizeof(buf), "%s/%s and %s", kPadIcons[s->bind[BIND_ACCEL]], kPadIcons[s->bind[BIND_BRAKE]],
+           s->steer_dpad ? ICON_DPAD : ICON_LSTICK);
   return buf;
 }
 static const char *key_arrace(const char *verb) {
   static char buf[2][48];
   char *b = buf[verb[0] == 'P'];
-  snprintf(b, sizeof(buf[0]), "%s %s", verb, kPadNames[key_settings()->bind[BIND_ARRACE]]);
+  snprintf(b, sizeof(buf[0]), "%s %s", verb, kPadIcons[key_settings()->bind[BIND_ARRACE]]);
   return b;
 }
 #endif
@@ -2589,7 +2672,7 @@ static void draw_gamemode_menu(Graphics2D *g,
 // at boot from data/images.zip (see the load block in game_run).
 typedef struct {
   HudImg dude[3], oflaot, nfm, racing, wasting, ory, chil, opwr, fixhoop,
-         sarrow, space, arrows, plus, stunts, back, next, bggo, bgmain;
+         sarrow, space, arrows, plus, stunts, back, next, contin, bggo, bgmain;
   HudImg stunt_arrows; // what the stunt combo pairs with the handbrake: arrows.gif, or the Vita's stick
   HudImg kz, kx, kv, kenter, km, kn, ks; // page-15 "other controls" key caps
 } InstAssets;
@@ -2823,6 +2906,9 @@ static void draw_instructions(Graphics2D *g, const InstAssets *ia,
   if (flipo >= 3 && flipo <= 16 && ia->back.tex >= 0) {
     gfx_draw_image(g, ia->back.tex, 75, 395, ia->back.w, ia->back.h);
   }
+  if (flipo == 16 && ia->contin.tex >= 0) {
+    gfx_draw_image(g, ia->contin.tex, 565, 395, ia->contin.w, ia->contin.h);
+  }
 }
 
 // Settings > Graphics' default: the Switch's screen is far past 800x450, so
@@ -2900,7 +2986,7 @@ static const char *const kDistNames[] = {"Original", "Far", "Max"};
 static const char *const kDetailNames[] = {"High", "Low"};
 static const char *const kBlurNames[] = {"Off", "20", "40", "60", "80", "100"};
 static const char *const kFpsNames[] = {"Off", "FPS", "Detailed"};
-static const char *const kSteerNames[] = {"Left Stick", "D-Pad"};
+static const char *const kSteerNames[] = {ICON_LSTICK " Left Stick", ICON_DPAD " D-Pad"};
 
 #define SET_FIELD(f) offsetof(GameSettings, f)
 static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
@@ -2950,6 +3036,10 @@ static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
 #undef SET_FIELD
 
 typedef struct { int32_t page, row; } SettingsUi;
+
+// A touch's target: what it selects (sel = sel_value) and the button it
+// presses on release (BTN_COUNT: none).
+typedef struct { int32_t *sel; int32_t sel_value; Button btn; } TouchHit;
 typedef enum { SETTINGS_STAY, SETTINGS_EXIT, SETTINGS_BENCH } SettingsAction;
 
 static int32_t *settings_field(GameSettings *s, const SettingsRow *r) {
@@ -2964,6 +3054,21 @@ static bool settings_row_shown(const SettingsRow *r, bool has_rumble) {
   if (r->kind == ROW_BENCH && g_settings_in_race) return false;
   if ((r->needs & NEED_RUMBLE) && !has_rumble) return false;
   return !(r->needs & NEED_REMAP) || HAS_REMAP;
+}
+
+/** The row of the current page drawn across game-space `y`, or -1 (the
+ * layout of settings_screen_draw, for touch). */
+static int32_t settings_row_at(const SettingsUi *ui, bool has_rumble, int32_t y) {
+  const SettingsPage *pg = &kSettingsPages[ui->page];
+  const bool tight = pg->nrows > 8;
+  const int32_t h = tight ? 28 : 34, gap = tight ? 4 : 6;
+  int32_t top = 68;
+  for (int32_t r = 0; r < pg->nrows; r++) {
+    if (!settings_row_shown(&pg->rows[r], has_rumble)) continue;
+    if (y >= top && y < top + h + gap) return r;
+    top += h + gap;
+  }
+  return -1;
 }
 
 /** Whether a Controls row's button is also another action's. */
@@ -3129,6 +3234,11 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
       const int32_t i = v / row->step;
       char num[16];
       const char *name = row->names ? row->names[i] : (snprintf(num, sizeof(num), "%d", (int)v), num);
+      char with_icon[40];
+      if (row->names == kPadNames) {
+        snprintf(with_icon, sizeof(with_icon), "%s %s", kPadIcons[i], name);
+        name = with_icon;
+      }
       const int32_t tw = font_width(name);
       const int32_t right_x = x0 + w - 26;
       if (settings_bind_clash(s, row)) gfx_set_color(g, 220, 40, 30);
@@ -3621,6 +3731,7 @@ int game_run(void) {
       PngImage img;
       if (bytes && png_decode(bytes, (size_t)len, &img)) {
         font_set_texture(gfx_gl_upload_texture_mipmapped(img.rgba, img.width, img.height));
+        font_set_icon_fn(pad_icon);
         png_free(&img);
       } else {
         fprintf(stderr, "data/port/font.png: missing or undecodable -- no text\n");
@@ -3772,6 +3883,7 @@ int game_run(void) {
   inst_assets.stunts = menu_stunts;
   inst_assets.back = menu_back;
   inst_assets.next = menu_next;
+  inst_assets.contin = menu_contin;
   inst_assets.bggo = menu_bg;
   inst_assets.bgmain = menu_bgmain;
   inst_assets.kz = menu_kz;
@@ -4426,6 +4538,99 @@ int game_run(void) {
     bool held[BTN_COUNT];
     bool race_ticked = false; // this frame consumed at least one physics tick
     running = platform_poll(held);
+
+    // ---- Touch (the Switch's screen, the mouse on desktop) ----------------
+    // ctachm() (xtGraphics.java:7305-7552), the original's mouse handler,
+    // with its hit boxes: pressing a row or button selects it (Java's
+    // n3 == 1), lifting the finger on the same one presses it (n3 == 2),
+    // here as a one-frame press of the matching button so each screen's own
+    // input below handles it. Screens the port added (Settings, the pause
+    // menu's two plates) get boxes of their own.
+    {
+      static bool was_down;
+      static int32_t tx, ty;
+      static TouchHit pressed;
+      int32_t px, py;
+      bool down = platform_pointer(&px, &py);
+      // NFM_HOOK_TAP=frame,x,y: a headless tap (down two frames, then up).
+      static int32_t tap_f = -1, tap_x, tap_y;
+      if (tap_f == -1) {
+        const char *e = getenv("NFM_HOOK_TAP");
+        tap_f = -2;
+        if (e && sscanf(e, "%d,%d,%d", &tap_f, &tap_x, &tap_y) != 3) tap_f = -2;
+      }
+      if (tap_f >= 0 && frame >= tap_f && frame < tap_f + 2) { down = true; px = tap_x; py = tap_y; }
+      if (down) { tx = px; ty = py; }
+      if (down || was_down) {
+        TouchHit hit = {NULL, 0, BTN_COUNT};
+#define OVER(img, x0, y0) ((img).tex >= 0 && tx > (x0) - 5 && tx < (x0) + (img).w + 5 && ty > (y0) - 5 && ty < (y0) + (img).h + 5)
+#define OVERON(x0, y0, w0, h0) (tx > (x0) && tx < (x0) + (w0) && ty > (y0) && ty < (y0) + (h0))
+#define HIT(s, v, b) (hit = (TouchHit){(s), (v), (b)})
+        if (state == STATE_BOOT_CLICK || state == STATE_CANTREPLY || state == STATE_BENCH_RESULT ||
+            state == STATE_REPLAY || state == STATE_PAUSE_REPLAY) {
+          HIT(NULL, 0, BTN_CONFIRM);   // a click anywhere
+        } else if (state == STATE_MAIN_MENU) {
+          // draw_main_menu's rows.
+          static const int32_t kRows[4][3] = {{343, 261, 110}, {301, 291, 196}, {357, 321, 85}, {353, 351, 93}};
+          for (int32_t i = 0; i < 4; i++)
+            if (OVERON(kRows[i][0], kRows[i][1], kRows[i][2], 22)) HIT(&mainmenu_opselect, i, BTN_CONFIRM);
+        } else if (state == STATE_GAMEMODE_MENU) {
+          // draw_gamemode_menu's rows.
+          static const int32_t kRows[3][3] = {{358, 262, 82}, {358, 290, 82}, {348, 318, 102}};
+          for (int32_t i = 0; i < 3; i++)
+            if (OVERON(kRows[i][0], kRows[i][1], kRows[i][2], 22)) HIT(&gamemode_opselect, i, BTN_CONFIRM);
+        } else if (state == STATE_INSTRUCTIONS) {
+          if (inst_flipo >= 1 && inst_flipo <= 15 && OVER(menu_next, 665, 395)) HIT(NULL, 0, BTN_RIGHT);
+          if (inst_flipo >= 3 && inst_flipo <= 16 && OVER(menu_back, 75, 395)) HIT(NULL, 0, BTN_LEFT);
+          if (inst_flipo == 16 && OVER(menu_contin, 565, 395)) HIT(NULL, 0, BTN_CONFIRM);
+        } else if (state == STATE_CREDITS) {
+          if (OVER(menu_next, 665, 395)) HIT(NULL, 0, BTN_CONFIRM);
+        } else if (state == STATE_CAR_SELECT) {
+          if (OVER(menu_next, 645, 275)) HIT(NULL, 1, BTN_RIGHT);
+          if (OVER(menu_back, 95, 275)) HIT(NULL, 2, BTN_LEFT);
+          if (OVER(menu_contin, 355, 385)) HIT(NULL, 3, BTN_CONFIRM);
+        } else if (state == STATE_STAGE_SELECT) {
+          if (OVER(menu_next, 625, 135)) HIT(NULL, 1, BTN_RIGHT);
+          if (OVER(menu_back, 115, 135)) HIT(NULL, 2, BTN_LEFT);
+          if (OVER(menu_contin, 355, 385)) HIT(NULL, 3, BTN_CONFIRM);
+        } else if (state == STATE_STAGE_LOCKED) {
+          if (OVER(menu_back, 370, 345)) HIT(NULL, 0, BTN_CONFIRM);
+        } else if (state == STATE_STAGE_INTRO) {
+          if (OVER(intro_star[0], 359, 385) || OVER(intro_star[0], 359, 295)) HIT(NULL, 0, BTN_CONFIRM);
+        } else if (state == STATE_POST_RACE) {
+          if (OVER(menu_contin, 355, 380)) HIT(NULL, 0, BTN_CONFIRM);
+        } else if (state == STATE_PAUSED) {
+          static const int32_t kRows[6][4] = {{329, 45, 137, 22}, {320, 73, 155, 22}, {303, 99, 190, 22},
+                                              {341, 125, 109, 22}, {320, 202, 160, 30}, {320, 236, 160, 30}};
+          for (int32_t i = 0; i < 6; i++)
+            if (OVERON(kRows[i][0], kRows[i][1], kRows[i][2], kRows[i][3])) HIT(&pause_opselect, i, BTN_CONFIRM);
+        } else if (state == STATE_SETTINGS) {
+          const int32_t r = (tx > 120 && tx < 680) ? settings_row_at(&settings_ui, platform_has_rumble(), ty) : -1;
+          if (r >= 0) {
+            const SettingsRow *row = &kSettingsPages[settings_ui.page].rows[r];
+            Button b = BTN_CONFIRM;
+            // A value row: its right end steps up, the rest of its value
+            // half steps down, its label only selects it.
+            if (row->kind == ROW_CHOICE) b = tx >= 640 ? BTN_RIGHT : (tx >= 400 ? BTN_LEFT : BTN_COUNT);
+            HIT(&settings_ui.row, r, b);
+          }
+        }
+#undef OVER
+#undef OVERON
+#undef HIT
+        if (down && !was_down) pressed = hit;
+        // Held: the row under the finger is the selected one (Java's
+        // pressed rows and n3 == 0 drags).
+        if (down && hit.sel && hit.sel == pressed.sel) *hit.sel = hit.sel_value;
+        // Lifted where it was pressed: that button, for one frame.
+        if (!down && hit.btn != BTN_COUNT && hit.btn == pressed.btn && hit.sel == pressed.sel &&
+            hit.sel_value == pressed.sel_value) {
+          if (hit.sel) *hit.sel = hit.sel_value;
+          held[hit.btn] = true;
+        }
+      }
+      was_down = down;
+    }
     // Left for the HOME menu or sleep: a race in progress pauses.
     const bool focus_pause = platform_take_focus_lost();
 #define KEY_EDGE(b) (held[(b)] && !previous_held[(b)])

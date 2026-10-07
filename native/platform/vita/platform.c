@@ -232,6 +232,12 @@ bool platform_poll(bool held[BTN_COUNT]) {
 }
 
 // No controller vibration on this target (see common/platform.h).
+bool platform_pointer(int32_t *x, int32_t *y) {
+  (void)x;
+  (void)y;
+  return false;
+}
+
 bool platform_take_focus_lost(void) {
   return false;
 }

@@ -81,6 +81,10 @@ bool platform_poll(bool held[BTN_COUNT]);
  * a race can pause; false where the platform does not report it. */
 bool platform_take_focus_lost(void);
 
+/** True while the screen is touched (the mouse's left button on desktop),
+ * with the point in the 800x450 game space; false where there is none. */
+bool platform_pointer(int32_t *x, int32_t *y);
+
 /** Prefix game.c passes straight to vfs_set_fpath() (core/vfs.h) before
  * reading any asset, so every "data/images.zip"/"stages/N.txt"/
  * "music/stageN.zip" literal in game.c stays platform-neutral: "" on

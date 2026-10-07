@@ -107,6 +107,13 @@ radar pasan entonces al stick izquierdo.
   `sdmc:/switch/nfm/benchmark.txt` (fps promedio y 1% low, percentiles,
   cuadros lentos, trabajo por cuadro).
 
+**Pantalla táctil** (modo portátil): los menús, la selección de auto y pista, la
+pausa y los ajustes responden a toques en los mismos botones donde el original
+aceptaba clics del mouse.
+
+**Íconos de botones**: las ayudas e indicaciones muestran los botones de la
+Switch como íconos, según Settings › Controls.
+
 **Menú de pausa**: Restart Race (mismo auto y pista, desde la pantalla de carga).
 La carrera también se pausa sola al ir al menú HOME o al poner la consola en reposo.
 

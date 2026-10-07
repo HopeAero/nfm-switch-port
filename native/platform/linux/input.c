@@ -30,3 +30,9 @@ void input_set_stunting(Control *control, bool stunting) {
   (void)control;
   (void)stunting;
 }
+
+// Settings > Controls is the Switch's; nothing to remap here.
+void input_configure(const uint64_t mask[], bool steer_dpad) {
+  (void)mask;
+  (void)steer_dpad;
+}

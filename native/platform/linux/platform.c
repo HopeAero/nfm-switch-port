@@ -129,6 +129,16 @@ bool platform_poll(bool held[BTN_COUNT]) {
 }
 
 // No controller vibration on this target (see common/platform.h).
+bool platform_pointer(int32_t *x, int32_t *y) {
+  int mx, my, w, h;
+  if (!(SDL_GetMouseState(&mx, &my) & SDL_BUTTON(SDL_BUTTON_LEFT))) return false;
+  SDL_GetWindowSize(g_window, &w, &h);
+  if (w <= 0 || h <= 0) return false;
+  *x = mx * 800 / w;
+  *y = my * 450 / h;
+  return true;
+}
+
 bool platform_take_focus_lost(void) {
   return false;
 }

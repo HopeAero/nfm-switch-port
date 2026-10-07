@@ -40,6 +40,13 @@ void font_set(int32_t style, int32_t size);
 int32_t font_width(const char *s);
 void font_draw(struct Graphics2D *g, const char *s, int32_t x, int32_t y);
 
+/** Inline icons: FONT_ICON (0x1b) and the byte after it ('a' + n) are icon n,
+ * which `fn` draws at pen x on baseline y for the current size and returns
+ * the advance of (g NULL: the advance only). The font is restored after. */
+#define FONT_ICON ''
+typedef int32_t (*FontIconFn)(struct Graphics2D *g, int32_t icon, int32_t x, int32_t y, int32_t size);
+void font_set_icon_fn(FontIconFn fn);
+
 #ifdef __cplusplus
 }
 #endif

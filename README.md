@@ -104,6 +104,12 @@ stick.
   `sdmc:/switch/nfm/benchmark.txt` (average and 1% low fps, percentiles, slow
   frames, work per frame).
 
+**Touch screen** (handheld): menus, car and stage select, the pause menu and
+Settings answer taps on the same buttons the original answered mouse clicks on.
+
+**Button icons**: the help text and prompts show the Switch's buttons as icons,
+following Settings › Controls.
+
 **Pause menu**: Restart Race (same car and stage, from the loading card). A race
 also pauses itself when you go to the HOME menu or put the console to sleep.
 

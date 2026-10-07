@@ -262,6 +262,16 @@ PC with `nxlink -s`.
       pausereplay with NFM_HOOK_PAUSE_ROW=5.
 - [x] Auto-pause on HOME / sleep: libnx applet hook (focus lost or resume)
       -> platform_take_focus_lost() -> the race's pause, as the + button.
+- [x] Touch: platform_pointer() (Switch touch screen, desktop mouse) fed
+      through ctachm()'s hit boxes -- press selects, lift on the same target
+      presses its button for one frame (held[]), so each screen's own input
+      runs. Settings rows: right end = Right, value half = Left, label =
+      select. Headless: NFM_HOOK_TAP=frame,x,y. Instructions page 16 now
+      draws Java's Continue (565,395), which the port had dropped.
+- [x] Button icons: FONT_ICON (0x1b) + 'a'+n in any string is drawn by
+      game.c's pad_icon() in the text colour (face circles, shoulder pills,
+      ringed sticks, a D-pad cross). The Switch's KEY_* text uses them, and
+      Settings > Controls shows icon + name.
 - [ ] Batch 3: visual-only low detail (not `resdown=2`, which drops scenery
       collisions) and the web's lightweight intro; draw distance keeps cars'
       `dist` neutral.
