@@ -108,6 +108,10 @@ Joy-Cons (handheld or detached) or Pro Controller.
 - **Gameplay**: screen shake, vibration.
 
 **Brought over from the original that the Vita port lacked**
+- The original's **text**: Arial bold/plain at the original's sizes (as
+  Liberation Sans, its metric-compatible open twin), antialiased, in mixed
+  case with every symbol, and every string, font and position taken from the
+  Java. The Vita port drew a 5×7 uppercase vector font.
 - The stage backdrop: clouds, mountains, the stars on night stages and the
   ground patches around the track (`clouds(`, `mountains(`, `density(`,
   `fadefrom(`, `lightson`).
@@ -195,10 +199,6 @@ build nor the game on the Vita has been checked.
 ## What's missing / known differences
 
 **Compared to the original game**
-- **Text font**: menus and the HUD use a 5×7 vector font in uppercase only.
-  The original draws its text in Arial bold, in mixed case and with symbols
-  such as `&`, `?` and `>`. This is the biggest visible difference left, on
-  every screen.
 - **No online multiplayer**: the original's lobby isn't ported. It exists only
   in the web port.
 - **No user content**: only the 32 stock stages and the stock cars. Stages and
@@ -268,6 +268,8 @@ separate branch or repository.
   fixes were ported from.
 - [devkitPro](https://devkitpro.org), libnx, SDL2 and Mesa for the Switch
   toolchain and libraries.
+- [Liberation Sans](https://github.com/liberationfonts/liberation-fonts)
+  (SIL Open Font License 1.1, `data/port/LiberationSans-OFL.txt`) for the text.
 
 *Need for Madness © Radicalplay. A non-commercial fan project, not affiliated
 with Radicalplay or Nintendo.*

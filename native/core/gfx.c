@@ -435,6 +435,14 @@ void gfx_draw_image_sub(Graphics2D *g, int32_t image_id, int32_t dst_x, int32_t 
   img->v0 = (float)src_y / sh;
   img->u1 = (float)(src_x + src_w) / sw;
   img->v1 = (float)(src_y + src_h) / sh;
+  img->tr = img->tg = img->tb = 1.0f;
+}
+
+void gfx_draw_glyph(Graphics2D *g, int32_t image_id, float x, float y, float w, float h,
+                    float u0, float v0, float u1, float v1) {
+  gfx_flush(g);
+  GfxDrawCmd *c = push_cmd(g);
+  *c = (GfxDrawCmd){0, 0, image_id, x, y, w, h, g->a, u0, v0, u1, v1, g->r, g->g, g->b};
 }
 
 void gfx_vertex_at(const Graphics2D *g, int32_t i, float *x, float *y) {

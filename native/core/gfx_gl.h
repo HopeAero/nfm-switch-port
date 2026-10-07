@@ -35,6 +35,10 @@ void gfx_submit_gl(const Graphics2D *g);
  */
 int32_t gfx_gl_upload_texture(const uint8_t *rgba, int32_t width, int32_t height);
 
+/** Same, but filtered (linear, with mipmaps where the GL has GL_GENERATE_MIPMAP)
+ * for an atlas drawn far from its own size -- the text font. */
+int32_t gfx_gl_upload_texture_mipmapped(const uint8_t *rgba, int32_t width, int32_t height);
+
 /**
  * Replaces an existing texture's pixels in place (glTexSubImage2D) --
  * `width`/`height` must match the texture's own size from the

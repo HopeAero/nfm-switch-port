@@ -37,12 +37,13 @@ add_executable(gfx_test
 )
 target_link_libraries(gfx_test m)
 
-add_executable(vfont_test
-  vfont_test.c
-  ../core/vfont.c
+add_executable(font_test
+  font_test.c
+  ../core/font.c
+  ../core/font_data.c
   ../core/gfx.c
 )
-target_link_libraries(vfont_test m)
+target_link_libraries(font_test m)
 
 add_executable(vfs_test
   vfs_test.c
@@ -269,7 +270,7 @@ add_test(NAME java_compat_test COMMAND java_compat_test)
 add_test(NAME trackers_test COMMAND trackers_test)
 add_test(NAME medium_test COMMAND medium_test)
 add_test(NAME gfx_test COMMAND gfx_test)
-add_test(NAME vfont_test COMMAND vfont_test)
+add_test(NAME font_test COMMAND font_test)
 add_test(NAME plane_test COMMAND plane_test)
 add_test(NAME wheels_test COMMAND wheels_test)
 add_test(NAME cont_o_test COMMAND cont_o_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})

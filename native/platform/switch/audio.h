@@ -32,7 +32,7 @@ typedef struct {
 // Opens a stereo S16 SDL2 audio device at `output_rate` Hz and starts it
 // unpaused. Returns false (device left unopened) on failure -- callers
 // should treat that as "no audio this session" rather than a fatal error,
-// matching how a missing data/images.zip degrades to vfont-only menus
+// matching how a missing data/images.zip degrades to menus without their art
 // elsewhere in this file.
 bool audio_init(Audio *al, int32_t output_rate);
 

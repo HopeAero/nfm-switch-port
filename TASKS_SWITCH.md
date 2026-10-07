@@ -220,6 +220,14 @@ PC with `nxlink -s`.
       fzy, read by plane_d/plane_s through Medium.ofxz/ofxy/ofzy around
       cont_o_d): turns and flips no longer step a whole degree between ticks.
       Zero on ticks, so tick draws and the simulation are unchanged.
+- [x] The original's text: core/font.c draws Arial (Liberation Sans, same
+      hinted advances as Windows' arialbd/arial at 10-22 px) from one
+      mipmapped atlas (data/port/font.png + font_data.c, tools/bake_font.py),
+      each glyph a quad tinted by the current colour. The API mirrors Java's
+      setFont/stringWidth/drawString (baseline y), so every screen now uses
+      the Java's own strings, sizes and coordinates; the race inherits
+      loadingstage's bold 12 as in Java. vfont/bitfont removed. Consecutive
+      glyphs share one bind and one glBegin.
 - [ ] Batch 3: visual-only low detail (not `resdown=2`, which drops scenery
       collisions) and the web's lightweight intro; draw distance keeps cars'
       `dist` neutral.

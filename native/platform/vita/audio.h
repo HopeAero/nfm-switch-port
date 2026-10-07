@@ -47,7 +47,7 @@ typedef struct {
 // pumping audio_mixer_render()/radical_player_render() into it. Returns false
 // (port left unopened) on failure -- callers should treat that as "no
 // audio this session" rather than a fatal error, matching how a missing
-// data/images.zip degrades to vfont-only menus elsewhere in game.c.
+// data/images.zip degrades to menus without their art elsewhere in game.c.
 bool audio_init(Audio *al, int32_t output_rate);
 
 void audio_shutdown(Audio *al);

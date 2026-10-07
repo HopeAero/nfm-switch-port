@@ -75,8 +75,8 @@ add_library(nfm_core STATIC
   core/medium.c
   core/gfx.c
   core/gfx_gl.c
-  core/vfont.c
-  core/bitfont.c
+  core/font.c
+  core/font_data.c
   core/gif_decode.c
   core/png_decode.c
   core/jpeg_decode.c

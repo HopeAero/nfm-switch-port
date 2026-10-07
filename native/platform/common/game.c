@@ -32,9 +32,8 @@
 // Trackers collision geometry, with real keyboard/pad input (see
 // platform/<name>/input.h).
 //
-// M3: a real menu (car select -> stage select -> race), using core/vfont.c
-// for text (see its own top comment -- gfx.c has no text/image support at
-// all, so this isn't a port of anything, only something new to build).
+// M3: a real menu (car select -> stage select -> race), with the
+// original's Arial text through core/font.c.
 // Not a port of web/Smenu.js (written against the browser's own DOM/
 // image-asset loading, out of this port's scope) -- a native menu screen
 // flow instead, same category as this whole file.
@@ -59,8 +58,7 @@
 #include "trig.h"
 #include "gfx.h"
 #include "gfx_gl.h"
-#include "vfont.h"
-#include "bitfont.h"
+#include "font.h"
 #include "gif_decode.h"
 #include "jpeg_decode.h"
 #include "png_decode.h"
@@ -264,34 +262,34 @@ typedef enum {
 // arrow keys on desktop, the left stick on the Vita (snapped to four
 // directions, platform/vita/input.c), where driving is triggers + stick.
 #ifdef NFM_TARGET_VITA
-#define KEY_STEER    "L/R AND LEFT STICK"
-#define KEY_STUNT    "LEFT STICK"
-#define KEY_HANDB    "CROSS"
-#define KEY_ARRACE   "PRESS UP ON THE D-PAD"
-#define KEY_CONTINUE "CROSS"
-#define KEY_BACK     "CIRCLE"
+#define KEY_STEER    "L/R and Left Stick"
+#define KEY_STUNT    "Left Stick"
+#define KEY_HANDB    "Cross"
+#define KEY_ARRACE   "press Up on the D-pad"
+#define KEY_CONTINUE "Cross"
+#define KEY_BACK     "Circle"
 // clicknow()'s prompt; the original asks for a mouse click.
-#define KEY_START_PROMPT "Press CROSS to Start"
-#define KEY_ARRACE_HINT  "Press UP on the D-pad"
+#define KEY_START_PROMPT "Press Cross to Start"
+#define KEY_ARRACE_HINT  "Press Up on the D-pad"
 #elif defined(NFM_TARGET_SWITCH)
 // The Switch's buttons as platform/switch/{platform,input}.c bind them: the
 // same names and places on the Joy-Cons (handheld or paired) and on the Pro
 // Controller, which libnx all reads as player 1.
-#define KEY_STEER    "ZR/ZL AND LEFT STICK"
-#define KEY_STUNT    "LEFT STICK"
+#define KEY_STEER    "ZR/ZL and Left Stick"
+#define KEY_STUNT    "Left Stick"
 #define KEY_HANDB    "B"
-#define KEY_ARRACE   "PRESS UP ON THE D-PAD"
+#define KEY_ARRACE   "press Up on the D-pad"
 #define KEY_CONTINUE "A"
 #define KEY_BACK     "B"
 #define KEY_START_PROMPT "Press A to Start"
-#define KEY_ARRACE_HINT  "Press UP on the D-pad"
+#define KEY_ARRACE_HINT  "Press Up on the D-pad"
 #else
-#define KEY_STEER    "ARROW KEYS"
-#define KEY_STUNT    "ARROW KEYS"
-#define KEY_HANDB    "SPACEBAR"
-#define KEY_ARRACE   "PRESS [ A ]"
-#define KEY_CONTINUE "ENTER"
-#define KEY_BACK     "ESC"
+#define KEY_STEER    "Arrow Keys"
+#define KEY_STUNT    "Arrow Keys"
+#define KEY_HANDB    "Spacebar"
+#define KEY_ARRACE   "press [ A ]"
+#define KEY_CONTINUE "Enter"
+#define KEY_BACK     "Esc"
 #define KEY_START_PROMPT "Click here to Start"
 // The stage cards' hint (stages 3 and 14), in their own sentence case.
 #define KEY_ARRACE_HINT  "Press [ A ]"
@@ -311,11 +309,10 @@ typedef enum {
 #define KEYLBL_DY 0
 #endif
 
-// Centered vfont_draw_string -- every menu label uses this, so the width
-// math (from vfont_text_width) only lives in one place.
-static void draw_centered(Graphics2D *g, const char *s, int32_t cx, int32_t y, int32_t scale) {
-  int32_t w = vfont_text_width(s, scale);
-  vfont_draw_string(g, s, cx - w / 2, y, scale, (float)scale);
+// drawcs's `drawString(s, 400 - ftm.stringWidth(s) / 2, y)`, in the current
+// font (font_set), `y` a baseline as in Java.
+static void draw_centered(Graphics2D *g, const char *s, int32_t cx, int32_t y) {
+  font_draw(g, s, cx - font_width(s) / 2, y);
 }
 
 // The real HUD panel graphics (data/images.zip), decoded+recoloured+
@@ -893,7 +890,8 @@ static void boot_loading_frame(Graphics2D *g, const BootImages *bi, int32_t done
   draw_boot_backdrop(g, bi);
   if (bi->loadbar.tex >= 0) gfx_draw_image(g, bi->loadbar.tex, 281, 365, bi->loadbar.w, bi->loadbar.h);
   gfx_set_color(g, 0, 0, 0);
-  draw_centered(g, "Loading game, please wait.", 400, 358 - 6, 1);
+  font_set(FONT_BOLD, 11);
+  draw_centered(g, "Loading game, please wait.", 400, 358);
   gfx_set_color(g, 255, 255, 255);
   gfx_fill_rect(g, 295, 398, 210, 17);
   if (total_kb < 1) total_kb = 1;
@@ -903,7 +901,7 @@ static void boot_loading_frame(Graphics2D *g, const BootImages *bi, int32_t done
   snprintf(line, sizeof(line), "%d %% loaded    |    %d KB remaining",
            (int32_t)((26.0f + frac * 200.0f) / 226.0f * 100.0f), total_kb - done_kb);
   gfx_set_color(g, 32, 64, 128);
-  draw_centered(g, line, 400, 410 - 6, 1);
+  draw_centered(g, line, 400, 410);
   gfx_fill_rect(g, 287, 371, 26 + (int32_t)(frac * 200.0f), 10);
   gfx_submit_gl(g);
   platform_swap_buffers();
@@ -1119,13 +1117,8 @@ static void draw_checkpoint_arrow(Graphics2D *g, Medium *m, XtGraphicsStub *xt,
     gfx_set_color(g, hud_tint(120.0, m->snap[0]), hud_tint(114.0, m->snap[1]),
                   hud_tint(255.0, m->snap[2]));
     gfx_draw_polygon(g, sx, sy, 7);
-    // :8673-8676 -- name the locked car, framed by a bracket pair. The
-    // frame is literally "[" + 32 spaces + "]" in the source; the original
-    // sets it in proportional Arial-11 where a space is ~3px, while this
-    // port's vfont is fixed-pitch at 6px, so the bracket reads about twice
-    // as wide here. Kept as the source's own literal rather than
-    // re-tuned -- the same fixed-vs-proportional gap this port already
-    // accepts everywhere else it draws drawcs() text.
+    // :8673-8676 -- name the locked car, framed by a bracket pair: literally
+    // "[" + 32 spaces + "]" in the source.
     hud_say_draw(g, m, 13, "[                                ]", 76, 67, 240, 0);
     if (target >= 0 && target < BOTS_MAX_PLAYERS && sc[target] >= 0 && sc[target] < 16) {
       hud_say_draw(g, m, 13, CAR_DISPLAY_NAMES[sc[target]], 0, 0, 0, 0);
@@ -1217,10 +1210,10 @@ static void hud_say_draw(Graphics2D *g, Medium *m, int32_t y, const char *str,
     // drawcs's drop shadow (xtGraphics.java drawcs, `n2 == 1`): the same
     // string in black one pixel down-right, under the coloured copy.
     gfx_set_color(g, 0, 0, 0);
-    draw_centered(g, str, 401, y + 1, 1);
+    draw_centered(g, str, 401, y + 1);
   }
   hud_set_ink(g, r, gg, b);
-  draw_centered(g, str, 400, y, 1);
+  draw_centered(g, str, 400, y);
 }
 
 /**
@@ -1841,15 +1834,7 @@ static void draw_arrace_board(Graphics2D *g, Medium *m, CheckPoints *cp, int32_t
       else if (place == 1) snprintf(ord, sizeof(ord), "2nd");
       else if (place == 2) snprintf(ord, sizeof(ord), "3rd");
       else snprintf(ord, sizeof(ord), "%dth", place + 1);
-      // vfont, not bitfont: core/bitfont.c bakes only `0-9 / : . - %` and
-      // silently drops anything else, so an ordinal drawn with it came out
-      // as a bare "1"/"2"/"3" with the suffix missing. vfont is what every
-      // other lettered HUD string in this file already uses. Its y is a
-      // top-left coord and the source's is a baseline, but drawcs()'s own
-      // port (hud_say_draw) passes Java's y straight through too, so this
-      // stays consistent with the rest of the file rather than inventing
-      // an offset only this one call site would apply.
-      vfont_draw_string(g, ord, (place == 0) ? 673 : 671, 76 + 30 * place, 1, 1.0f);
+      font_draw(g, ord, (place == 0) ? 673 : 671, 76 + 30 * place);
 
       // :3790-3821 -- damage bar. Full width is 60px; the fill tracks
       // magperc and its green channel ramps 244 -> 11 once the bar passes
@@ -2007,9 +1992,10 @@ static void radar_stat(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad *mad,
   char buf[32];
   hud_set_ink(g, 0, 0, 100);
   snprintf(buf, sizeof(buf), "%d", jtrunc(n15));
-  bitfont_draw_string(g, buf, 62, 245 - 11);
+  font_draw(g, buf, 62, 245);
   snprintf(buf, sizeof(buf), "%d", jtrunc(n16));
-  bitfont_draw_string(g, buf, 132, 245 - 11);
+  font_draw(g, buf, 132, 245);
+
 }
 
 /**
@@ -2545,24 +2531,11 @@ typedef struct {
  * 11/13) with only the body text and its colour differing, which is why
  * nine screens need only five layouts.
  *
- * This port previously drew ONLY the flipo==1 "main controls" page, on
- * the stated grounds that the body text "would need a real font
- * renderer" -- a blocker that has not been true since the vfont/bitfont
- * work landed (that very page already drew its own labels through
- * vfont). All the art is present in data/images.zip too, including the
- * three whose Java FIELD name disagrees with their filename (see the
- * loader). So the full flipbook is restored here.
+ * All the art is in data/images.zip, including the three whose Java FIELD
+ * name disagrees with their filename (see the loader).
  *
- * Text is drawn uppercase through vfont at scale 1, matching what every
- * other menu screen in this file already does rather than introducing a
- * second convention for one screen; Java's own Arial-13/Arial-11 size
- * split has no vfont equivalent, so both collapse to scale 1. Two of the
- * original's strings use "&", which vfont has no glyph for (it would
- * silently render as a blank cell and read as a missing word), so those
- * spell it "AND" instead -- the only place any string here departs from
- * the original's own wording. Parentheses used to have the same problem
- * and were added to vfont instead, since those appear in several menu
- * strings and are a simple shape.
+ * Text is the original's, in its own fonts (Arial bold 13 for the body, 11
+ * for the labels), with the platform's button names spliced in.
  *
  * `aflk`/`duds`/`dudo` are caller-owned (Java keeps them on `this`):
  * `aflk` is the shared frame-flip toggle, `duds` picks Coach Insano's
@@ -2600,56 +2573,60 @@ static void draw_instructions(Graphics2D *g, const InstAssets *ia,
   }
 
   gfx_set_color(g, 0, 64, 128);
+  font_set(FONT_BOLD, 13);
 
   // ---- Pages 3 / 5: what completing a stage means. :4114-4147 ----
   if (flipo == 3 || flipo == 5) {
     if (flipo == 3) {
-      vfont_draw_string(g, "HELLO!  WELCOME TO THE WORLD OF", 262, 67, 1, 1.0f);
-      vfont_draw_string(g, "!", 657, 67, 1, 1.0f);
+      font_draw(g, "Hello!  Welcome to the world of", 262, 67);
+      font_draw(g, "!", 657, 67);
       if (ia->nfm.tex >= 0) gfx_draw_image(g, ia->nfm.tex, 469, 55, ia->nfm.w, ia->nfm.h);
-      vfont_draw_string(g, "IN THIS GAME THERE ARE TWO WAYS TO COMPLETE A STAGE.", 262, 107, 1, 1.0f);
-      vfont_draw_string(g, "ONE IS BY RACING AND FINISHING IN FIRST PLACE, THE OTHER IS BY", 262, 127, 1, 1.0f);
-      vfont_draw_string(g, "WASTING AND CRASHING ALL THE OTHER CARS IN THE STAGE!", 262, 147, 1, 1.0f);
+      font_draw(g, "In this game there are two ways to complete a stage.", 262, 107);
+      font_draw(g, "One is by racing and finishing in first place, the other is by", 262, 127);
+      font_draw(g, "wasting and crashing all the other cars in the stage!", 262, 147);
     } else {
       gfx_set_color(g, 0, 128, 255);
-      vfont_draw_string(g, "WHILE RACING, YOU WILL NEED TO FOCUS ON GOING FAST AND PASSING", 262, 67, 1, 1.0f);
-      vfont_draw_string(g, "THROUGH ALL THE CHECKPOINTS IN THE TRACK. TO COMPLETE A LAP, YOU", 262, 87, 1, 1.0f);
-      vfont_draw_string(g, "MUST NOT MISS A CHECKPOINT.", 262, 107, 1, 1.0f);
-      vfont_draw_string(g, "WHILE WASTING, YOU WILL JUST NEED TO CHASE THE OTHER CARS AND", 262, 127, 1, 1.0f);
-      vfont_draw_string(g, "CRASH INTO THEM (WITHOUT WORRYING ABOUT TRACK AND CHECKPOINTS).", 262, 147, 1, 1.0f);
+      font_draw(g, "While racing, you will need to focus on going fast and passing", 262, 67);
+      font_draw(g, "through all the checkpoints in the track. To complete a lap, you", 262, 87);
+      font_draw(g, "must not miss a checkpoint.", 262, 107);
+      font_draw(g, "While wasting, you will just need to chase the other cars and", 262, 127);
+      font_draw(g, "crash into them (without worrying about track and checkpoints).", 262, 147);
     }
     gfx_set_color(g, 0, 0, 0);
     if (ia->racing.tex >= 0)  gfx_draw_image(g, ia->racing.tex, 165, 185, ia->racing.w, ia->racing.h);
     if (ia->ory.tex >= 0)     gfx_draw_image(g, ia->ory.tex, 429, 235, ia->ory.w, ia->ory.h);
     if (ia->wasting.tex >= 0) gfx_draw_image(g, ia->wasting.tex, 492, 185, ia->wasting.w, ia->wasting.h);
-    vfont_draw_string(g, "CHECKPOINT", 392, 189, 1, 1.0f);
-    vfont_draw_string(g, "DRIVE YOUR CAR USING THE " KEY_STEER " AND " KEY_HANDB, 125, 320, 1, 1.0f);
+    font_set(FONT_BOLD, 11);
+    font_draw(g, "Checkpoint", 392, 189);
+    font_set(FONT_BOLD, 13);
+    font_draw(g, "Drive your car using the " KEY_STEER " and " KEY_HANDB, 125, 320);
     if (ia->space.tex >= 0)  gfx_draw_image(g, ia->space.tex, 171, 355, ia->space.w, ia->space.h);
     if (ia->arrows.tex >= 0) gfx_draw_image(g, ia->arrows.tex, 505, 323, ia->arrows.w, ia->arrows.h);
-    vfont_draw_string(g, "(WHEN YOUR CAR IS ON THE GROUND " KEY_HANDB " IS FOR HANDBRAKE)", 125, 341, 1, 1.0f);
-    vfont_draw_string(g, "ACCELERATE", 515, 319, 1, 1.0f);
-    vfont_draw_string(g, "BRAKE/REVERSE", 506, 397, 1, 1.0f);
-    vfont_draw_string(g, "TURN LEFT", 454, 375, 1, 1.0f);
-    vfont_draw_string(g, "TURN RIGHT", 590, 375, 1, 1.0f);
-    vfont_draw_string(g, "HANDBRAKE", 247 + KEYLBL_DX, 374 + KEYLBL_DY, 1, 1.0f);
+    font_set(FONT_BOLD, 11);
+    font_draw(g, "(When your car is on the ground " KEY_HANDB " is for Handbrake)", 125, 341);
+    font_draw(g, "Accelerate", 515, 319);
+    font_draw(g, "Brake/Reverse", 506, 397);
+    font_draw(g, "Turn left", 454, 375);
+    font_draw(g, "Turn right", 590, 375);
+    font_draw(g, "Handbrake", 247 + KEYLBL_DX, 374 + KEYLBL_DY);
   }
 
   // ---- Pages 7 / 9: power and stunts. :4149-4188 ----
   if (flipo == 7 || flipo == 9) {
     if (flipo == 7) {
-      vfont_draw_string(g, "WHETHER YOU ARE RACING OR WASTING THE OTHER CARS YOU WILL NEED", 262, 67, 1, 1.0f);
-      vfont_draw_string(g, "TO POWER UP YOUR CAR.", 262, 87, 1, 1.0f);
-      vfont_draw_string(g, "=> MORE 'POWER' MAKES YOUR CAR BECOME FASTER AND STRONGER!", 262, 107, 1, 1.0f);
-      vfont_draw_string(g, "TO POWER UP YOUR CAR (AND KEEP IT POWERED UP) YOU WILL NEED TO", 262, 127, 1, 1.0f);
-      vfont_draw_string(g, "PERFORM STUNTS!", 262, 147, 1, 1.0f);
+      font_draw(g, "Whether you are racing or wasting the other cars you will need", 262, 67);
+      font_draw(g, "to power up your car.", 262, 87);
+      font_draw(g, "=> More 'Power' makes your car become faster and stronger!", 262, 107);
+      font_draw(g, "To power up your car (and keep it powered up) you will need to", 262, 127);
+      font_draw(g, "perform stunts!", 262, 147);
       if (ia->chil.tex >= 0) gfx_draw_image(g, ia->chil.tex, 167, 295, ia->chil.w, ia->chil.h);
     } else {
-      vfont_draw_string(g, "THE BETTER THE STUNT THE MORE POWER YOU GET!", 262, 67, 1, 1.0f);
+      font_draw(g, "The better the stunt the more power you get!", 262, 67);
       gfx_set_color(g, 0, 128, 255);
-      vfont_draw_string(g, "FORWARD LOOPING PUSHES YOUR CAR FORWARDS IN THE AIR AND HELPS", 262, 87, 1, 1.0f);
-      vfont_draw_string(g, "WHEN RACING. BACKWARD LOOPING PUSHES YOUR CAR UPWARDS GIVING IT", 262, 107, 1, 1.0f);
-      vfont_draw_string(g, "MORE HANG TIME IN THE AIR MAKING IT EASIER TO CONTROL ITS LANDING.", 262, 127, 1, 1.0f);
-      vfont_draw_string(g, "LEFT AND RIGHT ROLLS SHIFT YOUR CAR IN THE AIR LEFT AND RIGHT SLIGHTLY.", 262, 147, 1, 1.0f);
+      font_draw(g, "Forward looping pushes your car forwards in the air and helps", 262, 87);
+      font_draw(g, "when racing. Backward looping pushes your car upwards giving it", 262, 107);
+      font_draw(g, "more hang time in the air making it easier to control its landing.", 262, 127);
+      font_draw(g, "Left and right rolls shift your car in the air left and right slightly.", 262, 147);
       // :4166 -- on this page the illustration BLINKS while Coach Insano
       // is still talking (dudo >= 150), then goes solid once he stops.
       if ((aflk || dudo < 150) && ia->chil.tex >= 0) {
@@ -2659,17 +2636,19 @@ static void draw_instructions(Graphics2D *g, const InstAssets *ia,
     gfx_set_color(g, 0, 0, 0);
     if (ia->stunts.tex >= 0) gfx_draw_image(g, ia->stunts.tex, 105, 175, ia->stunts.w, ia->stunts.h);
     if (ia->opwr.tex >= 0)   gfx_draw_image(g, ia->opwr.tex, 540, 253, ia->opwr.w, ia->opwr.h);
-    vfont_draw_string(g, "TO PERFORM STUNTS. WHEN YOUR CAR IS IN THE AIR:", 125, 310, 1, 1.0f);
-    vfont_draw_string(g, "PRESS COMBO " KEY_HANDB " + " KEY_STUNT, 125, 330, 1, 1.0f);
+    font_set(FONT_BOLD, 13);
+    font_draw(g, "To perform stunts. When your car is in the AIR:", 125, 310);
+    font_draw(g, "Press combo " KEY_HANDB " + " KEY_STUNT, 125, 330);
     if (ia->space.tex >= 0)  gfx_draw_image(g, ia->space.tex, 185, 355, ia->space.w, ia->space.h);
     if (ia->plus.tex >= 0)   gfx_draw_image(g, ia->plus.tex, 405, 358, ia->plus.w, ia->plus.h);
     if (ia->stunt_arrows.tex >= 0)
       gfx_draw_image(g, ia->stunt_arrows.tex, 491, 323, ia->stunt_arrows.w, ia->stunt_arrows.h);
-    vfont_draw_string(g, "FORWARD LOOP", 492, 319, 1, 1.0f);
-    vfont_draw_string(g, "BACKWARD LOOP", 490, 397, 1, 1.0f);
-    vfont_draw_string(g, "LEFT ROLL", 443, 375, 1, 1.0f);
-    vfont_draw_string(g, "RIGHT ROLL", 576, 375, 1, 1.0f);
-    vfont_draw_string(g, KEY_HANDB, 266 + KEYLBL_DX, 374 + KEYLBL_DY, 1, 1.0f);
+    font_set(FONT_BOLD, 11);
+    font_draw(g, "Forward Loop", 492, 319);
+    font_draw(g, "Backward Loop", 490, 397);
+    font_draw(g, "Left Roll", 443, 375);
+    font_draw(g, "Right Roll", 576, 375);
+    font_draw(g, KEY_HANDB, 266 + KEYLBL_DX, 374 + KEYLBL_DY);
     // :4187 -- the filled segment inside the power-meter art.
     gfx_set_color(g, 140, 243, 244);
     gfx_fill_rect(g, 602, 257, 76, 9);
@@ -2678,82 +2657,87 @@ static void draw_instructions(Graphics2D *g, const InstAssets *ia,
   // ---- Pages 11 / 13: guidance arrow and the repair hoop. :4189-4211 ----
   if (flipo == 11 || flipo == 13) {
     if (flipo == 11) {
-      vfont_draw_string(g, "WHEN WASTING CARS, TO HELP YOU FIND THE OTHER CARS IN THE STAGE,", 262, 67, 1, 1.0f);
-      vfont_draw_string(g, KEY_ARRACE " TO TOGGLE THE GUIDANCE ARROW FROM POINTING TO THE TRACK", 262, 87, 1, 1.0f);
-      vfont_draw_string(g, "TO POINTING TO THE CARS.", 262, 107, 1, 1.0f);
-      vfont_draw_string(g, "WHEN YOUR CAR IS DAMAGED. YOU FIX IT (AND RESET ITS 'DAMAGE') BY", 262, 127, 1, 1.0f);
-      vfont_draw_string(g, "JUMPING THROUGH THE ELECTRIFIED HOOP.", 262, 147, 1, 1.0f);
+      font_draw(g, "When wasting cars, to help you find the other cars in the stage,", 262, 67);
+      font_draw(g, KEY_ARRACE " to toggle the guidance arrow from pointing to the track", 262, 87);
+      font_draw(g, "to pointing to the cars.", 262, 107);
+      font_draw(g, "When your car is damaged. You fix it (and reset its 'Damage') by", 262, 127);
+      font_draw(g, "jumping through the electrified hoop.", 262, 147);
     } else {
       gfx_set_color(g, 0, 128, 255);
-      vfont_draw_string(g, "YOU WILL FIND THAT IN SOME STAGES IT'S EASIER TO WASTE THE OTHER CARS", 262, 67, 1, 1.0f);
-      vfont_draw_string(g, "AND IN SOME OTHERS IT'S EASIER TO RACE AND FINISH IN FIRST PLACE.", 262, 87, 1, 1.0f);
-      vfont_draw_string(g, "IT IS UP TO YOU TO DECIDE WHEN TO WASTE AND WHEN TO RACE.", 262, 107, 1, 1.0f);
-      vfont_draw_string(g, "AND REMEMBER, 'POWER' IS AN IMPORTANT FACTOR IN THE GAME. YOU", 262, 127, 1, 1.0f);
-      vfont_draw_string(g, "WILL NEED IT WHETHER YOU ARE RACING OR WASTING!", 262, 147, 1, 1.0f);
+      font_draw(g, "You will find that in some stages it's easier to waste the other cars", 262, 67);
+      font_draw(g, "and in some others it's easier to race and finish in first place.", 262, 87);
+      font_draw(g, "It is up to you to decide when to waste and when to race.", 262, 107);
+      font_draw(g, "And remember, 'Power' is an important factor in the game. You", 262, 127);
+      font_draw(g, "will need it whether you are racing or wasting!", 262, 147);
     }
     gfx_set_color(g, 0, 0, 0);
     if (ia->fixhoop.tex >= 0) gfx_draw_image(g, ia->fixhoop.tex, 185, 218, ia->fixhoop.w, ia->fixhoop.h);
     if (ia->sarrow.tex >= 0)  gfx_draw_image(g, ia->sarrow.tex, 385, 228, ia->sarrow.w, ia->sarrow.h);
-    vfont_draw_string(g, "THE ELECTRIFIED HOOP", 192, 216, 1, 1.0f);
-    vfont_draw_string(g, "JUMPING THROUGH IT FIXES YOUR CAR.", 158, 338, 1, 1.0f);
-    vfont_draw_string(g, "MAKE GUIDANCE ARROW POINT TO CARS.", 385, 216, 1, 1.0f);
+    font_set(FONT_BOLD, 11);
+    font_draw(g, "The Electrified Hoop", 192, 216);
+    font_draw(g, "Jumping through it fixes your car.", 158, 338);
+    font_draw(g, "Make guidance arrow point to cars.", 385, 216);
   }
 
   // ---- Page 15: sign-off + the "other controls" reference. :4212-4235 ----
+  // (The original's apostrophes here are U+2019; the atlas is ASCII.)
   if (flipo == 15) {
-    vfont_draw_string(g, "AND IF YOU DON'T KNOW WHO I AM,", 262, 67, 1, 1.0f);
-    vfont_draw_string(g, "I AM COACH INSANO, I AM THE COACH AND NARRATOR OF THIS GAME!", 262, 87, 1, 1.0f);
-    vfont_draw_string(g, "I RECOMMENDED STARTING WITH NFM 1 IF IT'S YOUR FIRST TIME TO PLAY.", 262, 127, 1, 1.0f);
-    vfont_draw_string(g, "GOOD LUCK AND HAVE FUN!", 262, 147, 1, 1.0f);
+    font_draw(g, "And if you don't know who I am,", 262, 67);
+    font_draw(g, "I am Coach Insano, I am the coach and narrator of this game!", 262, 87);
+    font_draw(g, "I recommended starting with NFM 1 if it's your first time to play.", 262, 127);
+    font_draw(g, "Good Luck & Have Fun!", 262, 147);
     gfx_set_color(g, 0, 0, 0);
-    vfont_draw_string(g, "OTHER CONTROLS :", 155, 205, 1, 1.0f);
+    font_draw(g, "Other Controls :", 155, 205);
+    font_set(FONT_BOLD, 11);
     if (ia->kz.tex >= 0) gfx_draw_image(g, ia->kz.tex, 169, 229, ia->kz.w, ia->kz.h);
-    vfont_draw_string(g, "OR", 206, 251, 1, 1.0f);
+    font_draw(g, "OR", 206, 251);
     if (ia->kx.tex >= 0) gfx_draw_image(g, ia->kx.tex, 229, 229, ia->kx.w, ia->kx.h);
-    vfont_draw_string(g, "TO LOOK BEHIND YOU WHILE DRIVING.", 267, 251, 1, 1.0f);
+    font_draw(g, "To look behind you while driving.", 267, 251);
     if (ia->kv.tex >= 0) gfx_draw_image(g, ia->kv.tex, 169, 279, ia->kv.w, ia->kv.h);
-    vfont_draw_string(g, "CHANGE VIEWS", 207, 301, 1, 1.0f);
+    font_draw(g, "Change Views", 207, 301);
     if (ia->kenter.tex >= 0) gfx_draw_image(g, ia->kenter.tex, 169, 329, ia->kenter.w, ia->kenter.h);
-    vfont_draw_string(g, "NAVIGATE AND PAUSE GAME", 275, 351, 1, 1.0f);
+    font_draw(g, "Navigate & Pause Game", 275, 351);
     if (ia->km.tex >= 0) gfx_draw_image(g, ia->km.tex, 489, 229, ia->km.w, ia->km.h);
-    vfont_draw_string(g, "MUTE MUSIC", 527, 251, 1, 1.0f);
+    font_draw(g, "Mute Music", 527, 251);
     if (ia->kn.tex >= 0) gfx_draw_image(g, ia->kn.tex, 489, 279, ia->kn.w, ia->kn.h);
-    vfont_draw_string(g, "MUTE SOUND EFFECTS", 527, 301, 1, 1.0f);
+    font_draw(g, "Mute Sound Effects", 527, 301);
     if (ia->ks.tex >= 0) gfx_draw_image(g, ia->ks.tex, 489, 329, ia->ks.w, ia->ks.h);
-    vfont_draw_string(g, "TOGGLE RADAR / MAP", 527, 351, 1, 1.0f);
+    font_draw(g, "Toggle radar / map", 527, 351);
   }
 
   // ---- Pages 1 / 16: the main-controls recap. :4236-4275 ----
   if (flipo == 1 || flipo == 16) {
+    font_set(FONT_BOLD, 13);
     gfx_set_color(g, 0, 0, 0);
-    draw_centered(g, (flipo == 16) ? "M A I N    C O N T R O L S   -   ONCE AGAIN!"
-                                   : "M A I N    C O N T R O L S", 400, 49 - 6, 1);
-    vfont_draw_string(g, "DRIVE YOUR CAR USING THE " KEY_STEER ":", 125, 80, 1, 1.0f);
-    vfont_draw_string(g, "ON THE GROUND " KEY_HANDB " IS FOR HANDBRAKE", 125, 101, 1, 1.0f);
+    draw_centered(g, (flipo == 16) ? "M A I N    C O N T R O L S   -   once again!"
+                                   : "M A I N    C O N T R O L S", 400, 49);
+    font_draw(g, "Drive your car using the " KEY_STEER ":", 125, 80);
+    font_draw(g, "On the GROUND " KEY_HANDB " is for Handbrake", 125, 101);
     if (ia->space.tex >= 0)  gfx_draw_image(g, ia->space.tex, 171, 115, ia->space.w, ia->space.h);
     if (ia->arrows.tex >= 0) gfx_draw_image(g, ia->arrows.tex, 505, 83, ia->arrows.w, ia->arrows.h);
-    vfont_draw_string(g, "ACCELERATE", 515, 79, 1, 1.0f);
-    vfont_draw_string(g, "BRAKE/REVERSE", 506, 157, 1, 1.0f);
-    vfont_draw_string(g, "TURN LEFT", 454, 135, 1, 1.0f);
-    vfont_draw_string(g, "TURN RIGHT", 590, 135, 1, 1.0f);
-    vfont_draw_string(g, "HANDBRAKE", 247 + KEYLBL_DX, 134 + KEYLBL_DY, 1, 1.0f);
-    // :4258 -- a full-width rule at y=175 (Java draws it as a long run of
-    // dashes through drawcs mode 3; a 1px line is the same thing without
-    // depending on the dash glyph's exact advance).
+    font_set(FONT_BOLD, 11);
+    font_draw(g, "Accelerate", 515, 79);
+    font_draw(g, "Brake/Reverse", 506, 157);
+    font_draw(g, "Turn left", 454, 135);
+    font_draw(g, "Turn right", 590, 135);
+    font_draw(g, "Handbrake", 247 + KEYLBL_DX, 134 + KEYLBL_DY);
+    // :4257 -- the rule across the page is a run of dashes through drawcs.
     gfx_set_color(g, 0, 64, 128);
-    gfx_fill_rect(g, 70, 175, 660, 1);
+    draw_centered(g, "----------------------------------------------------------------------------------------------------------------------------------------------------", 400, 175);
     gfx_set_color(g, 0, 0, 0);
-    vfont_draw_string(g, "TO PERFORM STUNTS:", 125, 200, 1, 1.0f);
-    vfont_draw_string(g, "IN THE AIR PRESS COMBO " KEY_HANDB " + " KEY_STUNT, 125, 220, 1, 1.0f);
+    font_set(FONT_BOLD, 13);
+    font_draw(g, "To perform STUNTS:", 125, 200);
+    font_draw(g, "In the AIR press combo " KEY_HANDB " + " KEY_STUNT, 125, 220);
     if (ia->space.tex >= 0)  gfx_draw_image(g, ia->space.tex, 185, 245, ia->space.w, ia->space.h);
     if (ia->plus.tex >= 0)   gfx_draw_image(g, ia->plus.tex, 405, 248, ia->plus.w, ia->plus.h);
     if (ia->stunt_arrows.tex >= 0)
       gfx_draw_image(g, ia->stunt_arrows.tex, 491, 213, ia->stunt_arrows.w, ia->stunt_arrows.h);
-    vfont_draw_string(g, "FORWARD LOOP", 492, 209, 1, 1.0f);
-    vfont_draw_string(g, "BACKWARD LOOP", 490, 287, 1, 1.0f);
-    vfont_draw_string(g, "LEFT ROLL", 443, 265, 1, 1.0f);
-    vfont_draw_string(g, "RIGHT ROLL", 576, 265, 1, 1.0f);
-    vfont_draw_string(g, KEY_HANDB, 266 + KEYLBL_DX, 264 + KEYLBL_DY, 1, 1.0f);
+    font_set(FONT_BOLD, 11);
+    font_draw(g, "Forward Loop", 492, 209);
+    font_draw(g, "Backward Loop", 490, 287);
+    font_draw(g, "Left Roll", 443, 265);
+    font_draw(g, "Right Roll", 576, 265);
+    font_draw(g, KEY_HANDB, 266 + KEYLBL_DX, 264 + KEYLBL_DY);
     if (ia->stunts.tex >= 0) gfx_draw_image(g, ia->stunts.tex, 125, 285, ia->stunts.w, ia->stunts.h);
   }
 
@@ -2829,43 +2813,43 @@ typedef struct {
 
 typedef struct { const char *title; int32_t nrows; SettingsRow rows[8]; } SettingsPage;
 
-static const char *const kOnOff[] = {"OFF", "ON"};
-static const char *const kQualityNames[] = {"ORIGINAL", "SMOOTH", "HD"};
-static const char *const kDistNames[] = {"ORIGINAL", "FAR", "MAX"};
-static const char *const kDetailNames[] = {"HIGH", "LOW"};
-static const char *const kBlurNames[] = {"OFF", "20", "40", "60", "80", "100"};
-static const char *const kFpsNames[] = {"OFF", "FPS", "DETAILED"};
+static const char *const kOnOff[] = {"Off", "On"};
+static const char *const kQualityNames[] = {"Original", "Smooth", "HD"};
+static const char *const kDistNames[] = {"Original", "Far", "Max"};
+static const char *const kDetailNames[] = {"High", "Low"};
+static const char *const kBlurNames[] = {"Off", "20", "40", "60", "80", "100"};
+static const char *const kFpsNames[] = {"Off", "FPS", "Detailed"};
 
 #define SET_FIELD(f) offsetof(GameSettings, f)
 static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
   [SET_MAIN] = {"SETTINGS", 7, {
-    {ROW_OPEN, "GRAPHICS", SET_GRAPHICS, 0, 0, 0, NULL, false},
-    {ROW_OPEN, "AUDIO", SET_AUDIO, 0, 0, 0, NULL, false},
-    {ROW_OPEN, "INTERFACE", SET_INTERFACE, 0, 0, 0, NULL, false},
-    {ROW_OPEN, "GAMEPLAY", SET_GAMEPLAY, 0, 0, 0, NULL, false},
-    {ROW_BENCH, "PERFORMANCE TEST", 0, 0, 0, 0, NULL, false},
-    {ROW_RESET, "RESET TO DEFAULTS", 0, 0, 0, 0, NULL, false},
-    {ROW_BACK, "BACK", 0, 0, 0, 0, NULL, false}}},
+    {ROW_OPEN, "Graphics", SET_GRAPHICS, 0, 0, 0, NULL, false},
+    {ROW_OPEN, "Audio", SET_AUDIO, 0, 0, 0, NULL, false},
+    {ROW_OPEN, "Interface", SET_INTERFACE, 0, 0, 0, NULL, false},
+    {ROW_OPEN, "Gameplay", SET_GAMEPLAY, 0, 0, 0, NULL, false},
+    {ROW_BENCH, "Performance Test", 0, 0, 0, 0, NULL, false},
+    {ROW_RESET, "Reset to Defaults", 0, 0, 0, 0, NULL, false},
+    {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
   [SET_GRAPHICS] = {"SETTINGS - GRAPHICS", 8, {
-    {ROW_CHOICE, "IMAGE QUALITY", 0, SET_FIELD(graphics), 3, 1, kQualityNames, false},
-    {ROW_CHOICE, "DRAW DISTANCE", 0, SET_FIELD(draw_dist), 3, 1, kDistNames, false},
-    {ROW_CHOICE, "SCENERY DETAIL", 0, SET_FIELD(detail), 2, 1, kDetailNames, false},
-    {ROW_CHOICE, "SHADOWS", 0, SET_FIELD(shadows), 2, 1, kOnOff, false},
-    {ROW_CHOICE, "PARTICLES", 0, SET_FIELD(particles), 2, 1, kOnOff, false},
-    {ROW_CHOICE, "MOTION BLUR", 0, SET_FIELD(blur), 6, 20, kBlurNames, false},
-    {ROW_CHOICE, "SMOOTH FRAMES", 0, SET_FIELD(smooth), 2, 1, kOnOff, false},
-    {ROW_BACK, "BACK", 0, 0, 0, 0, NULL, false}}},
+    {ROW_CHOICE, "Image Quality", 0, SET_FIELD(graphics), 3, 1, kQualityNames, false},
+    {ROW_CHOICE, "Draw Distance", 0, SET_FIELD(draw_dist), 3, 1, kDistNames, false},
+    {ROW_CHOICE, "Scenery Detail", 0, SET_FIELD(detail), 2, 1, kDetailNames, false},
+    {ROW_CHOICE, "Shadows", 0, SET_FIELD(shadows), 2, 1, kOnOff, false},
+    {ROW_CHOICE, "Particles", 0, SET_FIELD(particles), 2, 1, kOnOff, false},
+    {ROW_CHOICE, "Motion Blur", 0, SET_FIELD(blur), 6, 20, kBlurNames, false},
+    {ROW_CHOICE, "Smooth Frames", 0, SET_FIELD(smooth), 2, 1, kOnOff, false},
+    {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
   [SET_AUDIO] = {"SETTINGS - AUDIO", 3, {
-    {ROW_CHOICE, "MUSIC", 0, SET_FIELD(music_vol), 11, 10, NULL, false},
-    {ROW_CHOICE, "EFFECTS", 0, SET_FIELD(sfx_vol), 11, 10, NULL, false},
-    {ROW_BACK, "BACK", 0, 0, 0, 0, NULL, false}}},
+    {ROW_CHOICE, "Music", 0, SET_FIELD(music_vol), 11, 10, NULL, false},
+    {ROW_CHOICE, "Effects", 0, SET_FIELD(sfx_vol), 11, 10, NULL, false},
+    {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
   [SET_INTERFACE] = {"SETTINGS - INTERFACE", 2, {
-    {ROW_CHOICE, "SHOW FPS", 0, SET_FIELD(show_fps), 3, 1, kFpsNames, false},
-    {ROW_BACK, "BACK", 0, 0, 0, 0, NULL, false}}},
+    {ROW_CHOICE, "Show FPS", 0, SET_FIELD(show_fps), 3, 1, kFpsNames, false},
+    {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
   [SET_GAMEPLAY] = {"SETTINGS - GAMEPLAY", 3, {
-    {ROW_CHOICE, "SCREEN SHAKE", 0, SET_FIELD(shake), 2, 1, kOnOff, false},
-    {ROW_CHOICE, "VIBRATION", 0, SET_FIELD(rumble), 2, 1, kOnOff, true},
-    {ROW_BACK, "BACK", 0, 0, 0, 0, NULL, false}}},
+    {ROW_CHOICE, "Screen Shake", 0, SET_FIELD(shake), 2, 1, kOnOff, false},
+    {ROW_CHOICE, "Vibration", 0, SET_FIELD(rumble), 2, 1, kOnOff, true},
+    {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
 };
 #undef SET_FIELD
 
@@ -2992,7 +2976,9 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
   gfx_set_color(g, 17, 17, 17);
   gfx_fill_rect(g, 120, 22, 560, 32);
   gfx_set_color(g, SET_YELLOW);
-  draw_centered(g, pg->title, 400, 38 - 7, 2);
+  font_set(FONT_BOLD, 22);
+  draw_centered(g, pg->title, 400, 46);
+  font_set(FONT_BOLD, 18);
 
   const int32_t x0 = 120, w = 560, h = 34, gap = 6;
   int32_t y = 68;
@@ -3010,7 +2996,7 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
     }
     const int32_t cy = y + h / 2;
     if (sel) gfx_set_color(g, SET_YELLOW); else gfx_set_color(g, SET_INK);
-    vfont_draw_string(g, row->label, x0 + 34, cy - 7, 2, 2.0f);
+    font_draw(g, row->label, x0 + 34, cy + 7);
     if (row->kind == ROW_OPEN || row->kind == ROW_BENCH) {
       draw_settings_arrow(g, x0 + w - 26, cy, true, true, sel);
     } else if (row->kind == ROW_CHOICE) {
@@ -3018,10 +3004,10 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
       const int32_t i = v / row->step;
       char num[16];
       const char *name = row->names ? row->names[i] : (snprintf(num, sizeof(num), "%d", (int)v), num);
-      const int32_t tw = vfont_text_width(name, 2);
+      const int32_t tw = font_width(name);
       const int32_t right_x = x0 + w - 26;
       if (sel) gfx_set_color(g, SET_YELLOW); else gfx_set_color(g, SET_INK);
-      vfont_draw_string(g, name, right_x - 14 - tw, cy - 7, 2, 2.0f);
+      font_draw(g, name, right_x - 14 - tw, cy + 7);
       draw_settings_arrow(g, right_x - 22 - tw, cy, false, i > 0, sel);
       draw_settings_arrow(g, right_x, cy, true, i < row->count - 1, sel);
     }
@@ -3030,8 +3016,9 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
 
   gfx_set_color(g, 90, 88, 80);
   char hint[96];
-  snprintf(hint, sizeof(hint), "LEFT/RIGHT: CHANGE    %s: SELECT    %s: BACK", KEY_CONTINUE, KEY_BACK);
-  draw_centered(g, hint, 400, 424 - 6, 1);
+  snprintf(hint, sizeof(hint), "Left/Right: Change    %s: Select    %s: Back", KEY_CONTINUE, KEY_BACK);
+  font_set(FONT_BOLD, 12);
+  draw_centered(g, hint, 400, 428);
 }
 
 // --- Settings > Performance Test ---------------------------------------
@@ -3200,21 +3187,24 @@ static void bench_result_draw(Graphics2D *g, const Bench *b) {
   gfx_set_color(g, 17, 17, 17);
   gfx_fill_rect(g, 80, 22, 640, 32);
   gfx_set_color(g, SET_YELLOW);
-  draw_centered(g, "PERFORMANCE TEST", 400, 38 - 7, 2);
+  font_set(FONT_BOLD, 22);
+  draw_centered(g, "PERFORMANCE TEST", 400, 46);
+  font_set(FONT_BOLD, 18);
   gfx_set_color(g, 17, 17, 17);
   gfx_fill_rect(g, 80, 70, 640, 34 * b->nlines + 20);
   gfx_set_color(g, SET_BG);
   gfx_fill_rect(g, 83, 73, 634, 34 * b->nlines + 14);
   for (int32_t i = 0; i < b->nlines; i++) {
     gfx_set_color(g, SET_INK);
-    draw_centered(g, b->lines[i], 400, 82 + 34 * i, 2);
+    draw_centered(g, b->lines[i], 400, 96 + 34 * i);
   }
   gfx_set_color(g, 90, 88, 80);
   char hint[1100];
   if (b->saved) snprintf(hint, sizeof(hint), "FULL REPORT: %s", b->path);
   else snprintf(hint, sizeof(hint), "THE REPORT FILE COULD NOT BE WRITTEN");
-  draw_centered(g, hint, 400, 380, 1);
-  draw_centered(g, KEY_CONTINUE ": BACK TO THE MENU", 400, 418, 1);
+  font_set(FONT_BOLD, 12);
+  draw_centered(g, hint, 400, 386);
+  draw_centered(g, KEY_CONTINUE ": Back to the menu", 400, 424);
 }
 
 /** Puts the Settings that act on the engine into effect (Image Quality is
@@ -3424,8 +3414,8 @@ int game_run(void) {
   //   sdets.gif -- "SELECT DETAILS" (used on the stage-picker screen).
   // Every one may resolve to tex<0 if data/images.zip is missing or the
   // named entry isn't there -- callers guard with `if (tex >= 0)` and
-  // fall back to the vfont-only look, same convention as the HUD's
-  // load_hud_gif failure path.
+  // draw without that art, same convention as the HUD's load_hud_gif
+  // failure path.
   // Menu assets -- see native/docs/MENU_FLOW.md §1 for the full
   // Java-field -> images.zip filename map. Grouped by which screen uses
   // them (main menu / gamemode submenu / car select / stage select),
@@ -3491,6 +3481,19 @@ int game_run(void) {
   car_smoke_warp.flatrstart = 6; // settled/no-op until car_smoke_warp_load succeeds below
   {
     VfsZip images_zip;
+    {
+      // The text font (tools/bake_font.py): every drawString goes through it.
+      int32_t len = 0;
+      uint8_t *bytes = vfs_read_bytes("data/port/font.png", &len);
+      PngImage img;
+      if (bytes && png_decode(bytes, (size_t)len, &img)) {
+        font_set_texture(gfx_gl_upload_texture_mipmapped(img.rgba, img.width, img.height));
+        png_free(&img);
+      } else {
+        fprintf(stderr, "data/port/font.png: missing or undecodable -- no text\n");
+      }
+      if (bytes) vfs_free_bytes(bytes);
+    }
     if (vfs_read_zip("data/images.zip", &images_zip)) {
       menu_bg = load_menu_jpeg(&images_zip, "bggo.jpg");
       menu_carsbg = load_menu_gif(&images_zip, "cars.gif");
@@ -3605,7 +3608,7 @@ int game_run(void) {
       menu_paused = load_menu_gif(&images_zip, "paused.gif");
       vfs_free_zip(&images_zip);
     } else {
-      fprintf(stderr, "could not load data/images.zip -- menus will use plain vfont fallback\n");
+      fprintf(stderr, "could not load data/images.zip -- menus will draw without their art\n");
     }
   }
   boot_loading_frame(&g, &boot_images, boot_kb_models + boot_kb_images, boot_kb_total);
@@ -5918,14 +5921,10 @@ int game_run(void) {
         const GfxMark hud_mark = gfx_mark(&g);
         // Real HUD: ports the actual XtGraphics.js draw calls (JS lines
         // ~1389-1401 for the panels/rank badge, ~2324-2339 for the
-        // speedometer) rather than the earlier vfont-only placeholder.
-        // Numbers (lap count, wasted count, speed) still use core/vfont.c
-        // for text, matching the ORIGINAL too -- XtGraphics.js draws
-        // these via plain `drawString` (system/canvas font), not a
-        // bitmap digit asset, so vfont here isn't a fidelity regression
-        // (see TASKS_NATIVE.md's "1:1 original assets" section). No
-        // draw-phase wrapper needed below (nothing here calls
-        // medium_random()).
+        // speedometer). Numbers (lap count, wasted count, speed) are plain
+        // drawString text in the original too, so they go through
+        // core/font.c. No draw-phase wrapper needed below (nothing here
+        // calls medium_random()).
 
         // Checkpoint arrow -- JS line 1315, drawn BEFORE the panel images
         // (matches the original's own order, not just this port's habit of
@@ -6068,20 +6067,19 @@ int game_run(void) {
           gfx_draw_line(&g, 148, 29, 148, 43); // :7992
         }
 
+        // The race's font is the one loadingstage() left set (:1978).
+        font_set(FONT_BOLD, 12);
         draw_hud_img(&g, hud_images.dmg, 600, 7);
         draw_hud_img(&g, hud_images.pwr, 600, 27);
         draw_hud_img(&g, hud_images.lap, 19, 7);
         hud_set_ink(&g, 0, 0, 100);
         char hud[64];
         snprintf(hud, sizeof(hud), "%d / %d", mad[0].nlaps + 1, cp.nlaps);
-        // JS drawString y is a BASELINE coord (Canvas convention). bitfont's
-        // y is TOP-left, so subtract the font's ~11px ascent to line up
-        // visually with the JS's own placement.
-        bitfont_draw_string(&g, hud, 51, 18 - 11);
+        font_draw(&g, hud, 51, 18);
         draw_hud_img(&g, hud_images.was, 92, 7);
         hud_set_ink(&g, 0, 0, 100);
         snprintf(hud, sizeof(hud), "%d / %d", cp.wasted, nplayers - 1); // Java: checkPoints.wasted / (nplayers-1)
-        bitfont_draw_string(&g, hud, 150, 18 - 11);
+        font_draw(&g, hud, 150, 18);
         draw_hud_img(&g, hud_images.pos, 42, 27);
         if (cp.pos[0] >= 0 && cp.pos[0] < 8) draw_hud_img(&g, hud_images.rank[cp.pos[0]], 110, 28);
 
@@ -6184,8 +6182,8 @@ int game_run(void) {
         // Countdown 3-2-1-GO overlay -- Java xtGraphics.java:8050-8055. Only
         // draws while starcnt is in (0, 35]; the 3/2/1 glyphs anchor at
         // (385, 50), the GO glyph (gocnt==0, wider) shifts left to (363, 50)
-        // so it stays visually centred. cntdn[gocnt].tex<0 falls back to the
-        // vfont number so the countdown still tells the player it's holding.
+        // so it stays visually centred. cntdn[gocnt].tex<0 falls back to a
+        // text number so the countdown still tells the player it's holding.
         // Also under the `!holdit` of :8009 (the countdown block :8010 is
         // that gate's first statement) -- can't actually co-occur here, but
         // kept explicit so the guard's extent matches the source's.
@@ -6215,7 +6213,9 @@ int game_run(void) {
           } else {
             const char *fallback = (gocnt == 0) ? "GO" : (gocnt == 1) ? "1" : (gocnt == 2) ? "2" : "3";
             gfx_set_color(&g, 255, 200, 0);
-            draw_centered(&g, fallback, 400, 50, 4);
+            font_set(FONT_BOLD, 22);
+            draw_centered(&g, fallback, 400, 80);
+            font_set(FONT_BOLD, 12);
           }
         }
 
@@ -6264,29 +6264,25 @@ int game_run(void) {
           // :7708-7722 has no drawcs(120, ...) call in that branch, unlike
           // its two siblings.
           if (race_end_kind != RACE_END_PLAYER_WASTED) {
-            if (race_hold_aflk) {
-              gfx_set_color(&g, 0, 0, 0);
-            } else {
-              gfx_set_color(&g, 0, 128, 255);
-            }
+            const int32_t cb = race_hold_aflk ? 0 : 128, cbb = race_hold_aflk ? 0 : 255;
             race_hold_aflk = !race_hold_aflk;
+            char msg[64];
             if (race_end_kind == RACE_END_ALL_WASTED) {
-              draw_centered(&g, "You Won, all cars have been wasted!", width / 2, 120 - 6, 1);
+              snprintf(msg, sizeof(msg), "You Won, all cars have been wasted!");
             } else if (race_winner) {
-              draw_centered(&g, "You finished first, nice job!", width / 2, 120 - 6, 1);
+              snprintf(msg, sizeof(msg), "You finished first, nice job!");
             } else {
-              char lost_msg[64];
-              snprintf(lost_msg, sizeof(lost_msg), "%s finished first, race over!", race_lost_car_name);
-              draw_centered(&g, lost_msg, width / 2, 120 - 6, 1);
+              snprintf(msg, sizeof(msg), "%s finished first, race over!", race_lost_car_name);
             }
+            hud_say_draw(&g, &m, 120, msg, 0, cb, cbb, 0);
           }
           // "Press [ Enter ] to continue" -- Java :7690/:7721/:7788, drawn a
           // fixed black (0,0,0), not blinking, at y=350 for every ending in
           // this single-player path (the ordinary finish-line ending draws it
           // too -- :7788 -- a real gap in this port before this change, see
           // this block's own git history).
-          gfx_set_color(&g, 0, 0, 0);
-          draw_centered(&g, "Press  [ " KEY_CONTINUE " ]  to continue", width / 2, 350 - 6, 1);
+          hud_say_draw(&g, &m, 350, "Press  [ " KEY_CONTINUE " ]  to continue", 0, 0, 0, 0);
+
         }
         // Ready only once this race has ticked: a frame drawn before its
         // first tick would otherwise blend -- and restore into the cars --
@@ -6600,7 +6596,9 @@ int game_run(void) {
       draw_pause_plate(&g, 320, 202, 160, 30);
       if (pause_opselect == 4) draw_pause_highlight(&g, 345, 206, 110, 22);
       gfx_set_color(&g, 255, 255, 255);
-      draw_centered(&g, "Settings", 400, 217 - 9, 2);
+      font_set(FONT_BOLD, 13);
+      draw_centered(&g, "Settings", 400, 221);
+      font_set(FONT_BOLD, 12);
 
       if (state == STATE_CANTREPLY) {
         // cantreply() -- :4820-4826, plus fase -8's own 150-frame
@@ -6624,7 +6622,8 @@ int game_run(void) {
       draw_boot_backdrop(&g, &boot_images);
       if (boot_aflk) gfx_set_color(&g, 0, 0, 0);
       else gfx_set_color(&g, 0, 67, 200);
-      draw_centered(&g, KEY_START_PROMPT, 400, 380 - 6, 1);
+      font_set(FONT_BOLD, 11);
+      draw_centered(&g, KEY_START_PROMPT, 400, 380);
       boot_aflk = !boot_aflk;
       if (++boot_n >= 800) {
         boot_n = 0;
@@ -6658,17 +6657,19 @@ int game_run(void) {
         boot_radpx = 213;
         boot_pin = 7;
       }
+      font_set(FONT_BOLD, 11);
       if (boot_radpx == 212) {
         gfx_set_color(&g, 112, 120, 143);
-        draw_centered(&g, "Radicalplay.com", 400, 185 + jtrunc(5.0f * medium_random(&m)) - 6, 1);
+        draw_centered(&g, "Radicalplay.com", 400, 185 + jtrunc(5.0f * medium_random(&m)));
       }
       if (boot_aflk) {
         gfx_set_color(&g, 112, 120, 143);
-        draw_centered(&g, "And we are never going to find the new unless we get a little crazy...", 400, 215 - 6, 1);
+        draw_centered(&g, "And we are never going to find the new unless we get a little crazy...", 400, 215);
         boot_aflk = false;
       } else {
         gfx_set_color(&g, 150, 150, 150);
-        draw_centered(&g, "And we are never going to find the new unless we get a little crazy...", 400, 217 - 6, 1);
+        draw_centered(&g, "And we are never going to find the new unless we get a little crazy...", 400, 217);
+
         boot_aflk = true;
       }
       if (menu_rpro.tex >= 0) gfx_draw_image(&g, menu_rpro.tex, 275, 265, menu_rpro.w, menu_rpro.h);
@@ -6774,45 +6775,37 @@ int game_run(void) {
       // Credits text -- Java :1641-1664, every line through drawcs(y,
       // text, r,g,b, 3). Mode 3 specifically SKIPS drawcs's snap[] tint
       // (:1627-1630 only tints modes other than 3/4/5), so these are the
-      // raw colours, drawn centred at x=400.
-      //
-      // Two adaptations, both forced by vfont being a fixed 6px-per-glyph
-      // face where Java had proportional Arial-11: the longest source
-      // lines would run past the 65..735 content area at this pitch, so
-      // they are split across two rows each (the split rows keep the
-      // original 15px line pitch), and every line is uppercase like the
-      // rest of this port's menus. The y positions, colours and ordering
-      // below are otherwise Java's own.
+      // raw colours, drawn centred at x=400. Strings verbatim, typos included
+      // (U+2019 apostrophe as ASCII).
+      font_set(FONT_BOLD, 13);
       gfx_set_color(&g, 0, 0, 0);
-      draw_centered(&g, "AT RADICALPLAY.COM", width / 2, 90 - 6, 2);
-      draw_centered(&g, "CARTOON 3D ENGINE, GAME PROGRAMMING, 3D MODELS,", width / 2, 158 - 6, 1);
-      draw_centered(&g, "GRAPHICS AND SOUND EFFECTS", width / 2, 173 - 6, 1);
-      gfx_set_color(&g, 40, 60, 0); // :1645 -- Java's own (40,60,0), not (100,60,0)
-      draw_centered(&g, "BY OMAR WALY", width / 2, 185 - 6, 2);
-
+      draw_centered(&g, "At Radicalplay.com", 400, 90);
+      draw_centered(&g, "Cartoon 3D Engine, Game Programming, 3D Models, Graphics and Sound Effects", 400, 165);
+      gfx_set_color(&g, 40, 60, 0);
+      draw_centered(&g, "By Omar Waly", 400, 185);
       gfx_set_color(&g, 0, 0, 0);
-      draw_centered(&g, "SPECIAL THANKS!", width / 2, 225 - 6, 2);
+      draw_centered(&g, "Special Thanks!", 400, 225);
+      font_set(FONT_BOLD, 11);
       gfx_set_color(&g, 66, 98, 0);
-      draw_centered(&g, "TO DANY FERNANDEZ DIAZ (DRAGSHOT) FOR IMPROVING THE GAME'S", width / 2, 245 - 6, 1);
-      draw_centered(&g, "MUSIC PLAYER TO PLAY MORE MOD FORMATS AND EFFECTS!", width / 2, 260 - 6, 1);
-      draw_centered(&g, "TO BADIE EL ZAMAN (KINGOFSPEED) FOR HELPING MAKE THE TREES AND CACTUS 3D MODELS.", width / 2, 275 - 6, 1);
-      draw_centered(&g, "TO TIMOTHY AUDRAIN HARDIN (LEGNAK) FOR HAZARD DESIGNS AND THE FENCE 3D MODEL.", width / 2, 290 - 6, 1);
-      draw_centered(&g, "TO ALEX MILES (A-MILE) AND JAROSLAV BELEREN (PHYREXIAN) FOR TRAILER VIDEOS.", width / 2, 305 - 6, 1);
-
+      draw_centered(&g, "Thanks to Dany Fernandez Diaz (DragShot) for imporving the game's music player to play more mod formats & effects!", 400, 245);
+      draw_centered(&g, "Thanks to Badie El Zaman (Kingofspeed) for helping make the trees & cactus 3D models.", 400, 260);
+      draw_centered(&g, "Thanks to Timothy Audrain Hardin (Legnak) for making hazard designs on stage parts & the new fence 3D model.", 400, 275);
+      draw_centered(&g, "Thanks to Alex Miles (A-Mile) & Jaroslav Beleren (Phyrexian) for making trailer videos for the game.", 400, 290);
+      draw_centered(&g, "A big thank you to everyone playing the game for sending their feedback, supporting the game and helping it improve!", 400, 305);
+      font_set(FONT_BOLD, 13);
       gfx_set_color(&g, 0, 0, 0);
-      draw_centered(&g, "MUSIC FROM MODARCHIVE.ORG", width / 2, 345 - 6, 2);
+      draw_centered(&g, "Music from ModArchive.org", 400, 345);
+      font_set(FONT_BOLD, 11);
       gfx_set_color(&g, 66, 98, 0);
-      draw_centered(&g, "MOST OF THE TRACKS WHERE REMIXED BY OMAR WALY TO MATCH THE GAME.", width / 2, 365 - 6, 1);
-      // :1662-1665 -- the music-source credit and its underlined link.
-      // Previously missing from this port entirely.
-      draw_centered(&g, "MORE DETAILS ABOUT THE TRACKS AND THEIR ORIGINAL COMPOSERS AT:", width / 2, 380 - 6, 1);
+      draw_centered(&g, "Most of the tracks where remixed by Omar Waly to match the game.", 400, 365);
+      draw_centered(&g, "More details about the tracks and their original composers at:", 400, 380);
       gfx_set_color(&g, 33, 49, 0);
       {
-        const char *link = "MULTIPLAYER.NEEDFORMADNESS.COM/MUSIC.HTML";
-        int32_t lw = vfont_text_width(link, 1);
-        draw_centered(&g, link, width / 2, 395 - 6, 1);
+        const char *link = "http://multiplayer.needformadness.com/music.html";
+        const int32_t lw = font_width(link);
+        draw_centered(&g, link, 400, 395);
         // :1665 -- Java underlines the link with a drawLine at y=396.
-        gfx_fill_rect(&g, width / 2 - lw / 2, 396, lw, 1);
+        gfx_draw_line(&g, 400 - lw / 2, 396, lw / 2 + 400, 396);
       }
 
       // :7543 -- the page's own advance affordance, at Java's (665,395).
@@ -6842,29 +6835,22 @@ int game_run(void) {
         gfx_draw_image(&g, menu_gameov.tex, 315, 117, menu_gameov.w, menu_gameov.h);
       }
 
-      // Status text -- Java lines 6669-6683.
+      // Status text -- Java :6655-6683, Arial bold 11, NFM 2's stages
+      // numbered from 1 again (`stage > 10 -> stage -= 10`).
       char post_line[80];
-      if (race_winner) {
-        snprintf(post_line, sizeof(post_line), "YOU WON!  AT STAGE %d", stage_num);
-        gfx_set_color(&g, 255, 161, 85);
-        draw_centered(&g, post_line, width / 2, 137 - 6, 2);
-        gfx_set_color(&g, 255, 115, 0);
-        draw_centered(&g, stage_name_buf, width / 2, 154 - 6, 2);
-      } else {
-        snprintf(post_line, sizeof(post_line), "YOU LOST!  AT STAGE %d", stage_num);
-        gfx_set_color(&g, 255, 161, 85);
-        draw_centered(&g, post_line, width / 2, 167 - 6, 2);
-        gfx_set_color(&g, 255, 115, 0);
-        draw_centered(&g, stage_name_buf, width / 2, 184 - 6, 2);
-      }
+      const int32_t shown = stage_num > 10 ? stage_num - 10 : stage_num;
+      font_set(FONT_BOLD, 11);
+      snprintf(post_line, sizeof(post_line), "You %s!  At Stage %d!", race_winner ? "Won" : "Lost", shown);
+      gfx_set_color(&g, 255, 161, 85);
+      draw_centered(&g, post_line, 400, race_winner ? 137 : 167);
+      gfx_set_color(&g, 255, 115, 0);
+      draw_centered(&g, stage_name_buf, 400, race_winner ? 154 : 184);
 
       // Continue button at (355, 380) -- Java line 6993.
       HudImg confirm = (menu_contin.tex >= 0) ? menu_contin : menu_play;
       if (confirm.tex >= 0) {
         gfx_draw_image(&g, confirm.tex, 355, 380, confirm.w, confirm.h);
       }
-      gfx_set_color(&g, 200, 200, 200);
-      draw_centered(&g, "PRESS " KEY_CONTINUE " TO CONTINUE", width / 2, height - 12, 1);
 
       // Stage/car-unlock celebration overlay -- xtGraphics.java:6692-6852.
       // Gated on GameProgress::justwon1/justwon2 (progress.c's own faithful
@@ -6890,11 +6876,12 @@ int game_run(void) {
         char unlock_line[64];
         snprintf(unlock_line, sizeof(unlock_line), "Stage %d is now unlocked!", stage_display);
         gfx_set_color(&g, xt.aflk ? 196 : 255, xt.aflk ? 176 : 247, xt.aflk ? 0 : 165);
-        draw_centered(&g, unlock_line, width / 2, 200 + pin, 2);
+        font_set(FONT_BOLD, 13);
+        draw_centered(&g, unlock_line, 400, 200 + pin);
 
         if (n4 != 0) {
           gfx_set_color(&g, xt.aflk ? 196 : 255, xt.aflk ? 176 : 247, xt.aflk ? 0 : 165);
-          draw_centered(&g, "And:", width / 2, 200, 2);
+          draw_centered(&g, "And:", 400, 200);
 
           // Card background wash -- Java re-rolls this random 50/50 EVERY
           // draw call (not just once), which is what makes the card
@@ -6962,12 +6949,13 @@ int game_run(void) {
           snprintf(car_unlock_line, sizeof(car_unlock_line), "%s has been unlocked!",
                    (n4 >= 0 && n4 < 16) ? CAR_DISPLAY_NAMES[n4] : "");
           gfx_set_color(&g, xt.aflk ? 196 : 255, xt.aflk ? 176 : 247, xt.aflk ? 0 : 165);
-          draw_centered(&g, car_unlock_line, width / 2, 320, 2);
+          draw_centered(&g, car_unlock_line, 400, 320);
           pin = 140;
         }
 
         gfx_set_color(&g, 230, 167, 0);
-        draw_centered(&g, "GAME SAVED", width / 2, 220 + pin, 1);
+        font_set(FONT_BOLD, 11);
+        draw_centered(&g, "GAME SAVED", 400, 220 + pin);
         // :6846-6851's `pin = (pin == 60) ? 30 : 0` fixup is deliberately
         // omitted: `this.pin` is reassigned to 60 unconditionally at :6697
         // on the next draw, before either reader (:6782, :6845) runs, so
@@ -6988,19 +6976,20 @@ int game_run(void) {
         char done_line[64];
         snprintf(done_line, sizeof(done_line), "Woohoooo you finished NFM%d !!!", gmode);
         gfx_set_color(&g, xt.aflk ? 144 : 228, xt.aflk ? 167 : 240, 255);
-        draw_centered(&g, done_line, width / 2, 180, 2);
+        font_set(FONT_BOLD, 13);
+        draw_centered(&g, done_line, 400, 180);
 
         // :6863/:6866 -- the two flash halves genuinely disagree about y
         // (210 vs 212), so the line jitters two pixels as it blinks. A real
         // quirk of the original, preserved rather than levelled to one y.
         gfx_set_color(&g, xt.aflk ? 144 : 228, xt.aflk ? 167 : 240, 255);
-        draw_centered(&g, "You're Awesome!", width / 2, xt.aflk ? 210 : 212, 2);
+        draw_centered(&g, "You're Awesome!", 400, xt.aflk ? 210 : 212);
 
         // :6869/:6872 -- unlike its neighbours, this line's non-flash
         // colour is red (255,100,100), not the pale blue.
         if (xt.aflk) gfx_set_color(&g, 144, 167, 255);
         else gfx_set_color(&g, 255, 100, 100);
-        draw_centered(&g, "You're truly a RADICAL GAMER!", width / 2, 240, 2);
+        draw_centered(&g, "You're truly a RADICAL GAMER!", 400, 240);
 
         // :6874-6876 -- black band, then the logo drawn over it with a
         // +-4px per-draw jitter (`(int)(8.0 * Math.random() - 4.0)`, a
@@ -7021,14 +7010,17 @@ int game_run(void) {
         if (post_flipo == 40) post_radpx = 213;
         post_flipo++;
         if (post_flipo == 70) post_flipo = 0;
-        // :6890-6899 -- only while the logo is parked, and at 11pt (scale
-        // 1) rather than the 13pt (scale 2) the lines above use.
+        // :6890-6899 -- only while the logo is parked, and at 11pt rather
+        // than 13. The setFont sticks: "Now get up and dance!" below is in
+        // 11 too while the logo is parked, 13 otherwise -- as in Java.
         if (post_radpx == 212) {
           gfx_set_color(&g, xt.aflk ? 144 : 228, xt.aflk ? 167 : 240, 255);
-          draw_centered(&g, "A Game by Radicalplay.com", width / 2, 309, 1);
+          font_set(FONT_BOLD, 11);
+          draw_centered(&g, "A Game by Radicalplay.com", 400, 309);
         }
         gfx_set_color(&g, xt.aflk ? 144 : 228, xt.aflk ? 167 : 240, 255);
-        draw_centered(&g, "Now get up and dance!", width / 2, 350, 2);
+        draw_centered(&g, "Now get up and dance!", 400, 350);
+
        }
 
         // :6908-6912 -- one aflk flip per draw, shared by BOTH branches
@@ -7101,7 +7093,8 @@ int game_run(void) {
         gfx_draw_image(&g, menu_selectcar.tex, 321, 37, menu_selectcar.w, menu_selectcar.h);
       } else {
         gfx_set_color(&g, 255, 220, 80);
-        draw_centered(&g, "SELECT YOUR CAR", width / 2, 42, 2);
+        font_set(FONT_BOLD, 13);
+        draw_centered(&g, "Select your car", 400, 50);
       }
 
       // 4. Live 3D car preview. draw_car_preview() already applies the
@@ -7176,19 +7169,18 @@ int game_run(void) {
       // This port had a PERMANENT 2px bob (y=90 vs y=92) and put the
       // offset on the dim branch rather than the bright one, so the name
       // jittered forever instead of only while the screen was animating
-      // in. The `- 6` maps Java's text BASELINE onto vfont's top-left
-      // origin at scale 2, the same conversion the other scale-2 headings
-      // in this file use.
+      // in.
+      font_set(FONT_BOLD, 13); // :5231
       {
         const char *name = (car_index == CUSTOM_CAR_INDEX) ? "Simple Car (custom)" : CAR_DISPLAY_NAMES[car_index];
         int32_t name_n8 = (car_smoke_warp.flatrstart < 6) ? 2 : 0;
         if (mainmenu_aflk) {
           gfx_set_color(&g, 240, 240, 240);
-          draw_centered(&g, name, width / 2, 95 - 6 + name_n8, 2);
+          draw_centered(&g, name, 400, 95 + name_n8);
           mainmenu_aflk = false;
         } else {
           gfx_set_color(&g, 176, 176, 176);
-          draw_centered(&g, name, width / 2, 95 - 6, 2);
+          draw_centered(&g, name, 400, 95);
           mainmenu_aflk = true;
         }
       }
@@ -7225,23 +7217,13 @@ int game_run(void) {
           }
           if (car_gatey != 0) car_gatey -= 100;
 
-          // :5362-5363 -- both lines are Arial-13 in the original. The
-          // short one keeps vfont scale 2 (closest match) with the usual
-          // `- 6` baseline-to-top-left conversion. The long one drops to
-          // scale 1: vfont is a fixed 6px-per-glyph face, so at scale 2
-          // this 45-character sentence spans ~540px and runs straight
-          // through the CONTINUE button at (355,385), which proportional
-          // Arial-13 never does. It also keeps Java's y=375 as a TOP-left
-          // rather than converting it, so the 7px-tall line lands in the
-          // clear gap between the third stat-bar row (367..374) and that
-          // button -- exactly where Arial-13's own glyphs sit relative to
-          // the same two neighbours.
+          // :5362-5363, both in the Arial bold 13 set above.
           gfx_set_color(&g, 210, 210, 210);
-          draw_centered(&g, "[ Car Locked ]", width / 2, 355 - 6, 2);
+          draw_centered(&g, "[ Car Locked ]", 400, 355);
           char unlock_msg[64];
           snprintf(unlock_msg, sizeof(unlock_msg), "This car unlocks when stage %d is completed...", unlock_k);
           gfx_set_color(&g, 255, 96, 0);
-          draw_centered(&g, unlock_msg, width / 2, 375, 1);
+          draw_centered(&g, unlock_msg, 400, 375);
         }
       }
 
@@ -7249,8 +7231,7 @@ int game_run(void) {
       // / Strength / Endurance) in 2 columns of 3 rows. Java line
       // 6094-6139. Each bar is 156px wide, drawn statb (coloured bg) ->
       // black rect covering the "unfilled" fraction -> statbo (outline)
-      // on top. Labels in Arial Bold 11, colour (181,120,40); we vfont
-      // them at scale 1 since bitfont doesn't cover letters yet.
+      // on top. Labels in Arial Bold 11, colour (181,120,40).
       //
       // Uses CarDefine's own stat fields (already ported) and the exact
       // formulas from Java xtGraphics.java:6110-6133, also documented
@@ -7286,21 +7267,22 @@ int game_run(void) {
 
         struct StatBar { const char *label; int32_t label_x, y; float fraction; };
         const struct StatBar bars[6] = {
-          { "TOP SPEED:",    98, 343, n19 },  // left col, row 0 (bar bg at 162,337)
-          { "ACCELERATION:", 88, 358, n20 },  // left col, row 1 (bar bg at 162,352)
-          { "HANDLING:",    110, 373, n21 },  // left col, row 2 (bar bg at 162,367)
-          { "STUNTS:",      495, 343, n22 },  // right col, row 0 (bar bg at 536,337)
-          { "STRENGTH:",    483, 358, n23 },  // right col, row 1 (bar bg at 536,352)
-          { "ENDURANCE:",   473, 373, n24 },  // right col, row 2 (bar bg at 536,367)
+          { "Top Speed:",    98, 343, n19 },  // left col, row 0 (bar bg at 162,337)
+          { "Acceleration:", 88, 358, n20 },  // left col, row 1 (bar bg at 162,352)
+          { "Handling:",    110, 373, n21 },  // left col, row 2 (bar bg at 162,367)
+          { "Stunts:",      495, 343, n22 },  // right col, row 0 (bar bg at 536,337)
+          { "Strength:",    483, 358, n23 },  // right col, row 1 (bar bg at 536,352)
+          { "Endurance:",   473, 373, n24 },  // right col, row 2 (bar bg at 536,367)
         };
         for (int32_t i = 0; i < 6; i++) {
           const struct StatBar *sb = &bars[i];
           int32_t bar_x = (i < 3) ? 162 : 536;
           int32_t bar_y = sb->y - 6; // Java's label baseline is 6px below the bar's top
 
-          // Label -- vfont scale 1 in the copper colour Java uses.
+          // Label -- Arial bold 11 (:6094) in the copper colour Java uses.
           gfx_set_color(&g, 181, 120, 40);
-          vfont_draw_string(&g, sb->label, sb->label_x, bar_y + 1, 1, 1.0f);
+          font_set(FONT_BOLD, 11);
+          font_draw(&g, sb->label, sb->label_x, sb->y);
 
           // Coloured bar background (statb, full 156x7).
           if (menu_statb.tex >= 0) {
@@ -7335,15 +7317,16 @@ int game_run(void) {
         // class is useful info for the player choosing a car.
         const char *class_str;
         switch (cd.cclass[cn]) {
-          case 4: class_str = "CLASS A"; break;
-          case 3: class_str = "CLASS A & B"; break;
-          case 2: class_str = "CLASS B"; break;
-          case 1: class_str = "CLASS B & C"; break;
-          default: class_str = "CLASS C"; break;
+          case 4: class_str = "Class A"; break;
+          case 3: class_str = "Class A & B"; break;
+          case 2: class_str = "Class B"; break;
+          case 1: class_str = "Class B & C"; break;
+          default: class_str = "Class C"; break;
         }
         gfx_set_color(&g, 176, 41, 0);
-        int32_t class_w = vfont_text_width(class_str, 1);
-        vfont_draw_string(&g, class_str, 549 - class_w / 2, 95 - 6, 1, 1.0f);
+        font_set(FONT_BOLD, 13);
+        font_draw(&g, class_str, 549 - font_width(class_str) / 2, 95);
+
       }
 
       // 8. Navigation buttons -- :5298-5305. `back` at (95,275) is drawn
@@ -7397,8 +7380,7 @@ int game_run(void) {
       //      scene first, stageselect()'s own br.png second)
       //   4. select.gif ("SELECT") caption at (338, 35)
       //   5. Stage name centred at y=132 with aflk pulse
-      //      (240,240,240)/(176,176,176) -- vfont scale 2 to match
-      //      Java's Arial Bold 13
+      //      (240,240,240)/(176,176,176), Arial Bold 13
       //   6. back.gif at (115, 135) if stage > 1
       //   7. next.gif at (625, 135) if stage < NUM_STAGES
       //   8. continue.gif at (355, 385) for confirm
@@ -7488,7 +7470,8 @@ int game_run(void) {
 
       if (!stage_preview_ok) {
         gfx_set_color(&g, 0, 0, 0);
-        draw_centered(&g, "ERROR LOADING STAGE", width / 2, 220, 2);
+        font_set(FONT_BOLD, 13);
+        draw_centered(&g, "Failed to load stage...", 400, 220);
       }
 
       // 3. br.png torn-paper frame on top -- opaque black edges crop the
@@ -7502,7 +7485,8 @@ int game_run(void) {
         gfx_draw_image(&g, menu_select.tex, 338, 35, menu_select.w, menu_select.h);
       } else {
         gfx_set_color(&g, 0, 0, 0);
-        draw_centered(&g, "SELECT", width / 2, 40, 2);
+        font_set(FONT_BOLD, 13);
+        draw_centered(&g, "Select", 400, 50);
       }
 
       // 5. Stage name centered at y=132, aflk-pulsed grey -- Java lines
@@ -7534,7 +7518,8 @@ int game_run(void) {
         } else {
           gfx_set_color(&g, 20, 20, 20);
         }
-        draw_centered(&g, label, width / 2, 132 - 6, 2); // -6 to top-align vfont vs Java's baseline y
+        font_set(FONT_BOLD, 13); // :2211
+        draw_centered(&g, label, 400, 132);
       }
 
       // 6-7. Nav arrows at Java's own y=135, now gated exactly as
@@ -7600,7 +7585,8 @@ int game_run(void) {
         // :2000 -- (177,177,177), a LIGHT grey that reads against the dark
         // track backdrop. This port used (60,60,60), which is dark on dark.
         gfx_set_color(&g, 177, 177, 177);
-        draw_centered(&g, msg, width / 2, 130 - 6, 1);
+        font_set(FONT_BOLD, 13);
+        draw_centered(&g, msg, 400, 130);
       }
       // Java :2006-2013 -- Arial Bold 12 pulsing red/orange:
       // "[ Stage N+1 Locked ]" (colour toggles via aflk each draw).
@@ -7613,7 +7599,8 @@ int game_run(void) {
         snprintf(lbl, sizeof(lbl), "[ Stage %d Locked ]", nto);
         if (mainmenu_aflk) gfx_set_color(&g, 255, 128, 0);
         else gfx_set_color(&g, 255, 0, 0);
-        draw_centered(&g, lbl, width / 2, 185 - 6, 1);
+        font_set(FONT_BOLD, 12);
+        draw_centered(&g, lbl, 400, 185);
         mainmenu_aflk = !mainmenu_aflk;
       }
       // Java :2014 -- back button at (370, 345) to bail out early.
@@ -7639,7 +7626,8 @@ int game_run(void) {
       gfx_draw_rect(&g, 265, 201, 270, 26);
       // Java :1980 -- (58, 61, 17) "Loading, please wait..." centred at y=219.
       gfx_set_color(&g, 58, 61, 17);
-      draw_centered(&g, "Loading, please wait...", width / 2, 219 - 6, 1);
+      font_set(FONT_BOLD, 12); // :1978 -- and the race inherits it
+      draw_centered(&g, "Loading, please wait...", 400, 219);
       // Java :1982 -- select caption on top when the transition is fresh.
       if (menu_select.tex >= 0) {
         gfx_draw_image(&g, menu_select.tex, 338, 35, menu_select.w, menu_select.h);
@@ -7669,7 +7657,8 @@ int game_run(void) {
       gfx_fill_rect(&g, 735, 0, 65, 450);
       gfx_fill_rect(&g, 65, 0, 670, 25);
       gfx_fill_rect(&g, 65, 425, 670, 25);
-      draw_centered(&g, stage_asay, width / 2, 50 - 6, 1);
+      font_set(FONT_BOLD, 13);
+      draw_centered(&g, stage_asay, 400, 50);
       // Single player only: the stages with a hint lift the card to n3 = 0.
       static const char *const kHints[28][5] = {
           [1] = {"Hey!  Don't forget, to complete a lap you must pass through", "all checkpoints in the track!"},
@@ -7737,7 +7726,7 @@ int game_run(void) {
         }
         for (int32_t line = 0; line < 5; line++) {
           const char *txt = kHints[stage_num][line];
-          if (txt) vfont_draw_string(&g, txt, 262, 92 + 20 * line - 6, 1, 1.0f);
+          if (txt) font_draw(&g, txt, 262, 92 + 20 * line);
         }
       }
       if (intro_loadingmusic.tex >= 0) {
@@ -7746,6 +7735,7 @@ int game_run(void) {
         gfx_set_composite(&g, 1.0f);
       }
       gfx_set_color(&g, 0, 0, 0);
+      font_set(FONT_BOLD, 11); // :2906
       if (intro_frame == 0) {
         // loadmusic()'s card: the track's download size, from sndsize[].
         static const int32_t kSndSize[33] = {39, 128, 23, 58, 106, 140, 81, 135, 38, 141, 106,
@@ -7755,10 +7745,11 @@ int game_run(void) {
         if (n4 < 0 || n4 > 32) n4 = 32;
         char kb[24];
         snprintf(kb, sizeof(kb), "%d KB", kSndSize[n4]);
-        draw_centered(&g, kb, width / 2, 340 + n3 - 6, 1);
-        draw_centered(&g, " Please Wait...", width / 2, 375 + n3 - 6, 1);
+        draw_centered(&g, kb, 400, 340 + n3);
+        draw_centered(&g, " Please Wait...", 400, 375 + n3);
       } else {
-        draw_centered(&g, "Loading complete!  Press Start to begin...", width / 2, 365 + n3 - 6, 1);
+        draw_centered(&g, "Loading complete!  Press Start to begin...", 400, 365 + n3);
+
         if (intro_star[intro_pstar].tex >= 0) {
           gfx_set_composite(&g, 0.5f);
           gfx_draw_image(&g, intro_star[intro_pstar].tex, 359, 385 + n3,
@@ -7983,11 +7974,12 @@ int game_run(void) {
         } else {
           snprintf(btxt, sizeof(btxt), "PERFORMANCE TEST");
         }
-        const int32_t tw = vfont_text_width(btxt, 2);
+        font_set(FONT_BOLD, 13);
+        const int32_t tw = font_width(btxt);
         gfx_set_color(&g, 0, 0, 0);
         gfx_fill_rect(&g, 400 - tw / 2 - 8, 62, tw + 16, 20);
         gfx_set_color(&g, 255, 255, 0);
-        vfont_draw_string(&g, btxt, 400 - tw / 2, 65, 2, 2.0f);
+        font_draw(&g, btxt, 400 - tw / 2, 77);
         gfx_submit_gl(&g);
       }
       if (now - fps_window_start >= 1000) {
@@ -8009,11 +8001,12 @@ int game_run(void) {
         gfx_begin(&g);
         char fps_txt[24];
         snprintf(fps_txt, sizeof(fps_txt), "%d FPS", fps_value);
-        const int32_t tw = vfont_text_width(fps_txt, 2);
+        font_set(FONT_BOLD, 13);
+        const int32_t tw = font_width(fps_txt);
         gfx_set_color(&g, 0, 0, 0);
         gfx_fill_rect(&g, 800 - tw - 18, 428, tw + 12, 18);
         gfx_set_color(&g, 255, 255, 0);
-        vfont_draw_string(&g, fps_txt, 800 - tw - 12, 430, 2, 2.0f);
+        font_draw(&g, fps_txt, 800 - tw - 12, 442);
         gfx_submit_gl(&g);
       } else if (settings.show_fps == 2) {
       // Same viewport the composite blit uses, so the overlay lands in
@@ -8022,8 +8015,7 @@ int game_run(void) {
       platform_display_size(&fps_dw, &fps_dh);
       glViewport(0, 0, fps_dw, fps_dh);
       gfx_begin(&g);
-      // bitfont bakes only `0-9 / : . - %` (core/bitfont.c), so this is
-      // digits and a separator: frames-per-second, then the slowest
+      // Frames-per-second, then the slowest
       // single frame in ms since the last update. The worst-frame figure
       // is the point -- an average alone hides exactly the stalls that
       // make a screen feel bad while still reporting a healthy number.
@@ -8031,7 +8023,8 @@ int game_run(void) {
       snprintf(fps_buf, sizeof(fps_buf), "%d/%d", fps_value, fps_worst);
       gfx_set_color(&g, 255, 255, 0);
       // Bottom-left, clear of the race HUD's top-left lap/position panel.
-      bitfont_draw_string(&g, fps_buf, 4, height - 40);
+      font_set(FONT_BOLD, 12);
+      font_draw(&g, fps_buf, 4, height - 29);
       // Second line: where a frame's time went, mean ms over the last
       // second -- logic:build:gl:swap (see prof_sum's declaration). A high
       // swap with low everything else means the GPU, not the CPU, is the
@@ -8042,7 +8035,8 @@ int game_run(void) {
                prof_avg_tenths[1] / 10, prof_avg_tenths[1] % 10,
                prof_avg_tenths[2] / 10, prof_avg_tenths[2] % 10,
                prof_avg_tenths[3] / 10, prof_avg_tenths[3] % 10);
-      bitfont_draw_string(&g, prof_buf, 4, height - 20);
+      font_draw(&g, prof_buf, 4, height - 9);
+
       gfx_submit_gl(&g);
       }
     }

@@ -46,6 +46,8 @@ typedef struct {
   float alpha;      // g->a at the time of the call -- setComposite() also affects drawImage in the original
   float u0, v0, u1, v1; // source-rect UVs 0..1 (default 0,0,1,1 = full image, used by
                         // gfx_draw_image_sub -- see its own doc comment)
+  float tr, tg, tb;     // tint the texture is multiplied by: white for images, the
+                        // current colour for text glyphs (gfx_draw_glyph)
 } GfxDrawCmd;
 
 // Tagged (not just typedef'd) so other headers can forward-declare
@@ -150,6 +152,15 @@ void gfx_draw_image_sub(Graphics2D *g, int32_t image_id, int32_t dst_x, int32_t 
                          int32_t dst_w, int32_t dst_h,
                          int32_t src_x, int32_t src_y, int32_t src_w, int32_t src_h,
                          int32_t image_w, int32_t image_h);
+
+/**
+ * One text glyph: a white-on-transparent atlas region (`u0..v1`, UVs 0..1)
+ * drawn at a fractional game-space rect, tinted by the CURRENT colour and
+ * alpha -- drawString takes its colour from setColor like every other
+ * primitive. core/font.c is the only caller.
+ */
+void gfx_draw_glyph(Graphics2D *g, int32_t image_id, float x, float y, float w, float h,
+                    float u0, float v0, float u1, float v1);
 
 /** setRenderingHint: a no-op, matching web/graphics.js's (antialiasing is
  * set at GL-context creation there; here it's whatever the platform's GL

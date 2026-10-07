@@ -40,39 +40,49 @@ static void draw_triangle_range(const Graphics2D *g, int32_t start, int32_t coun
   glDisableClientState(GL_VERTEX_ARRAY);
 }
 
-static void draw_image_cmd(const GfxDrawCmd *cmd) {
+// A run of textured quads that share one texture (a line of text is one
+// glyph per command) goes out as ONE bind and ONE glBegin/glEnd.
+static void draw_image_run(const GfxDrawCmd *cmd, int32_t n) {
   if (cmd->image_id < 0) return;
   glEnable(GL_TEXTURE_2D);
   glBindTexture(GL_TEXTURE_2D, (GLuint)cmd->image_id);
-  // Default GL1.1 texture env mode is GL_MODULATE, so (1,1,1,alpha) here
-  // multiplies the texture's own RGB unchanged and scales its alpha by
-  // the composite alpha at the time of the call (see gfx_draw_image's
-  // own doc comment on setComposite() affecting drawImage) -- straight
-  // alpha blending, same GL_SRC_ALPHA/GL_ONE_MINUS_SRC_ALPHA state the
-  // platform init already set up for the flat-coloured triangles.
-  glColor4f(1.0f, 1.0f, 1.0f, cmd->alpha);
-  float x0 = cmd->x, y0 = cmd->y, x1 = cmd->x + cmd->w, y1 = cmd->y + cmd->h;
-  float u0 = cmd->u0, v0 = cmd->v0, u1 = cmd->u1, v1 = cmd->v1;
   glBegin(GL_TRIANGLES);
-  glTexCoord2f(u0, v0); glVertex2f(x0, y0);
-  glTexCoord2f(u1, v0); glVertex2f(x1, y0);
-  glTexCoord2f(u1, v1); glVertex2f(x1, y1);
-  glTexCoord2f(u0, v0); glVertex2f(x0, y0);
-  glTexCoord2f(u1, v1); glVertex2f(x1, y1);
-  glTexCoord2f(u0, v1); glVertex2f(x0, y1);
+  for (; n > 0; n--, cmd++) {
+    // Default GL1.1 texture env mode is GL_MODULATE, so (tint, alpha) here
+    // multiplies the texture's own RGB (by white for an image, by the text
+    // colour for a white glyph) and scales its alpha by
+    // the composite alpha at the time of the call (see gfx_draw_image's
+    // own doc comment on setComposite() affecting drawImage) -- straight
+    // alpha blending, same GL_SRC_ALPHA/GL_ONE_MINUS_SRC_ALPHA state the
+    // platform init already set up for the flat-coloured triangles.
+    glColor4f(cmd->tr, cmd->tg, cmd->tb, cmd->alpha);
+    float x0 = cmd->x, y0 = cmd->y, x1 = cmd->x + cmd->w, y1 = cmd->y + cmd->h;
+    float u0 = cmd->u0, v0 = cmd->v0, u1 = cmd->u1, v1 = cmd->v1;
+    glTexCoord2f(u0, v0); glVertex2f(x0, y0);
+    glTexCoord2f(u1, v0); glVertex2f(x1, y0);
+    glTexCoord2f(u1, v1); glVertex2f(x1, y1);
+    glTexCoord2f(u0, v0); glVertex2f(x0, y0);
+    glTexCoord2f(u1, v1); glVertex2f(x1, y1);
+    glTexCoord2f(u0, v1); glVertex2f(x0, y1);
+  }
   glEnd();
   glDisable(GL_TEXTURE_2D);
 }
 
 void gfx_submit_gl(const Graphics2D *g) {
-  for (int32_t i = 0; i < g->cmd_count; i++) {
+  for (int32_t i = 0; i < g->cmd_count;) {
     const GfxDrawCmd *cmd = &g->cmds[i];
     if (cmd->image_id < 0) {
       draw_triangle_range(g, cmd->vert_start, cmd->vert_count);
+      i++;
     } else {
-      draw_image_cmd(cmd);
+      int32_t n = 1;
+      while (i + n < g->cmd_count && g->cmds[i + n].image_id == cmd->image_id) n++;
+      draw_image_run(cmd, n);
+      i += n;
     }
   }
+
   // Any vertices pushed after the last gfx_draw_image() call (or all of
   // them, if this frame never called it) aren't covered by a command
   // yet -- gfx_draw_image only flushes what came BEFORE it, see gfx.c.
@@ -91,6 +101,22 @@ int32_t gfx_gl_upload_texture(const uint8_t *rgba, int32_t width, int32_t height
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
   glBindTexture(GL_TEXTURE_2D, 0);
   return (int32_t)tex;
+}
+
+int32_t gfx_gl_upload_texture_mipmapped(const uint8_t *rgba, int32_t width, int32_t height) {
+  int32_t tex = gfx_gl_upload_texture(rgba, width, height);
+  if (tex < 0) return tex;
+  glBindTexture(GL_TEXTURE_2D, (GLuint)tex);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+#ifdef GL_GENERATE_MIPMAP
+  glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+#else
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+#endif
+  glBindTexture(GL_TEXTURE_2D, 0);
+  return tex;
 }
 
 void gfx_gl_update_texture(int32_t texture, const uint8_t *rgba, int32_t width, int32_t height) {

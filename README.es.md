@@ -112,6 +112,11 @@ Joy-Cons (en modo portátil o separados) o Pro Controller.
 - **Gameplay**: sacudida de pantalla, vibración.
 
 **Cosas del original que al port de Vita le faltaban**
+- El **texto** del original: Arial negrita/normal en los tamaños del original
+  (como Liberation Sans, su gemela libre con las mismas métricas), con
+  antialias, mayúsculas y minúsculas y todos los símbolos, y cada texto, fuente
+  y posición sacados del Java. El port de Vita usaba una fuente vectorial de
+  5×7 solo en mayúsculas.
 - El fondo de las pistas: nubes, montañas, las estrellas de las pistas de
   noche y los parches de suelo alrededor de la pista (`clouds(`, `mountains(`,
   `density(`, `fadefrom(`, `lightson`).
@@ -202,10 +207,6 @@ el build de Vita ni el juego en la Vita.
 ## Lo que falta / diferencias conocidas
 
 **Respecto al juego original**
-- **Fuente del texto**: los menús y el HUD usan una fuente vectorial de 5×7
-  solo en mayúsculas. El original dibuja el texto en Arial negrita, con
-  minúsculas y símbolos como `&`, `?` y `>`. Es la diferencia visible más
-  grande que queda, en todas las pantallas.
 - **Sin multijugador en línea**: el lobby del original no está portado. Solo
   existe en el port web.
 - **Sin contenido de usuario**: solo las 32 pistas y los autos originales. Las
@@ -278,6 +279,8 @@ otra rama u otro repositorio.
   trajeron los arreglos posteriores.
 - [devkitPro](https://devkitpro.org), libnx, SDL2 y Mesa por la toolchain y las
   librerías de Switch.
+- [Liberation Sans](https://github.com/liberationfonts/liberation-fonts)
+  (SIL Open Font License 1.1, `data/port/LiberationSans-OFL.txt`) para el texto.
 
 *Need for Madness © Radicalplay. Un proyecto de fans sin fines comerciales, sin
 relación con Radicalplay ni con Nintendo.*
