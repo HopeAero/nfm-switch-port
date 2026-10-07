@@ -6,11 +6,25 @@
 //                      the bottom face button)
 //   B + left stick     stunts, in 8 directions (diagonals = two arrows)
 //   right stick x      look around (the original's Z/X look-behind)
+// Settings > Controls moves every button (g_bind, set by input_configure) and
+// can swap the left stick for the D-pad (g_steer_dpad).
 // platform_poll() (platform.c) has already called padUpdate() this frame.
 #include "input.h"
+#include "progress.h"
 #include <switch.h>
 
 extern PadState g_pad;
+
+// Shared with platform.c, which reads the menu-level actions from it.
+uint64_t g_bind[BIND_COUNT] = {
+  HidNpadButton_ZR, HidNpadButton_ZL, HidNpadButton_B, HidNpadButton_X, HidNpadButton_Up,
+  HidNpadButton_Down, HidNpadButton_Plus, HidNpadButton_Y, HidNpadButton_Minus};
+static bool g_steer_dpad;
+
+void input_configure(const uint64_t mask[], bool steer_dpad) {
+  for (int i = 0; i < BIND_COUNT; i++) g_bind[i] = mask[i];
+  g_steer_dpad = steer_dpad;
+}
 
 static bool g_drive_up, g_drive_down, g_drive_left, g_drive_right;
 static bool g_stunt_up, g_stunt_down, g_stunt_left, g_stunt_right;
@@ -45,14 +59,24 @@ void input_poll(Control *control) {
   const HidAnalogStickState rs = padGetStickPos(&g_pad, 1);
   const s32 kStickDeadzone = 10240;   // the Vita's 40/128
 
-  const bool handb = (b & HidNpadButton_B) != 0;
+  const bool handb = (b & g_bind[BIND_HANDB]) != 0;
   control->handb = handb;
-  g_drive_up = (b & HidNpadButton_ZR) != 0;
-  g_drive_down = (b & HidNpadButton_ZL) != 0;
-  g_drive_left = ls.x < -kStickDeadzone;
-  g_drive_right = ls.x > kStickDeadzone;
-  if (handb) snap_stunt(ls.x, -ls.y);
-  else snap_stunt(0, 0);
+  g_drive_up = (b & g_bind[BIND_ACCEL]) != 0;
+  g_drive_down = (b & g_bind[BIND_BRAKE]) != 0;
+  if (g_steer_dpad) {
+    // Eight directions for free: a diagonal on the D-pad is two arrows.
+    g_drive_left = (b & HidNpadButton_Left) != 0;
+    g_drive_right = (b & HidNpadButton_Right) != 0;
+    g_stunt_up = handb && (b & HidNpadButton_Up);
+    g_stunt_down = handb && (b & HidNpadButton_Down);
+    g_stunt_left = handb && g_drive_left;
+    g_stunt_right = handb && g_drive_right;
+  } else {
+    g_drive_left = ls.x < -kStickDeadzone;
+    g_drive_right = ls.x > kStickDeadzone;
+    if (handb) snap_stunt(ls.x, -ls.y);
+    else snap_stunt(0, 0);
+  }
   input_set_stunting(control, false);
 
   control->lookback = rs.x > kStickDeadzone ? 1 : (rs.x < -kStickDeadzone ? -1 : 0);

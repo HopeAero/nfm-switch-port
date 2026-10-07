@@ -28,6 +28,11 @@ void input_poll(Control *control);
  * the Vita drives with triggers + stick but stunts with CROSS + stick. */
 void input_set_stunting(Control *control, bool stunting);
 
+/** The Switch's Settings > Controls: per BindAction (core/progress.h) the
+ * pad-button mask that does it, and whether the car steers and stunts with
+ * the D-pad instead of the left stick. platform/switch only. */
+void input_configure(const uint64_t mask[], bool steer_dpad);
+
 #ifdef __cplusplus
 }
 #endif

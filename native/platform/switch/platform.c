@@ -4,6 +4,7 @@
 // reads sceCtrl (platform/vita/platform.c) -- the button scheme is the Vita's,
 // moved to the same physical positions (see input.c).
 #include "platform.h"
+#include "progress.h"
 
 #include <SDL.h>
 #include <stdio.h>
@@ -160,6 +161,8 @@ void platform_rumble(float strength, uint32_t ms) {
   g_rumble_end_ms = SDL_GetTicks64() + ms;
 }
 
+extern uint64_t g_bind[BIND_COUNT];   // input.c
+
 bool platform_poll(bool held[BTN_COUNT]) {
   bool running = appletMainLoop();   // false when HOME > close asks the app to quit
   if (g_rumble_end_ms && SDL_GetTicks64() >= g_rumble_end_ms) {
@@ -184,13 +187,14 @@ bool platform_poll(bool held[BTN_COUNT]) {
   held[BTN_CONFIRM] = (b & HidNpadButton_A) != 0;
   held[BTN_CANCEL] = (b & HidNpadButton_B) != 0;
   held[BTN_ABANDON] = false;
-  // The Vita's face buttons, by position: Triangle (top) -> X,
-  // Square (left) -> Y, Select -> Minus, Start -> Plus.
-  held[BTN_VIEW] = (b & HidNpadButton_X) != 0;
-  held[BTN_MUTE_MUSIC] = (b & HidNpadButton_Y) != 0;
-  held[BTN_MUTE_SFX] = (b & HidNpadButton_Minus) != 0;
-  held[BTN_ARRACE] = (b & HidNpadButton_Up) != 0;
-  held[BTN_RADAR] = (b & HidNpadButton_Down) != 0;
-  held[BTN_PAUSE] = (b & HidNpadButton_Plus) != 0;
+  // The in-race toggles, wherever Settings > Controls put them (by default
+  // the Vita's face buttons by position: Triangle (top) -> X, Square
+  // (left) -> Y, Select -> Minus, Start -> Plus).
+  held[BTN_VIEW] = (b & g_bind[BIND_VIEW]) != 0;
+  held[BTN_MUTE_MUSIC] = (b & g_bind[BIND_MUSIC]) != 0;
+  held[BTN_MUTE_SFX] = (b & g_bind[BIND_SFX]) != 0;
+  held[BTN_ARRACE] = (b & g_bind[BIND_ARRACE]) != 0;
+  held[BTN_RADAR] = (b & g_bind[BIND_RADAR]) != 0;
+  held[BTN_PAUSE] = (b & g_bind[BIND_PAUSE]) != 0;
   return running;
 }

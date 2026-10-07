@@ -79,6 +79,10 @@ Joy-Cons (en modo portátil o separados) o Pro Controller.
 | Cruceta abajo | radar (minimapa + velocímetro) |
 | + | pausa |
 
+Esos son los de fábrica. Settings › Controls cambia cualquier botón de la
+carrera y permite girar y hacer acrobacias con la cruceta; la flecha y el
+radar pasan entonces al stick izquierdo.
+
 ---
 
 ## Qué agrega el port de Switch
@@ -112,6 +116,8 @@ Joy-Cons (en modo portátil o separados) o Pro Controller.
   autos en la tabla de posiciones (apagado por defecto: el original en un
   jugador los deja en blanco).
 - **Gameplay**: sacudida de pantalla, vibración.
+- **Controls**: girar y hacer acrobacias con el stick izquierdo o la cruceta;
+  cualquier botón para cada acción de la carrera (un botón repetido sale en rojo).
 
 **Cosas del original que al port de Vita le faltaban**
 - El **texto** del original: Arial negrita/normal en los tamaños del original

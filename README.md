@@ -77,6 +77,10 @@ Joy-Cons (handheld or detached) or Pro Controller.
 | D-pad down | radar (minimap + speedometer) |
 | + | pause |
 
+The defaults. Settings › Controls moves every race button and can steer and
+stunt with the D-pad instead; the arrow and the radar then move to the left
+stick.
+
 ---
 
 ## What the Switch port adds
@@ -107,6 +111,8 @@ Joy-Cons (handheld or detached) or Pro Controller.
 - **Interface**: FPS counter (off / FPS / detailed); car names in the race
   standings (off by default: the original's single player leaves them blank).
 - **Gameplay**: screen shake, vibration.
+- **Controls**: steer and stunt with the left stick or the D-pad; any button
+  for each race action (a button used twice shows in red).
 
 **Brought over from the original that the Vita port lacked**
 - The original's **text**: Arial bold/plain at the original's sizes (as

@@ -220,6 +220,11 @@ GameSettings game_settings_defaults(int32_t graphics) {
   s.board_names = 0;
   s.shake = 1;
   s.rumble = 1;
+  s.steer_dpad = 0;
+  // Indices into game.c's Switch button list: ZR, ZL, B, X, D-Pad Up,
+  // D-Pad Down, Plus, Y, Minus -- the scheme v1.0 shipped with.
+  static const int32_t kBindDefaults[BIND_COUNT] = {7, 6, 1, 2, 12, 13, 9, 3, 8};
+  memcpy(s.bind, kBindDefaults, sizeof(s.bind));
   return s;
 }
 
@@ -240,6 +245,16 @@ static const SettingKey kSettingKeys[] = {
   {"board_names", offsetof(GameSettings, board_names), 0, 1, 1},
   {"screen_shake", offsetof(GameSettings, shake), 0, 1, 1},
   {"vibration", offsetof(GameSettings, rumble), 0, 1, 1},
+  {"steer_dpad", offsetof(GameSettings, steer_dpad), 0, 1, 1},
+  {"bind_accelerate", offsetof(GameSettings, bind[BIND_ACCEL]), 0, 19, 1},
+  {"bind_brake", offsetof(GameSettings, bind[BIND_BRAKE]), 0, 19, 1},
+  {"bind_handbrake", offsetof(GameSettings, bind[BIND_HANDB]), 0, 19, 1},
+  {"bind_view", offsetof(GameSettings, bind[BIND_VIEW]), 0, 19, 1},
+  {"bind_arrow", offsetof(GameSettings, bind[BIND_ARRACE]), 0, 19, 1},
+  {"bind_map", offsetof(GameSettings, bind[BIND_RADAR]), 0, 19, 1},
+  {"bind_pause", offsetof(GameSettings, bind[BIND_PAUSE]), 0, 19, 1},
+  {"bind_mute_music", offsetof(GameSettings, bind[BIND_MUSIC]), 0, 19, 1},
+  {"bind_mute_effects", offsetof(GameSettings, bind[BIND_SFX]), 0, 19, 1},
 };
 
 void game_settings_load(const char *progress_path, GameSettings *s) {

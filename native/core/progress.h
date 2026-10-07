@@ -177,6 +177,12 @@ bool game_progress_load_from_disk(GameProgress *p, const char *path);
  * linear filtering, or drawn at the display's own resolution. */
 typedef enum { GFX_ORIGINAL = 0, GFX_SMOOTH = 1, GFX_HD = 2, GFX_QUALITY_COUNT } GfxQuality;
 
+/** The race actions Settings > Controls can move to another button. */
+typedef enum {
+  BIND_ACCEL, BIND_BRAKE, BIND_HANDB, BIND_VIEW, BIND_ARRACE, BIND_RADAR,
+  BIND_PAUSE, BIND_MUSIC, BIND_SFX, BIND_COUNT
+} BindAction;
+
 /** The Settings screen's values, saved beside the progress file. */
 typedef struct {
   // Graphics
@@ -196,6 +202,9 @@ typedef struct {
   // Gameplay
   int32_t shake;        // 0/1: the screen shake on a crash (the original's `shaka`)
   int32_t rumble;       // 0/1: controller vibration on a crash, where the platform has it
+  // Controls (the Switch only)
+  int32_t steer_dpad;          // 0 steer and stunt with the left stick, 1 with the D-pad
+  int32_t bind[BIND_COUNT];    // per BindAction, an index into game.c's kPadNames
 } GameSettings;
 
 /** Defaults: the original's trail and shake, vibration on, and `graphics`

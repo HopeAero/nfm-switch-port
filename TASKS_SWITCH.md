@@ -250,6 +250,12 @@ PC with `nxlink -s`.
       (jump to tick 299). The latch now ignores the entering frame; the same
       fix keeps the post-race highlight from being skipped by the press that
       passed the win card. The pausereplay hook now sends a real A edge.
+- [x] Settings > Controls (Switch only): steer/stunt with the left stick or
+      the D-pad, and a button for each of the nine race actions (GameSettings
+      .bind, indices into game.c's kPadNames; libnx bits in kPadBits; the
+      stick's directions are HID's StickL pseudo-buttons). Switching the
+      steering swaps D-pad <-> L Stick binds so the arrow/map follow. A clash
+      shows red; the help text names the current buttons (key_*()).
 - [ ] Batch 3: visual-only low detail (not `resdown=2`, which drops scenery
       collisions) and the web's lightweight intro; draw distance keeps cars'
       `dist` neutral.

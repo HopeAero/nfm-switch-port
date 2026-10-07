@@ -274,15 +274,16 @@ typedef enum {
 #elif defined(NFM_TARGET_SWITCH)
 // The Switch's buttons as platform/switch/{platform,input}.c bind them: the
 // same names and places on the Joy-Cons (handheld or paired) and on the Pro
-// Controller, which libnx all reads as player 1.
-#define KEY_STEER    "ZR/ZL and Left Stick"
-#define KEY_STUNT    "Left Stick"
-#define KEY_HANDB    "B"
-#define KEY_ARRACE   "press Up on the D-pad"
+// Controller, which libnx all reads as player 1. Settings > Controls can move
+// the race ones, so the help text names wherever they are now (key_*()).
+#define KEY_STEER    key_steer()
+#define KEY_STUNT    (key_settings()->steer_dpad ? "D-Pad" : "Left Stick")
+#define KEY_HANDB    kPadNames[key_settings()->bind[BIND_HANDB]]
+#define KEY_ARRACE   key_arrace("press")
 #define KEY_CONTINUE "A"
 #define KEY_BACK     "B"
 #define KEY_START_PROMPT "Press A to Start"
-#define KEY_ARRACE_HINT  "Press Up on the D-pad"
+#define KEY_ARRACE_HINT  key_arrace("Press")
 #else
 #define KEY_STEER    "Arrow Keys"
 #define KEY_STUNT    "Arrow Keys"
@@ -301,6 +302,55 @@ typedef enum {
 // keeping the wording rather than dropping it (the glyph says WHICH button,
 // the word says what it DOES). Zero on desktop, where the wide key is
 // still there to write on.
+// Settings > Controls' buttons: an index into these is what GameSettings.bind
+// holds; kPadBits is the same button's libnx HidNpadButton bit. D-Pad and
+// L Stick directions are both in Up, Down, Left, Right order, four apart
+// (settings_swap_steer relies on it).
+static const char *const kPadNames[] = {
+    "A", "B", "X", "Y", "L", "R", "ZL", "ZR", "Minus", "Plus", "L Stick Press", "R Stick Press",
+    "D-Pad Up", "D-Pad Down", "D-Pad Left", "D-Pad Right",
+    "L Stick Up", "L Stick Down", "L Stick Left", "L Stick Right"};
+#define PAD_COUNT 20
+#define PAD_DPAD_UP 12
+#define PAD_STICK_UP 16
+#ifdef NFM_TARGET_SWITCH
+static const uint8_t kPadBits[PAD_COUNT] = {0, 1, 2, 3, 6, 7, 8, 9, 11, 10, 4, 5,
+                                            13, 15, 12, 14, 17, 19, 16, 18};
+// The settings in effect (apply_settings), for the help text's key names.
+static const GameSettings *g_key_settings;
+static const GameSettings *key_settings(void) {
+  static GameSettings defaults;
+  if (!g_key_settings) {
+    defaults = game_settings_defaults(0);
+    g_key_settings = &defaults;
+  }
+  return g_key_settings;
+}
+static const char *key_steer(void) {
+  static char buf[64];
+  const GameSettings *s = key_settings();
+  snprintf(buf, sizeof(buf), "%s/%s and %s", kPadNames[s->bind[BIND_ACCEL]], kPadNames[s->bind[BIND_BRAKE]],
+           s->steer_dpad ? "D-Pad" : "Left Stick");
+  return buf;
+}
+static const char *key_arrace(const char *verb) {
+  static char buf[2][48];
+  char *b = buf[verb[0] == 'P'];
+  snprintf(b, sizeof(buf[0]), "%s %s", verb, kPadNames[key_settings()->bind[BIND_ARRACE]]);
+  return b;
+}
+#endif
+
+/** font_draw of a printf-formatted line (the help text's key names). */
+static void font_drawf(Graphics2D *g, int32_t x, int32_t y, const char *fmt, ...) {
+  char buf[160];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  font_draw(g, buf, x, y);
+}
+
 #if defined(NFM_TARGET_VITA) || defined(NFM_TARGET_SWITCH)
 #define KEYLBL_DX 4
 #define KEYLBL_DY 24
@@ -2623,11 +2673,11 @@ static void draw_instructions(Graphics2D *g, const InstAssets *ia,
     font_set(FONT_BOLD, 11);
     font_draw(g, "Checkpoint", 392, 189);
     font_set(FONT_BOLD, 13);
-    font_draw(g, "Drive your car using the " KEY_STEER " and " KEY_HANDB, 125, 320);
+    font_drawf(g, 125, 320, "Drive your car using the %s and %s", KEY_STEER, KEY_HANDB);
     if (ia->space.tex >= 0)  gfx_draw_image(g, ia->space.tex, 171, 355, ia->space.w, ia->space.h);
     if (ia->arrows.tex >= 0) gfx_draw_image(g, ia->arrows.tex, 505, 323, ia->arrows.w, ia->arrows.h);
     font_set(FONT_BOLD, 11);
-    font_draw(g, "(When your car is on the ground " KEY_HANDB " is for Handbrake)", 125, 341);
+    font_drawf(g, 125, 341, "(When your car is on the ground %s is for Handbrake)", KEY_HANDB);
     font_draw(g, "Accelerate", 515, 319);
     font_draw(g, "Brake/Reverse", 506, 397);
     font_draw(g, "Turn left", 454, 375);
@@ -2662,7 +2712,7 @@ static void draw_instructions(Graphics2D *g, const InstAssets *ia,
     if (ia->opwr.tex >= 0)   gfx_draw_image(g, ia->opwr.tex, 540, 253, ia->opwr.w, ia->opwr.h);
     font_set(FONT_BOLD, 13);
     font_draw(g, "To perform stunts. When your car is in the AIR:", 125, 310);
-    font_draw(g, "Press combo " KEY_HANDB " + " KEY_STUNT, 125, 330);
+    font_drawf(g, 125, 330, "Press combo %s + %s", KEY_HANDB, KEY_STUNT);
     if (ia->space.tex >= 0)  gfx_draw_image(g, ia->space.tex, 185, 355, ia->space.w, ia->space.h);
     if (ia->plus.tex >= 0)   gfx_draw_image(g, ia->plus.tex, 405, 358, ia->plus.w, ia->plus.h);
     if (ia->stunt_arrows.tex >= 0)
@@ -2682,7 +2732,7 @@ static void draw_instructions(Graphics2D *g, const InstAssets *ia,
   if (flipo == 11 || flipo == 13) {
     if (flipo == 11) {
       font_draw(g, "When wasting cars, to help you find the other cars in the stage,", 262, 67);
-      font_draw(g, KEY_ARRACE " to toggle the guidance arrow from pointing to the track", 262, 87);
+      font_drawf(g, 262, 87, "%s to toggle the guidance arrow from pointing to the track", KEY_ARRACE);
       font_draw(g, "to pointing to the cars.", 262, 107);
       font_draw(g, "When your car is damaged. You fix it (and reset its 'Damage') by", 262, 127);
       font_draw(g, "jumping through the electrified hoop.", 262, 147);
@@ -2735,8 +2785,8 @@ static void draw_instructions(Graphics2D *g, const InstAssets *ia,
     gfx_set_color(g, 0, 0, 0);
     draw_centered(g, (flipo == 16) ? "M A I N    C O N T R O L S   -   once again!"
                                    : "M A I N    C O N T R O L S", 400, 49);
-    font_draw(g, "Drive your car using the " KEY_STEER ":", 125, 80);
-    font_draw(g, "On the GROUND " KEY_HANDB " is for Handbrake", 125, 101);
+    font_drawf(g, 125, 80, "Drive your car using the %s:", KEY_STEER);
+    font_drawf(g, 125, 101, "On the GROUND %s is for Handbrake", KEY_HANDB);
     if (ia->space.tex >= 0)  gfx_draw_image(g, ia->space.tex, 171, 115, ia->space.w, ia->space.h);
     if (ia->arrows.tex >= 0) gfx_draw_image(g, ia->arrows.tex, 505, 83, ia->arrows.w, ia->arrows.h);
     font_set(FONT_BOLD, 11);
@@ -2751,7 +2801,7 @@ static void draw_instructions(Graphics2D *g, const InstAssets *ia,
     gfx_set_color(g, 0, 0, 0);
     font_set(FONT_BOLD, 13);
     font_draw(g, "To perform STUNTS:", 125, 200);
-    font_draw(g, "In the AIR press combo " KEY_HANDB " + " KEY_STUNT, 125, 220);
+    font_drawf(g, 125, 220, "In the AIR press combo %s + %s", KEY_HANDB, KEY_STUNT);
     if (ia->space.tex >= 0)  gfx_draw_image(g, ia->space.tex, 185, 245, ia->space.w, ia->space.h);
     if (ia->plus.tex >= 0)   gfx_draw_image(g, ia->plus.tex, 405, 248, ia->plus.w, ia->plus.h);
     if (ia->stunt_arrows.tex >= 0)
@@ -2822,7 +2872,7 @@ static bool scene_targets_build(GfxGlRenderTarget *scene, GfxGlRenderTarget *acc
 // a page to open, a GameSettings field with its list of values, Reset or
 // Back -- adding an option is one line in kSettingsPages.
 
-typedef enum { SET_MAIN, SET_GRAPHICS, SET_AUDIO, SET_INTERFACE, SET_GAMEPLAY, SET_PAGE_COUNT } SettingsPageId;
+typedef enum { SET_MAIN, SET_GRAPHICS, SET_AUDIO, SET_INTERFACE, SET_GAMEPLAY, SET_CONTROLS, SET_PAGE_COUNT } SettingsPageId;
 typedef enum { ROW_OPEN, ROW_CHOICE, ROW_RESET, ROW_BACK, ROW_BENCH } SettingsRowKind;
 
 typedef struct {
@@ -2832,10 +2882,17 @@ typedef struct {
   size_t off;                // ROW_CHOICE: the GameSettings field...
   int32_t count, step;       // ...which takes 0, step, ..., (count - 1) * step
   const char *const *names;  // the values' names (NULL: the number itself)
-  bool needs_rumble;         // shown only where the platform can vibrate
+  int32_t needs;             // NEED_*: shown only where the platform has it
 } SettingsRow;
 
-typedef struct { const char *title; int32_t nrows; SettingsRow rows[8]; } SettingsPage;
+enum { NEED_RUMBLE = 1, NEED_REMAP = 2 };
+#ifdef NFM_TARGET_SWITCH
+#define HAS_REMAP true
+#else
+#define HAS_REMAP false
+#endif
+
+typedef struct { const char *title; int32_t nrows; SettingsRow rows[12]; } SettingsPage;
 
 static const char *const kOnOff[] = {"Off", "On"};
 static const char *const kQualityNames[] = {"Original", "Smooth", "HD"};
@@ -2843,14 +2900,16 @@ static const char *const kDistNames[] = {"Original", "Far", "Max"};
 static const char *const kDetailNames[] = {"High", "Low"};
 static const char *const kBlurNames[] = {"Off", "20", "40", "60", "80", "100"};
 static const char *const kFpsNames[] = {"Off", "FPS", "Detailed"};
+static const char *const kSteerNames[] = {"Left Stick", "D-Pad"};
 
 #define SET_FIELD(f) offsetof(GameSettings, f)
 static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
-  [SET_MAIN] = {"SETTINGS", 7, {
+  [SET_MAIN] = {"SETTINGS", 8, {
     {ROW_OPEN, "Graphics", SET_GRAPHICS, 0, 0, 0, NULL, false},
     {ROW_OPEN, "Audio", SET_AUDIO, 0, 0, 0, NULL, false},
     {ROW_OPEN, "Interface", SET_INTERFACE, 0, 0, 0, NULL, false},
     {ROW_OPEN, "Gameplay", SET_GAMEPLAY, 0, 0, 0, NULL, false},
+    {ROW_OPEN, "Controls", SET_CONTROLS, 0, 0, 0, NULL, NEED_REMAP},
     {ROW_BENCH, "Performance Test", 0, 0, 0, 0, NULL, false},
     {ROW_RESET, "Reset to Defaults", 0, 0, 0, 0, NULL, false},
     {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
@@ -2873,7 +2932,19 @@ static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
     {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
   [SET_GAMEPLAY] = {"SETTINGS - GAMEPLAY", 3, {
     {ROW_CHOICE, "Screen Shake", 0, SET_FIELD(shake), 2, 1, kOnOff, false},
-    {ROW_CHOICE, "Vibration", 0, SET_FIELD(rumble), 2, 1, kOnOff, true},
+    {ROW_CHOICE, "Vibration", 0, SET_FIELD(rumble), 2, 1, kOnOff, NEED_RUMBLE},
+    {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
+  [SET_CONTROLS] = {"SETTINGS - CONTROLS", 11, {
+    {ROW_CHOICE, "Steer and Stunt With", 0, SET_FIELD(steer_dpad), 2, 1, kSteerNames, false},
+    {ROW_CHOICE, "Accelerate", 0, SET_FIELD(bind[BIND_ACCEL]), PAD_COUNT, 1, kPadNames, false},
+    {ROW_CHOICE, "Brake / Reverse", 0, SET_FIELD(bind[BIND_BRAKE]), PAD_COUNT, 1, kPadNames, false},
+    {ROW_CHOICE, "Handbrake / Stunt", 0, SET_FIELD(bind[BIND_HANDB]), PAD_COUNT, 1, kPadNames, false},
+    {ROW_CHOICE, "Change View", 0, SET_FIELD(bind[BIND_VIEW]), PAD_COUNT, 1, kPadNames, false},
+    {ROW_CHOICE, "Guidance Arrow", 0, SET_FIELD(bind[BIND_ARRACE]), PAD_COUNT, 1, kPadNames, false},
+    {ROW_CHOICE, "Map", 0, SET_FIELD(bind[BIND_RADAR]), PAD_COUNT, 1, kPadNames, false},
+    {ROW_CHOICE, "Pause", 0, SET_FIELD(bind[BIND_PAUSE]), PAD_COUNT, 1, kPadNames, false},
+    {ROW_CHOICE, "Mute Music", 0, SET_FIELD(bind[BIND_MUSIC]), PAD_COUNT, 1, kPadNames, false},
+    {ROW_CHOICE, "Mute Effects", 0, SET_FIELD(bind[BIND_SFX]), PAD_COUNT, 1, kPadNames, false},
     {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
 };
 #undef SET_FIELD
@@ -2891,7 +2962,29 @@ static bool g_settings_in_race;
 
 static bool settings_row_shown(const SettingsRow *r, bool has_rumble) {
   if (r->kind == ROW_BENCH && g_settings_in_race) return false;
-  return !r->needs_rumble || has_rumble;
+  if ((r->needs & NEED_RUMBLE) && !has_rumble) return false;
+  return !(r->needs & NEED_REMAP) || HAS_REMAP;
+}
+
+/** Whether a Controls row's button is also another action's. */
+static bool settings_bind_clash(const GameSettings *s, const SettingsRow *r) {
+  if (r->names != kPadNames) return false;
+  const int32_t *v = (const int32_t *)((const char *)s + r->off);
+  for (int32_t i = 0; i < BIND_COUNT; i++) {
+    if (&s->bind[i] != v && s->bind[i] == *v) return true;
+  }
+  return false;
+}
+
+/** Steering moved between the left stick and the D-pad: whatever was on the
+ * other one's directions (the arrow and the map, by default) moves with it,
+ * so nothing ends up under the thumb that steers. */
+static void settings_swap_steer(GameSettings *s) {
+  for (int32_t i = 0; i < BIND_COUNT; i++) {
+    int32_t *b = &s->bind[i];
+    if (*b >= PAD_DPAD_UP && *b < PAD_STICK_UP) *b += PAD_STICK_UP - PAD_DPAD_UP;
+    else if (*b >= PAD_STICK_UP && *b < PAD_COUNT) *b -= PAD_STICK_UP - PAD_DPAD_UP;
+  }
 }
 
 /** One frame of Settings input. Changes go straight into `s`; the caller
@@ -2910,7 +3003,10 @@ static SettingsAction settings_screen_input(SettingsUi *ui, GameSettings *s, int
   if (row->kind == ROW_CHOICE && (left || right)) {
     int32_t *v = settings_field(s, row);
     int32_t i = *v / row->step + (right ? 1 : -1);
-    if (i >= 0 && i < row->count) *v = i * row->step;
+    if (i >= 0 && i < row->count) {
+      *v = i * row->step;
+      if (v == &s->steer_dpad) settings_swap_steer(s);
+    }
   }
   if (ok) {
     if (row->kind == ROW_OPEN) {
@@ -3005,7 +3101,11 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
   draw_centered(g, pg->title, 400, 46);
   font_set(FONT_BOLD, 18);
 
-  const int32_t x0 = 120, w = 560, h = 34, gap = 6;
+  // A page longer than eight rows (Controls) packs them tighter.
+  const bool tight = pg->nrows > 8;
+  const int32_t x0 = 120, w = 560, h = tight ? 28 : 34, gap = tight ? 4 : 6;
+  const int32_t ty = tight ? 6 : 7;
+  if (tight) font_set(FONT_BOLD, 16);
   int32_t y = 68;
   for (int32_t r = 0; r < pg->nrows; r++) {
     const SettingsRow *row = &pg->rows[r];
@@ -3021,7 +3121,7 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
     }
     const int32_t cy = y + h / 2;
     if (sel) gfx_set_color(g, SET_YELLOW); else gfx_set_color(g, SET_INK);
-    font_draw(g, row->label, x0 + 34, cy + 7);
+    font_draw(g, row->label, x0 + 34, cy + ty);
     if (row->kind == ROW_OPEN || row->kind == ROW_BENCH) {
       draw_settings_arrow(g, x0 + w - 26, cy, true, true, sel);
     } else if (row->kind == ROW_CHOICE) {
@@ -3031,8 +3131,10 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
       const char *name = row->names ? row->names[i] : (snprintf(num, sizeof(num), "%d", (int)v), num);
       const int32_t tw = font_width(name);
       const int32_t right_x = x0 + w - 26;
-      if (sel) gfx_set_color(g, SET_YELLOW); else gfx_set_color(g, SET_INK);
-      font_draw(g, name, right_x - 14 - tw, cy + 7);
+      if (settings_bind_clash(s, row)) gfx_set_color(g, 220, 40, 30);
+      else if (sel) gfx_set_color(g, SET_YELLOW);
+      else gfx_set_color(g, SET_INK);
+      font_draw(g, name, right_x - 14 - tw, cy + ty);
       draw_settings_arrow(g, right_x - 22 - tw, cy, false, i > 0, sel);
       draw_settings_arrow(g, right_x, cy, true, i < row->count - 1, sel);
     }
@@ -3243,6 +3345,12 @@ static void apply_settings(const GameSettings *s, Medium *m) {
   cont_o_particles = s->particles != 0;
   audio_sfx_gain = (float)s->sfx_vol / 100.0f;
   radical_music_gain = (float)s->music_vol / 100.0f;
+#ifdef NFM_TARGET_SWITCH
+  uint64_t mask[BIND_COUNT];
+  for (int32_t i = 0; i < BIND_COUNT; i++) mask[i] = 1ULL << kPadBits[s->bind[i]];
+  input_configure(mask, s->steer_dpad != 0);
+  g_key_settings = s;
+#endif
 }
 
 /** 800x450 RGBA from a `w`x`h` glReadPixels frame (both bottom-up), nearest. */
@@ -7693,7 +7801,7 @@ int game_run(void) {
           [1] = {"Hey!  Don't forget, to complete a lap you must pass through", "all checkpoints in the track!"},
           [2] = {"Remember, the more power you have the faster your car will be!"},
           [3] = {"> Hint: its easier to waste the other cars then to race in this stage!",
-                 KEY_ARRACE_HINT " to make the guidance arrow point to cars instead of to", "the track."},
+                 "%s to make the guidance arrow point to cars instead of to", "the track."},
           [4] = {"Remember, the better the stunt you perform the more power you get!"},
           [5] = {"Remember, the more power you have the stronger your car is!"},
           [10] = {"NOTE: Guidance Arrow is disabled in this stage!"},
@@ -7702,7 +7810,7 @@ int game_run(void) {
           [13] = {"Watch out!  Look out!  The policeman might be out to get you!",
                   "Don't upset him or you'll be arrested!", NULL, "Better run, run, run."},
           [14] = {"Don't waste your time.  Waste them instead!", "Try a taste of sweet revenge here (if you can)!", NULL,
-                  KEY_ARRACE_HINT " to make the guidance arrow point to cars instead of to", "the track."},
+                  "%s to make the guidance arrow point to cars instead of to", "the track."},
           [17] = {"Welcome to the realm of the king...", NULL,
                   "The key word here is 'POWER'.  The more you have of it the faster", "and STRONGER you car will be!"},
           [18] = {"Watch out, EL KING is out to get you now!", "He seems to be seeking revenge?", NULL,
@@ -7755,7 +7863,7 @@ int game_run(void) {
         }
         for (int32_t line = 0; line < 5; line++) {
           const char *txt = kHints[stage_num][line];
-          if (txt) font_draw(&g, txt, 262, 92 + 20 * line);
+          if (txt) font_drawf(&g, 262, 92 + 20 * line, txt, KEY_ARRACE_HINT);
         }
       }
       if (intro_loadingmusic.tex >= 0) {
