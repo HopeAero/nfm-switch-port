@@ -1,11 +1,17 @@
-# Need for Madness — port para Nintendo Switch
+# Need for Madness — port nativo para Nintendo Switch y Linux
 
 [English](README.md) · **Español**
 
 ![icon](data/icon.png)
 
-Un port homebrew no oficial de **Need for Madness** (Radicalplay, 2015) para
-**Nintendo Switch**, escrito en C.
+Un port no oficial de **Need for Madness** (Radicalplay, 2015) para
+**Nintendo Switch** (homebrew) y **Linux**, escrito en C.
+
+| Plataforma | Estado |
+|---|---|
+| Nintendo Switch | Probado en hardware (Switch v1) y en el emulador Eden |
+| Linux | Compila y corre; se usa para probar cada cambio |
+| PS Vita | Heredado del port original. El código del juego cambió en este fork, pero **estos cambios no se probaron en la Vita** |
 
 Este repositorio es un fork de
 [PedrelliMath/nfm-psvita-port](https://github.com/PedrelliMath/nfm-psvita-port),
@@ -13,7 +19,8 @@ el port nativo para PS Vita / Linux. Ese port parte a su vez de
 [radicalarchive/nfm](https://github.com/radicalarchive/nfm), el port en
 JavaScript/WebGL. Este fork agrega el target de Switch
 (`native/platform/switch/`) y los arreglos y funciones que se listan abajo. Los
-targets de Vita y Linux comparten el mismo código del juego.
+tres targets comparten el mismo código del juego, así que los cambios también
+llegan a Linux y a la Vita.
 
 El código fuente original nunca se publicó. El juego se descompiló y se
 reescribió línea por línea, primero en JavaScript/WebGL (`web/`) y después en C
@@ -163,9 +170,10 @@ Opciones:
   hooks de prueba sin pantalla.
 - `-DNFM_NXLINK=ON` manda `printf`/stderr a la PC con `nxlink -s`.
 
-### Linux (desarrollo)
+### Linux
 
-El target de Linux corre el mismo código con SDL2 y OpenGL:
+El target de Linux corre el mismo juego con SDL2 y OpenGL, con teclado
+(teclas en [`CONTROLES.txt`](CONTROLES.txt)):
 
 ```sh
 sudo apt install build-essential cmake libsdl2-dev libgl-dev zlib1g-dev
@@ -185,8 +193,9 @@ cd native/tests/build && ctest
 
 El target de Vita es el del repositorio original: ve
 [PedrelliMath/nfm-psvita-port](https://github.com/PedrelliMath/nfm-psvita-port)
-para VitaSDK, vitaGL y cómo instalar el `.vpk`. El código compartido del juego
-cambió en este fork, pero el build de Vita no se probó aquí.
+para VitaSDK, vitaGL y cómo instalar el `.vpk`. **No probado en este fork:** el
+código compartido del juego cambió (todo lo listado arriba), y no se verificó ni
+el build de Vita ni el juego en la Vita.
 
 ---
 
@@ -215,14 +224,14 @@ cambió en este fork, pero el build de Vita no se probó aquí.
   - *Draw Distance: Far/Max* puede cambiar si la reparación de un auto lejano se
     anima o no.
 
-**Propio de la Switch**
+**Plataformas**
 - Conectar o sacar del dock en medio del juego mantiene el tamaño de pantalla
   con el que arrancó.
 - Todavía no hay pantalla táctil en los menús.
 - Hasta ahora lo probó una sola persona en una Switch v1. La vibración y las
   cifras finales de rendimiento no están confirmadas en hardware; el reporte del
   Performance Test ayuda con eso.
-- El build de Vita no se probó en este fork.
+- PS Vita: ninguno de los cambios de este fork se probó en la Vita.
 
 **Lo que falta traer del port web**
 ([HopeAero/nfm](https://github.com/HopeAero/nfm))

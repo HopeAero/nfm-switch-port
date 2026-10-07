@@ -1,18 +1,25 @@
-# Need for Madness — Nintendo Switch port
+# Need for Madness — native port for Nintendo Switch and Linux
 
 **English** · [Español](README.es.md)
 
 ![icon](data/icon.png)
 
-An unofficial homebrew port of **Need for Madness** (Radicalplay, 2015) to the
-**Nintendo Switch**, written in C.
+An unofficial port of **Need for Madness** (Radicalplay, 2015) to the
+**Nintendo Switch** (homebrew) and **Linux**, written in C.
+
+| Platform | Status |
+|---|---|
+| Nintendo Switch | Tested on hardware (Switch v1) and in the Eden emulator |
+| Linux | Builds and runs; used to test every change |
+| PS Vita | Inherited from the upstream port. The game code changed in this fork, but **these changes haven't been tested on the Vita** |
 
 This repository is a fork of
 [PedrelliMath/nfm-psvita-port](https://github.com/PedrelliMath/nfm-psvita-port),
 the native PS Vita / Linux port. That port is itself built on
 [radicalarchive/nfm](https://github.com/radicalarchive/nfm), the JavaScript/WebGL
 port. This fork adds a Switch target (`native/platform/switch/`) and the fixes
-and features listed below. The Vita and Linux targets share the same game code.
+and features listed below. All three targets share the same game code, so the
+changes reach Linux and the Vita too.
 
 The original source code was never released. The game was decompiled and
 rewritten line by line, first in JavaScript/WebGL (`web/`) and then in C
@@ -156,9 +163,10 @@ Options:
   headless test hooks.
 - `-DNFM_NXLINK=ON` sends `printf`/stderr to the PC with `nxlink -s`.
 
-### Linux (development)
+### Linux
 
-The Linux target runs the same code with SDL2 and OpenGL:
+The Linux target runs the same game with SDL2 and OpenGL, using the keyboard
+(keys in [`CONTROLES.txt`](CONTROLES.txt)):
 
 ```sh
 sudo apt install build-essential cmake libsdl2-dev libgl-dev zlib1g-dev
@@ -178,8 +186,9 @@ cd native/tests/build && ctest
 
 The Vita target is the upstream one: see
 [PedrelliMath/nfm-psvita-port](https://github.com/PedrelliMath/nfm-psvita-port)
-for VitaSDK, vitaGL and installing the `.vpk`. The shared game code has
-changed in this fork, but the Vita build hasn't been tested here.
+for VitaSDK, vitaGL and installing the `.vpk`. **Not tested in this fork:** the
+shared game code has changed (everything listed above), and neither the Vita
+build nor the game on the Vita has been checked.
 
 ---
 
@@ -207,13 +216,13 @@ changed in this fork, but the Vita build hasn't been tested here.
   - *Draw Distance: Far/Max* can change whether a distant car's repair is
     animated.
 
-**Switch-specific**
+**Platforms**
 - Docking or undocking mid-game keeps the screen size the game started with.
 - No touch screen in menus yet.
 - Hardware testing so far is one person on a Switch v1. Vibration and the
   final performance numbers haven't been confirmed on hardware; the
   Performance Test report helps here.
-- The Vita build hasn't been tested in this fork.
+- PS Vita: none of this fork's changes have been tested on the Vita.
 
 **Not yet brought over from the web port**
 ([HopeAero/nfm](https://github.com/HopeAero/nfm))
