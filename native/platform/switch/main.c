@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
   // NFM_SCREENSHOT_FRAME, NFM_SCREENSHOT_MENU, ...): homebrew has no
   // environment, so this diagnostic build takes KEY=VALUE lines from the SD
   // card instead. A plain build never reads the file.
-  FILE *env = fopen("sdmc:/switch/nfm/debug_env.txt", "r");
+  FILE *env = fopen("sdmc:/switch/nfm-extended/debug_env.txt", "r");
   if (env) {
     char line[256];
     while (fgets(line, sizeof(line), env)) {

@@ -146,7 +146,7 @@ const char *platform_asset_prefix(void) {
 
 bool platform_progress_path(char *buf, size_t buf_len) {
   // The SD card, where homebrew keeps its data; progress.c creates the folder.
-  int n = snprintf(buf, buf_len, "sdmc:/switch/nfm/progress.bin");
+  int n = snprintf(buf, buf_len, "sdmc:/switch/nfm-extended/progress.bin");
   return n > 0 && (size_t)n < buf_len;
 }
 

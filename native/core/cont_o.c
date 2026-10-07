@@ -1535,7 +1535,7 @@ void cont_o_init_buf(ContO *co, const char *text, Medium *m, Trackers *t) {
     line_buf[copy_len] = '\0';
     char *string = trim_line(line_buf);
 
-    if (co->npl < 210) {
+    if (co->npl < CONT_O_MAX_POLYS) {
       if (starts_with(string, "<p>")) {
         n = 1;
         n3 = 0;

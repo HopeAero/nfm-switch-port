@@ -74,7 +74,11 @@ extern "C" {
 extern bool cont_o_shadows;
 extern bool cont_o_particles;
 
-#define CONT_O_MAX_PLANES 286 // 210 body panels (guarded in the parser) + 4*19 wheel planes
+// NFM 2 read up to 210 polygons, then the wheels (4 x 19 pieces): 286 in all.
+// Raised to Revised and Recharged's 1000 pieces (as web/ContO.js MAX_PIECES)
+// so its big cars load whole; no model the game ships passes 210.
+#define CONT_O_MAX_PLANES 1000
+#define CONT_O_MAX_POLYS (CONT_O_MAX_PLANES - 4 * 19) // body panels, guarded in the parser
 
 typedef struct ContO {
   int32_t npl;

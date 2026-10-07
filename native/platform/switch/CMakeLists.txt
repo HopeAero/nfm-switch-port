@@ -47,12 +47,15 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${NFM_ROMFS_SOURC
 dkp_add_asset_target(nfm_romfs "${NFM_ROMFS}")
 dkp_track_assets(nfm_romfs FILES ${NFM_ROMFS_FILES})
 
-nx_generate_nacp(nfm_switch.nacp
-  NAME "Need for Madness"
-  AUTHOR "Radicalplay (port: community)"
-  VERSION "1.2.1")
+# The extended branch builds its own homebrew: another title, another file
+# (nfm_extended.nro) and its own save folder, so it sits beside the original.
+nx_generate_nacp(nfm_extended.nacp
+  NAME "Need for Madness 2 Extended"
+  AUTHOR "Radicalplay, Extended Mode (port: community)"
+  VERSION "0.1.0")
 
 nx_create_nro(nfm_switch
-  NACP nfm_switch.nacp
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/nfm_extended.nro
+  NACP nfm_extended.nacp
   ICON "${CMAKE_CURRENT_SOURCE_DIR}/icon.jpg"
   ROMFS nfm_romfs)
