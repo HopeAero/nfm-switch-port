@@ -37,24 +37,16 @@ void mad_reseto(Mad *mad, int32_t cn, ContO *contO, CheckPoints *checkPoints) {
     mad->scz[j] = 0.0f;
   }
 
-  // forca = fr(fr((fr(sqrt(A))+fr(sqrt(B))+fr(sqrt(C))+fr(sqrt(D)))/10000.0) * fr(bounce[cn]-0.3))
-  // Each fr(sqrt(...)) rounds a double sqrt() to float32 once (sqrt isn't
-  // one of the provably-exact-in-native-float ops case 1 covers, so this
-  // computes in double and rounds explicitly rather than assuming
-  // sqrtf() matches). The sum of those four float32 values plus the
-  // /10000.0 division is NOT further fr()-wrapped per term, only the
-  // WHOLE (sum)/10000.0 is -- case 2, double arithmetic, one rounding.
-  // bounce[cn]-0.3 is its own single-op fr() -- case 1, native float
-  // exact. The outer multiply is a single op wrapped in fr() -- case 1.
+  // Java: ((float)sqrt(A) + (float)sqrt(B) + (float)sqrt(C) + (float)sqrt(D))
+  // / 10000.0f * (float)(bounce - 0.3) -- float sums, and the 0.3 is a
+  // double: (float)(bounce - 0.3) is not bounce - 0.3f.
   double sqrtA = sqrt((double)(contO->keyz[0] * contO->keyz[0] + contO->keyx[0] * contO->keyx[0]));
   double sqrtB = sqrt((double)(contO->keyz[1] * contO->keyz[1] + contO->keyx[1] * contO->keyx[1]));
   double sqrtC = sqrt((double)(contO->keyz[2] * contO->keyz[2] + contO->keyx[2] * contO->keyx[2]));
   double sqrtD = sqrt((double)(contO->keyz[3] * contO->keyz[3] + contO->keyx[3] * contO->keyx[3]));
   float fSqrtA = (float)sqrtA, fSqrtB = (float)sqrtB, fSqrtC = (float)sqrtC, fSqrtD = (float)sqrtD;
-  double middleSum = (double)fSqrtA + (double)fSqrtB + (double)fSqrtC + (double)fSqrtD;
-  float middle = (float)(middleSum / 10000.0);
-  float bounceTerm = mad->cd->bounce[mad->cn] - 0.3f;
-  mad->forca = middle * bounceTerm;
+  float middle = (((fSqrtA + fSqrtB) + fSqrtC) + fSqrtD) / 10000.0f;
+  mad->forca = middle * (float)((double)mad->cd->bounce[mad->cn] - 0.3);
 
   mad->mtouch = false;
   mad->wtouch = false;
@@ -305,13 +297,12 @@ static int32_t mad_corner_angle(float dz, float dy, float dx, int32_t axisKeySum
 // chained ops under one fr() -- case 2, double then round once; the
 // subtraction and final multiply by the (separately-rounded) bounce term
 // are each single-op case 1.
-static int32_t mad_wobble_delta(Mad *mad, float speedFactor, float speedFactor2, float bounceTerm) {
-  double innerA = (double)medium_random(mad->m) * speedFactor * mad->speed / mad->cd->swits[mad->cn][2];
-  float innerAf = (float)innerA;
-  double innerB = (double)speedFactor2 * mad->speed / mad->cd->swits[mad->cn][2];
-  float innerBf = (float)innerB;
-  float diff = innerAf - innerBf;
-  return jtrunc(diff * bounceTerm);
+// Java: (int)((random() * k1 * speed / swits - k2 * speed / swits) * (bounce - 0.3))
+// -- float step by step, then the double (bounce - 0.3), truncated once.
+static int32_t mad_wobble_delta(Mad *mad, float k1, float k2) {
+  const float sw = (float)mad->cd->swits[mad->cn][2];
+  const float d = ((medium_random(mad->m) * k1) * mad->speed) / sw - (k2 * mad->speed) / sw;
+  return jtrunc_d((double)d * ((double)mad->cd->bounce[mad->cn] - 0.3));
 }
 
 void mad_distruct(Mad *mad, ContO *contO) {
@@ -392,7 +383,7 @@ int32_t mad_regy(Mad *mad, int32_t n, float a, ContO *contO) {
             mad_recolor_plane(&contO->p[k]);
           }
           if (contO->p[k].glass == 1) {
-            contO->p[k].gr = jtrunc((float)contO->p[k].gr + fabsf(n5 * 1.5f));
+            contO->p[k].gr = jtrunc_d((double)contO->p[k].gr + fabs((double)n5 * 1.5));
           }
         }
       }
@@ -477,7 +468,7 @@ int32_t mad_regx(Mad *mad, int32_t n, float n2, ContO *contO) {
           mad_recolor_plane(&contO->p[i]);
         }
         if (contO->p[i].glass == 1) {
-          contO->p[i].gr = jtrunc((float)contO->p[i].gr + fabsf(a * 1.5f));
+          contO->p[i].gr = jtrunc_d((double)contO->p[i].gr + fabs((double)a * 1.5));
         }
       }
     }
@@ -523,7 +514,7 @@ int32_t mad_regz(Mad *mad, int32_t n, float n2, ContO *contO) {
           mad_recolor_plane(&contO->p[i]);
         }
         if (contO->p[i].glass == 1) {
-          contO->p[i].gr = jtrunc((float)contO->p[i].gr + fabsf(a * 1.5f));
+          contO->p[i].gr = jtrunc_d((double)contO->p[i].gr + fabs((double)a * 1.5));
         }
       }
     }
@@ -1031,6 +1022,12 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
     if (mad->scz[n17] - n16 > 200.0f) mad->scz[n17] = (float)(200 + n16);
     if (mad->scz[n17] - n16 < -200.0f) mad->scz[n17] = (float)(n16 - 200);
   }
+  // The move uses the wheel speeds AFTER the clamp above: Java re-adds
+  // scx[0..3] here. Reusing the pre-clamp sums moved a car that had just
+  // been hit by its unclamped wheel speeds -- after a head-on hit, straight
+  // on into (and through) the other car.
+  sumScx = ((mad->scx[0] + mad->scx[1]) + mad->scx[2]) + mad->scx[3];
+  sumScz = ((mad->scz[0] + mad->scz[1]) + mad->scz[2]) + mad->scz[3];
   for (int32_t n18 = 0; n18 < 4; n18++) {
     array3[n18] = array3[n18] + mad->scy[n18];
     array[n18] = array[n18] + (sumScx / 4.0f);
@@ -1150,30 +1147,23 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
       if (n22 == 3 || n22 == 4) {
         // trunc(rand*4.0) -- no fr(), genuinely double.
         int32_t idx = jtrunc_d((double)medium_random(m) * 4.0);
-        float base = (n22 == 3) ? -100.0f : -150.0f;
-        float swit2 = (float)cd->swits[mad->cn][2];
-        float d1 = mad->speed / swit2;              // case 1
-        float e1 = medium_random(m) * d1;             // case 1
-        float f1 = cd->bounce[mad->cn] - 0.3f;         // case 1
-        float g1 = e1 * f1;                            // case 1
-        mad->scy[idx] = base * g1;                     // case 1
+        // Java: (float)(-100.0f * random() * (speed / swits) * (bounce - 0.3))
+        const float base = (n22 == 3) ? -100.0f : -150.0f;
+        const float a1 = (base * medium_random(m)) * (mad->speed / (float)cd->swits[mad->cn][2]);
+        mad->scy[idx] = (float)((double)a1 * ((double)cd->bounce[mad->cn] - 0.3));
       }
       n29 = n29 + mad->scx[n31];
       n30 = n30 + mad->scz[n31];
     }
     mad->txz = contO->xz;
     int32_t n39 = (n29 > 0.0f) ? -1 : 1;
-    // fr(fr(acos(n30/sqrt(n29*n29+n30*n30)) / CONST) * n39) -- sqrt/acos
-    // are un-fr()'d (genuinely double) all the way up to the inner fr(),
-    // which rounds "acosVal/CONST" to float ONCE (its operand is a raw
-    // double, not an already-float value, so this can't take the
-    // native-float shortcut the way a chain of already-float ops can).
-    double sumSqD = (double)n29 * n29 + (double)n30 * n30;
-    double sqrtValD = sqrt(sumSqD);
-    double ratioD = (double)n30 / sqrtValD;
-    double acosValD = acos(ratioD);
-    float innerRounded = (float)(acosValD / 0.017453292519943295);
-    mad->mxz = jtrunc(innerRounded * (float)n39);
+    // Java: (int)(Math.acos(n30 / Math.sqrt(n29 * n29 + n30 * n30)) /
+    // 0.017453292519943295 * n39) -- the squares and their sum are float,
+    // everything from the sqrt on is double, rounded nowhere before the
+    // (int). Straight down -z this is 179.99999999999997 -> 179; rounding it
+    // through float first made it 180.
+    const float sumSq = n29 * n29 + n30 * n30;
+    mad->mxz = jtrunc_d(acos((double)n30 / sqrt((double)sumSq)) / 0.017453292519943295 * (double)n39);
     if (mad->skid == 2) {
       if (!mad->capsized) {
         n29 = n29 / 4.0f;
@@ -1604,32 +1594,32 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
   }
 
   if (mad->wtouch && !mad->capsized) {
-    float n108 = ((mad->speed / (float)cd->swits[mad->cn][2]) * 14.0f) * (cd->bounce[mad->cn] - 0.4f);
+    // The 0.4 and 0.3 below are doubles in Java (as is the 1.5).
+    const float n108 = (float)((double)((mad->speed / (float)cd->swits[mad->cn][2]) * 14.0f) *
+                               ((double)cd->bounce[mad->cn] - 0.4));
     if (control->left && mad->tilt < n108 && mad->tilt >= 0.0f) {
       mad->tilt = mad->tilt + 0.4f;
     } else if (control->right && mad->tilt > -n108 && mad->tilt <= 0.0f) {
       mad->tilt = mad->tilt - 0.4f;
-    } else if (fabsf(mad->tilt) > (3.0f * (cd->bounce[mad->cn] - 0.4f))) {
-      if (mad->tilt > 0.0f) mad->tilt = mad->tilt - (3.0f * (cd->bounce[mad->cn] - 0.3f));
-      else mad->tilt = mad->tilt + (3.0f * (cd->bounce[mad->cn] - 0.3f));
+    } else if (fabs((double)mad->tilt) > 3.0 * ((double)cd->bounce[mad->cn] - 0.4)) {
+      if (mad->tilt > 0.0f) mad->tilt = (float)((double)mad->tilt - 3.0 * ((double)cd->bounce[mad->cn] - 0.3));
+      else mad->tilt = (float)((double)mad->tilt + 3.0 * ((double)cd->bounce[mad->cn] - 0.3));
     } else {
       mad->tilt = 0.0f;
     }
     contO->xy = jtrunc((float)contO->xy + mad->tilt);
-    if (mad->gtouch) contO->y = jtrunc((float)contO->y - (mad->tilt / 1.5f));
+    if (mad->gtouch) contO->y = jtrunc_d((double)contO->y - (double)mad->tilt / 1.5);
   } else if (mad->tilt != 0.0f) {
     mad->tilt = 0.0f;
   }
 
   if (mad->wtouch && n22 == 2) {
-    float bounceTerm = cd->bounce[mad->cn] - 0.3f;
-    contO->zy += mad_wobble_delta(mad, 6.0f, 3.0f, bounceTerm);
-    contO->xy += mad_wobble_delta(mad, 6.0f, 3.0f, bounceTerm);
+    contO->zy += mad_wobble_delta(mad, 6.0f, 3.0f);
+    contO->xy += mad_wobble_delta(mad, 6.0f, 3.0f);
   }
   if (mad->wtouch && n22 == 1) {
-    float bounceTerm = cd->bounce[mad->cn] - 0.3f;
-    contO->zy += mad_wobble_delta(mad, 4.0f, 2.0f, bounceTerm);
-    contO->xy += mad_wobble_delta(mad, 4.0f, 2.0f, bounceTerm);
+    contO->zy += mad_wobble_delta(mad, 4.0f, 2.0f);
+    contO->xy += mad_wobble_delta(mad, 4.0f, 2.0f);
   }
 
   if (mad->hitmag >= cd->maxmag[mad->cn] && !mad->dest) {

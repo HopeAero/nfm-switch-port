@@ -104,7 +104,8 @@ Joy-Cons (handheld or detached) or Pro Controller.
 - **Graphics**: Image Quality (Original / Smooth / HD), Draw Distance, Scenery
   Detail, Shadows, Particles, Motion Blur, Smooth Frames.
 - **Audio**: music and effects volume.
-- **Interface**: FPS counter (off / FPS / detailed).
+- **Interface**: FPS counter (off / FPS / detailed); car names in the race
+  standings (off by default: the original's single player leaves them blank).
 - **Gameplay**: screen shake, vibration.
 
 **Brought over from the original that the Vita port lacked**
@@ -120,6 +121,15 @@ Joy-Cons (handheld or detached) or Pro Controller.
 - The AI's **route points** (`set(...)p`): the bots follow the track instead of
   aiming from gate to gate.
 - Stunts in **8 directions** (the Vita read only 4, so diagonals did nothing).
+
+**Car collisions as in the original**
+- After a hit, a car moves by its wheel speeds *after* they are clamped, as
+  Java does. The C port used the speeds from before the clamp, so a car that
+  had just been hit drove on into the other one; in head-on tests the cars
+  ended up overlapping a third less often after the fix.
+- The heading, tilt, bumpy-ground wobble and bounce use Java's double
+  arithmetic where the C port rounded to float. Head-on crashes now match the
+  original exactly, tick for tick.
 
 **Fixes ported from the web port** ([HopeAero/nfm](https://github.com/HopeAero/nfm))
 - Brake and gear thresholds divide integers as Java does (`handb / 2`,

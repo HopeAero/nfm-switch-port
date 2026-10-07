@@ -1039,6 +1039,17 @@ static void colide_scenario(void) {
             contO2.x == 0 && contO2.y == 0 && contO2.z == 150;
   CHECK(ok, "colide dominant-push (mad1 dominates, mad2 gets pushed)");
 
+  // The wheel speeds a hard hit leaves behind: drive() clamps each to within
+  // 200 of the mean (142 -> {342, -58, 106, 106}) and moves the car by the
+  // CLAMPED mean, 124 -- not the raw 142.5, which carried a hit car on into
+  // the one that hit it.
+  mad1.scz[0] = 486.0f; mad1.scz[1] = -128.0f; mad1.scz[2] = 106.0f; mad1.scz[3] = 106.0f;
+  Control idle;
+  control_init(&idle, &m);
+  control_falseo(&idle, 0);
+  mad_drive(&mad1, &idle, &contO1, &t, &cp);
+  CHECK(contO1.z == 124, "drive moves a hit car by its clamped wheel speeds");
+
   cont_o_free(&contO1);
   cont_o_free(&contO2);
   cont_o_free(&baseModel);

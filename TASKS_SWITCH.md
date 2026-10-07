@@ -228,6 +228,20 @@ PC with `nxlink -s`.
       the Java's own strings, sizes and coordinates; the race inherits
       loadingstage's bold 12 as in Java. vfont/bitfont removed. Consecutive
       glyphs share one bind and one glBegin.
+- [x] Car-to-car pass-through: mad_drive moved a car by its wheel speeds'
+      PRE-clamp mean (Java re-adds scx/scz after the +-200 clamp), so a hit car
+      kept going into the other. Found with a head-on harness run against
+      web/Mad.js under Node (scratchpad headon.c/.mjs): identical until the
+      hit tick, then the cars' z split. Also mxz (all-double acos, 179 not 180
+      straight down -z), forca, n108, tilt and its 0.4/0.3 test, `y -=
+      tilt/1.5`, the bumpy-ground wobble, the n22==3/4 scy bounce and the glass
+      `gr` now round as the bytecode does. 8 head-on scenarios x 150 ticks are
+      bit-identical to web/Mad.js once its own float-literal slips are fixed:
+      web assigns `0.3/0.4/1.1/1.2` doubles where Java has `0.3f`... (15
+      sites) and multiplies `n25 * 0.55` where Java has `(float)0.55`.
+- [x] Settings > Interface > Names in Standings (off by default): the arrace
+      board's plnames slot, blank in the original's single player, shows the
+      car names (black, centred on 730 but kept right of x=700).
 - [ ] Batch 3: visual-only low detail (not `resdown=2`, which drops scenery
       collisions) and the web's lightweight intro; draw distance keeps cars'
       `dist` neutral.

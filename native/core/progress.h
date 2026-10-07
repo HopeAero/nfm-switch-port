@@ -192,6 +192,7 @@ typedef struct {
   int32_t sfx_vol;      // 0..100, step 10
   // Interface
   int32_t show_fps;     // 0 off, 1 the frame rate, 2 plus the frame-time breakdown
+  int32_t board_names;  // 0/1: car names in the race standings (not in the original's single player)
   // Gameplay
   int32_t shake;        // 0/1: the screen shake on a crash (the original's `shaka`)
   int32_t rumble;       // 0/1: controller vibration on a crash, where the platform has it

@@ -217,6 +217,7 @@ GameSettings game_settings_defaults(int32_t graphics) {
   s.music_vol = 100;
   s.sfx_vol = 100;
   s.show_fps = 0;
+  s.board_names = 0;
   s.shake = 1;
   s.rumble = 1;
   return s;
@@ -236,6 +237,7 @@ static const SettingKey kSettingKeys[] = {
   {"music_volume", offsetof(GameSettings, music_vol), 0, 100, 10},
   {"effects_volume", offsetof(GameSettings, sfx_vol), 0, 100, 10},
   {"show_fps", offsetof(GameSettings, show_fps), 0, 2, 1},
+  {"board_names", offsetof(GameSettings, board_names), 0, 1, 1},
   {"screen_shake", offsetof(GameSettings, shake), 0, 1, 1},
   {"vibration", offsetof(GameSettings, rumble), 0, 1, 1},
 };

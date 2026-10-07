@@ -108,7 +108,9 @@ Joy-Cons (en modo portátil o separados) o Pro Controller.
   dibujo, detalle del escenario, sombras, partículas, motion blur, Smooth
   Frames.
 - **Audio**: volumen de música y de efectos.
-- **Interface**: contador de FPS (apagado / FPS / detallado).
+- **Interface**: contador de FPS (apagado / FPS / detallado); nombres de los
+  autos en la tabla de posiciones (apagado por defecto: el original en un
+  jugador los deja en blanco).
 - **Gameplay**: sacudida de pantalla, vibración.
 
 **Cosas del original que al port de Vita le faltaban**
@@ -126,6 +128,17 @@ Joy-Cons (en modo portátil o separados) o Pro Controller.
   de apuntar de un checkpoint al siguiente.
 - Acrobacias en **8 direcciones** (la Vita leía solo 4, así que las diagonales
   no hacían nada).
+
+**Choques entre autos como en el original**
+- Después de un choque, el auto se mueve con la velocidad de sus ruedas
+  *después* de recortarla, como hace Java. El port en C usaba la velocidad de
+  antes del recorte, así que un auto recién chocado seguía de largo dentro del
+  otro; en pruebas de choque de frente, los autos quedaban encimados un tercio
+  menos de veces tras el arreglo.
+- El rumbo, la inclinación, el bamboleo en terreno irregular y el rebote usan
+  la aritmética en double de Java donde el port en C redondeaba a float. Los
+  choques de frente ahora coinciden exactos con el original, actualización por
+  actualización.
 
 **Arreglos traídos del port web** ([HopeAero/nfm](https://github.com/HopeAero/nfm))
 - El freno y los cambios de marcha dividen enteros como Java (`handb / 2`,

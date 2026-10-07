@@ -1810,13 +1810,15 @@ static void draw_race_scene(Graphics2D *g, Medium *m, ContO **all_objs, int32_t 
  * (:3693-3725), every `clangame != 0` recolour arm (no clan mode), the
  * mouse hover/click lock (:3823-3842 and :3869-3921 -- this port has no
  * mouse), and the `alocked == n32` highlight rects (:3843-3868), which
- * only that mouse path could ever satisfy. The player-name string the
- * original centres at x=730 is drawn too, but `plnames[]` is eight empty
- * strings at :456 with no other write site in the whole file -- names
- * arrive from the multiplayer handshake -- so in single-player that slot
- * is genuinely blank in the original as well.
+ * only that mouse path could ever satisfy.
+ *
+ * The name above each bar (:3785) is `plnames[]`, which only the multiplayer
+ * lobby fills -- blank in the original's single player. Settings > Interface
+ * > Names in Standings (`names`) fills that slot with the car's name, drawn
+ * exactly as the multiplayer one is: black, centred on x=730.
  */
-static void draw_arrace_board(Graphics2D *g, Medium *m, CheckPoints *cp, int32_t nplayers) {
+static void draw_arrace_board(Graphics2D *g, Medium *m, CheckPoints *cp, int32_t nplayers,
+                              const int32_t *sc, bool names) {
   int32_t label_b = hud_tint(100.0, m->snap[2]);
   for (int32_t place = 0; place < nplayers; place++) {
     int32_t found = 0;
@@ -1835,6 +1837,15 @@ static void draw_arrace_board(Graphics2D *g, Medium *m, CheckPoints *cp, int32_t
       else if (place == 2) snprintf(ord, sizeof(ord), "3rd");
       else snprintf(ord, sizeof(ord), "%dth", place + 1);
       font_draw(g, ord, (place == 0) ? 673 : 671, 76 + 30 * place);
+      if (names) {
+        const char *name = (sc[j] >= 0 && sc[j] < 16) ? CAR_DISPLAY_NAMES[sc[j]] : "Simple Car";
+        hud_set_ink(g, 0, 0, 0);
+        // Centred like Java's, but never left of the bar: the longest stock
+        // name would otherwise run into the ordinal beside it.
+        int32_t nx = 730 - font_width(name) / 2;
+        if (nx < 700) nx = 700;
+        font_draw(g, name, nx, 70 + 30 * place);
+      }
 
       // :3790-3821 -- damage bar. Full width is 60px; the fill tracks
       // magperc and its green channel ramps 244 -> 11 once the bar passes
@@ -2843,8 +2854,9 @@ static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
     {ROW_CHOICE, "Music", 0, SET_FIELD(music_vol), 11, 10, NULL, false},
     {ROW_CHOICE, "Effects", 0, SET_FIELD(sfx_vol), 11, 10, NULL, false},
     {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
-  [SET_INTERFACE] = {"SETTINGS - INTERFACE", 2, {
+  [SET_INTERFACE] = {"SETTINGS - INTERFACE", 3, {
     {ROW_CHOICE, "Show FPS", 0, SET_FIELD(show_fps), 3, 1, kFpsNames, false},
+    {ROW_CHOICE, "Names in Standings", 0, SET_FIELD(board_names), 2, 1, kOnOff, false},
     {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
   [SET_GAMEPLAY] = {"SETTINGS - GAMEPLAY", 3, {
     {ROW_CHOICE, "Screen Shake", 0, SET_FIELD(shake), 2, 1, kOnOff, false},
@@ -6176,7 +6188,7 @@ int game_run(void) {
             xt.alocked = -1;
             xt.lalocked = -1;
           }
-          draw_arrace_board(&g, &m, &cp, nplayers);
+          draw_arrace_board(&g, &m, &cp, nplayers, sc, settings.board_names != 0);
         }
 
         // Countdown 3-2-1-GO overlay -- Java xtGraphics.java:8050-8055. Only
