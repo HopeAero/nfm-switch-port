@@ -38,6 +38,10 @@ static void test_init(void) {
   CHECK(cd.enginsignature[11] == 4, "enginsignature[11]");
   CHECK(cd.flipy[13] == -100, "flipy[13]");
   CHECK(cd.powerloss[13] == 16700000, "powerloss[13]");
+  // The car-select bars read these for the stock cars (CarDefine.java:108-110).
+  CHECK(cd.dishandle[0] == 0.65f && cd.dishandle[14] == 1.0f, "dishandle[0], [14]");
+  CHECK(cd.outdam[1] == 0.35f && cd.outdam[13] == 1.0f, "outdam[1], [13]");
+  CHECK(cd.cclass[5] == 1 && cd.cclass[11] == 4, "cclass[5], [11]");
   // Unused custom-car slots (16-55) are all zero, including the padded
   // 56th acelf row (see car_define.h's doc comment on the JS's own
   // 55-vs-56-length quirk).

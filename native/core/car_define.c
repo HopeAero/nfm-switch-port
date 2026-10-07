@@ -27,6 +27,9 @@ static const int32_t flipy_data[56] = {-50,-60,-92,-44,-60,-57,-54,-60,-77,-57,-
 static const int32_t msquash_data[56] = {7,4,7,2,8,4,6,4,3,8,4,10,3,20,3,8,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 static const int32_t clrad_data[56] = {3300,1700,4700,3000,2000,4500,3500,5000,10000,15000,4000,7000,10000,15000,5500,5000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 static const int32_t maxmag_data[56] = {7600,4200,7200,6000,6000,15000,17200,17000,18000,11000,19000,10700,13000,45000,5800,18000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+static const float dishandle_data[56] = {0.65f,0.6f,0.55f,0.77f,0.62f,0.9f,0.6f,0.72f,0.45f,0.8f,0.95f,0.4f,0.87f,0.42f,1.0f,0.95f,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+static const float outdam_data[56] = {0.68f,0.35f,0.8f,0.5f,0.42f,0.76f,0.82f,0.76f,0.72f,0.62f,0.79f,0.95f,0.77f,1.0f,0.85f,1.0f,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+static const int32_t cclass_data[56] = {0,0,0,0,0,1,2,2,2,2,3,4,4,4,4,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 static const int32_t enginsignature_data[56] = {0,1,2,1,0,3,2,2,1,0,3,4,1,4,0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 static const float airs_data[56] = {1.0f,1.2f,0.95f,1.0f,2.2f,1.0f,0.9f,0.8f,1.0f,0.9f,1.15f,0.8f,1.0f,0.3f,1.3f,1.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f};
 static const float grip_data[56] = {20.0f,27.0f,18.0f,22.0f,19.0f,20.0f,25.0f,20.0f,19.0f,24.0f,22.5f,25.0f,30.0f,27.0f,25.0f,27.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f};
@@ -175,6 +178,11 @@ void car_define_init(CarDefine *cd) {
   memcpy(cd->enginsignature, enginsignature_data, sizeof(cd->enginsignature));
   memcpy(cd->acelf, acelf_data, sizeof(cd->acelf));
   memcpy(cd->swits, swits_data, sizeof(cd->swits));
+  // The car-select screen's Handling and Endurance bars, and the class
+  // (CarDefine.java:108-110); loadstat() sets them for a .rad car.
+  memcpy(cd->dishandle, dishandle_data, sizeof(cd->dishandle));
+  memcpy(cd->outdam, outdam_data, sizeof(cd->outdam));
+  memcpy(cd->cclass, cclass_data, sizeof(cd->cclass));
 }
 
 // --- loadstat --------------------------------------------------------

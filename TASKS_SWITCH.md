@@ -272,6 +272,10 @@ PC with `nxlink -s`.
       game.c's pad_icon() in the text colour (face circles, shoulder pills,
       ringed sticks, a D-pad cross). The Switch's KEY_* text uses them, and
       Settings > Controls shows icon + name.
+- [x] Car select's Handling and Endurance bars were empty, and every stock
+      car read "Class C": car_define_init never copied CarDefine.java's
+      dishandle / outdam / cclass tables (:108-110) for the 16 stock cars.
+      Display only -- nothing in the physics reads them.
 - [ ] Batch 3: visual-only low detail (not `resdown=2`, which drops scenery
       collisions) and the web's lightweight intro; draw distance keeps cars'
       `dist` neutral.
