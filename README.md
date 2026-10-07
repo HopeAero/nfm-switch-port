@@ -1,183 +1,227 @@
-# Need for Madness — native port for Nintendo Switch, PS Vita and Linux
+# Need for Madness — Nintendo Switch port
 
-> **This repository is the Switch port.** It starts from the PS Vita / Linux
-> native port below (imported unchanged in the first commit) and adds
-> `native/platform/switch/`. How to build, install and play it, and what is
-> left: [`TASKS_SWITCH.md`](TASKS_SWITCH.md).
-
+**English** · [Español](README.es.md)
 
 ![icon](data/icon.png)
 
-An unofficial port of **Need for Madness** (Radicalplay, 2015) to the
-**PS Vita** and **Linux**, written in C. The original source code was never
-released: the game was decompiled and rewritten line by line, first in
-JavaScript/WebGL (`web/`) and then in C (`native/`). The goal is a faithful,
-1:1 port. The original `Game.jar`, patched to run on modern Java, stays in
-the repository as the reference to compare against.
+An unofficial homebrew port of **Need for Madness** (Radicalplay, 2015) to the
+**Nintendo Switch**, written in C.
 
-The game assets (`data/`, `stages/`, `mycars/`, `mystages/`, `music/`) are
-the originals, byte for byte, and the port reads them as they are.
+This repository is a fork of
+[PedrelliMath/nfm-psvita-port](https://github.com/PedrelliMath/nfm-psvita-port),
+the native PS Vita / Linux port. That port is itself built on
+[radicalarchive/nfm](https://github.com/radicalarchive/nfm), the JavaScript/WebGL
+port. This fork adds a Switch target (`native/platform/switch/`) and the fixes
+and features listed below. The Vita and Linux targets share the same game code.
+
+The original source code was never released. The game was decompiled and
+rewritten line by line, first in JavaScript/WebGL (`web/`) and then in C
+(`native/`), with the aim of a faithful 1:1 port. The game assets (`data/`,
+`stages/`, `mycars/`, `mystages/`, `music/`) are the originals, byte for byte.
 
 ---
 
-## Building for the PS Vita
+## Download and install
 
-### 1. Requirements
+You need a Switch running custom firmware (Atmosphère) with the Homebrew Menu.
 
-- **VitaSDK** installed (https://vitasdk.org), with its environment set:
-  ```sh
-  export VITASDK=/usr/local/vitasdk
-  export PATH=$VITASDK/bin:$PATH
-  ```
-- **vitaGL** and **zlib** from VitaSDK's package manager:
-  ```sh
-  vdpm vitaGL
-  vdpm zlib
-  ```
-- Optional: to drop vitaGL's splash screen before the game, rebuild vitaGL
-  without it (the build prints a WARNING while it is still there):
-  ```sh
-  git clone https://github.com/Rinnegatamante/vitaGL
-  cd vitaGL && make clean && make NO_SPLASHSCREEN=1 install
-  ```
+1. Download `nfm_switch.nro` from the [latest release](../../releases/latest).
+2. Copy it to `sdmc:/switch/` on the SD card.
+3. Open the Homebrew Menu **through a game, holding R while it launches**
+   (title override). Don't open it from the Album: from there, homebrew runs as
+   an applet with much less memory.
+4. Pick **Need for Madness**.
 
-### 2. Build
+All the assets are inside the `.nro`; nothing else needs to be copied. Progress
+and settings are saved in `sdmc:/switch/nfm/`.
 
-From the repository root:
+### If the game freezes or crashes
 
-```sh
-cmake -S native -B native/build-vita -DNFM_PLATFORM=vita \
-      -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.toolchain.cmake
-cmake --build native/build-vita -j
-```
+The game writes a report beside the save so the problem can be found:
 
-### 3. Where the VPK ends up
+- `sdmc:/switch/nfm/freeze.txt` — the game stopped advancing for 8 seconds. It
+  records what the game was doing (screen, stage, tick, car).
+- `sdmc:/switch/nfm/crash.txt` — the game hit a fault and closed itself. It
+  records registers, the fault address and a backtrace as offsets into the
+  `.nro`; `aarch64-none-elf-addr2line -e nfm_switch.elf 0x…` turns these into
+  file and line. You need the `.elf` from the same build.
 
-```
-native/build-vita/platform/vita/nfm_vita.vpk
-```
+Please attach the file when you open an issue.
 
-The VPK already contains every game asset (`data/`, `stages/`, `music/`,
-`mycars/`), the home-screen bubble and the LiveArea. Nothing has to be
-copied to the memory card separately.
+---
 
-### 4. Install
+## Controls
 
-Copy `nfm_vita.vpk` to the Vita (over FTP or USB with VitaShell) and install
-it from VitaShell. The app shows up as **Need for Madness**, Title ID
-`NFMD00001`. Progress is saved in `ux0:data/NFMD00001/`.
-
-### Vita controls
+Joy-Cons (handheld or detached) or Pro Controller.
 
 | Button | Action |
 |---|---|
-| R | accelerate |
-| L | brake / reverse |
-| Left stick | steer |
-| Cross | handbrake (and confirm in menus) |
-| Cross + left stick, in the air | stunts: forward/back = loops, sideways = rolls. Only firm, straight pushes count; diagonals and small nudges do nothing |
-| Right stick | turn the camera |
+| ZR | accelerate |
+| ZL | brake / reverse |
+| Left stick | steer (menus: stick or D-pad) |
+| B | handbrake; held in the air, the stunt key |
+| B + left stick, in the air | stunts in 8 directions: forward/back = loops, sideways = rolls, diagonals = combined stunts |
+| Right stick | look around |
+| A / B (menus) | confirm / back |
+| X | change camera |
+| Y | mute music |
+| − | mute sound effects |
 | D-pad up | guidance arrow: track ↔ cars |
 | D-pad down | radar (minimap + speedometer) |
-| Triangle | change camera |
-| Square | mute music |
-| Select | mute sound effects |
-| Start | pause |
-| Circle | back, in menus |
-
-The full list, Linux keys included, is in [`CONTROLES.txt`](CONTROLES.txt).
+| + | pause |
 
 ---
 
-## Building for Linux
+## What the Switch port adds
 
-The Linux target is the development environment: it runs the same code as
-the Vita, with SDL2 and OpenGL in place of sceCtrl/vitaGL.
+**The Switch target**
+- `.nro` with every asset in its RomFS, saves on the SD card, libnx controls,
+  vibration (Joy-Cons and Pro Controller).
+- 1920×1080 docked, 1280×720 handheld.
+- A legacy OpenGL 2.1 context through SDL2 and Mesa. The 33 GL functions are
+  loaded at runtime.
+- The Instructions screen and stage cards show Switch button art.
+
+**Smooth 60 fps**
+- **Smooth Frames** (on by default): the race still ticks at 18.9 Hz like the
+  original, but every display frame draws the cars and the camera blended
+  between the two latest ticks. This includes each car's turn and flip angle,
+  to a fraction of a degree. The simulation is untouched.
+- A 60 Hz frame limiter that sleeps only what is left of each 16.7 ms frame.
+- **Settings › Performance Test**: a 60-second AI-driven race on stage 9. It
+  shows a summary on screen and writes a full report to
+  `sdmc:/switch/nfm/benchmark.txt` (average and 1% low fps, percentiles, slow
+  frames, work per frame).
+
+**Settings** (from the main menu and from the pause menu)
+- **Graphics**: Image Quality (Original / Smooth / HD), Draw Distance, Scenery
+  Detail, Shadows, Particles, Motion Blur, Smooth Frames.
+- **Audio**: music and effects volume.
+- **Interface**: FPS counter (off / FPS / detailed).
+- **Gameplay**: screen shake, vibration.
+
+**Brought over from the original that the Vita port lacked**
+- The stage backdrop: clouds, mountains, the stars on night stages and the
+  ground patches around the track (`clouds(`, `mountains(`, `density(`,
+  `fadefrom(`, `lightson`).
+- The **dirt hills** (`pile(`) that 31 of the 32 stages place, 47 to 187 each,
+  drawn and with collision.
+- The AI's **route points** (`set(...)p`): the bots follow the track instead of
+  aiming from gate to gate.
+- Stunts in **8 directions** (the Vita read only 4, so diagonals did nothing).
+
+**Fixes ported from the web port** ([HopeAero/nfm](https://github.com/HopeAero/nfm))
+- Brake and gear thresholds divide integers as Java does (`handb / 2`,
+  `swits / 2`). Odd values braked and topped out 0.5 too high every tick.
+- Wheel dust ages per tick, not per frame. At 60 fps it had vanished 3× too
+  fast.
+- A hang on heavily damaged cars, and a bounded AI waypoint loop.
+- Stage validation as in Java: an unknown model, too many objects, or fewer
+  than 2 checkpoints shows *ERROR LOADING STAGE* instead of hanging the race.
+  Over-sized model faces no longer overflow the stack, and divisions by zero
+  driven by stage data return 0.
+- A readable HUD on dark skies: the HUD is recoloured to 4.5:1 contrast
+  against the sky, as the web port does, instead of drawing boxes.
+- Resuming from pause no longer runs 3 physics ticks in one burst.
+- 64-bit projection (no signed overflow) and `-ffp-contract=off`, so the
+  Switch's float math matches Java's.
+
+**Diagnostics**
+- Freeze and crash reports (see above).
+
+---
+
+## Building
+
+### Nintendo Switch
+
+With Docker and devkitPro's official image, from the repository root:
 
 ```sh
-# dependencies (Debian/Ubuntu)
-sudo apt install build-essential cmake libsdl2-dev libgl-dev zlib1g-dev
-
-cmake -S native -B native/build-linux -DNFM_PLATFORM=linux -DCMAKE_BUILD_TYPE=Release
-cmake --build native/build-linux -j
-
-# run it from the repository ROOT (the assets are read from there)
-native/build-linux/platform/linux/nfm_linux
+docker run --rm -v "$PWD:/src" -w /src devkitpro/devkita64 bash -c \
+  'cmake -S native -B native/build-switch -DNFM_PLATFORM=switch \
+     -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Switch.cmake && \
+   cmake --build native/build-switch -j'
 ```
 
-`-DNFM_SHOW_FPS=ON` draws the FPS and the worst frame on screen.
+On Windows (Git Bash), prefix the command with `MSYS_NO_PATHCONV=1` and mount
+the drive path, e.g. `-v "D:/path/to/nfm-switch-port:/src"`.
 
-Core tests (run on the host, no window):
+The build output is `native/build-switch/platform/switch/nfm_switch.nro`
+(about 13 MB), with `nfm_switch.elf` beside it.
+
+Options:
+- `-DNFM_SVCLOG=ON` sends stderr to the emulator's log (Eden, yuzu). This build
+  also reads `sdmc:/switch/nfm/debug_env.txt` (`KEY=VALUE` lines) for the
+  headless test hooks.
+- `-DNFM_NXLINK=ON` sends `printf`/stderr to the PC with `nxlink -s`.
+
+### Linux (development)
+
+The Linux target runs the same code with SDL2 and OpenGL:
+
+```sh
+sudo apt install build-essential cmake libsdl2-dev libgl-dev zlib1g-dev
+cmake -S native -B native/build-linux -DNFM_PLATFORM=linux -DCMAKE_BUILD_TYPE=Release
+cmake --build native/build-linux -j
+native/build-linux/platform/linux/nfm_linux   # run from the repository root
+```
+
+Core tests (on the host, no window):
 
 ```sh
 cmake -S native/tests -B native/tests/build && cmake --build native/tests/build -j
 cd native/tests/build && ctest
 ```
 
+### PS Vita
+
+The Vita target is the upstream one: see
+[PedrelliMath/nfm-psvita-port](https://github.com/PedrelliMath/nfm-psvita-port)
+for VitaSDK, vitaGL and installing the `.vpk`. The shared game code has
+changed in this fork, but the Vita build hasn't been tested here.
+
 ---
 
-## What the native port does
+## What's missing / known differences
 
-The whole game runs: boot, menus, car and stage selection, races against the
-AI, replays, pause, win/lose screens and saved progress across the NFM 1 and
-NFM 2 campaigns and Free Play.
+**Compared to the original game**
+- **Text font**: menus and the HUD use a 5×7 vector font in uppercase only.
+  The original draws its text in Arial bold, in mixed case and with symbols
+  such as `&`, `?` and `>`. This is the biggest visible difference left, on
+  every screen.
+- **No online multiplayer**: the original's lobby isn't ported. It exists only
+  in the web port.
+- **No user content**: only the 32 stock stages and the stock cars. Stages and
+  cars made with the original's Stage Maker and Car Maker (`mystages/`,
+  `mycars/`) can't be loaded yet.
+- **Small numeric differences**: about 15 places still round in `float` where
+  Java uses `double`, or the other way round. They cause rare one-unit
+  differences in body tilt, bounces, AI timing and whether two cars touch.
+- **Stages 28–32**: a few road pieces rotated ±90° cast a slightly different
+  shadow (`loadnew` isn't set for those stages).
+- **Two settings change the gameplay, not just the picture.** The defaults are
+  faithful.
+  - *Scenery Detail: Low* is the original's own low-detail mode, which also
+    removes collisions with decoration.
+  - *Draw Distance: Far/Max* can change whether a distant car's repair is
+    animated.
 
-**Faithful to the original**
-- Physics, collisions, AI, checkpoints, damage and stunts translated from the
-  Java with the same arithmetic (wrapping 32-bit ints, float32 rounding),
-  checked against the original jar with differential tests.
-- Rendering with no depth buffer, by submission order, as in the original:
-  sky, ground, fog, shadows that follow ramps, dust, sparks, flames, the
-  repair ring.
-- Motion blur and screen shake through the same mechanism as the original
-  `paint()` (alpha-blending frames).
-- The original boot sequence: loading screen with the blue bar,
-  "Click/Press to Start", the Radicalplay intro.
-- 1:1 menus: main menu, game modes, instructions (every page, with Vita
-  button art), credits, car selection with the spinning car, stage selection
-  with the camera flying over the track, locked stages.
-- The **stage presentation card** before every race: Coach Insano's hint,
-  "Loading complete! Press Start to begin..." and the blinking START button.
-- The camera fly-around the cars before the 3-2-1-GO countdown.
-- The original pause menu (resume, instant replay, instructions, quit) and
-  the highlight replay at the end of a race.
-- The original HUD: damage, power, position, laps, wasted, speedometer,
-  radar, guidance arrow, stunt messages.
+**Switch-specific**
+- Docking or undocking mid-game keeps the screen size the game started with.
+- No touch screen in menus yet.
+- Hardware testing so far is one person on a Switch v1. Vibration and the
+  final performance numbers haven't been confirmed on hardware; the
+  Performance Test report helps here.
+- The Vita build hasn't been tested in this fork.
 
-**Audio**
-- **Music identical to the original, byte for byte**: the game's MOD renderer
-  (`ModSlayer` + `SuperClip`) was translated to C (`native/core/radical_mod.c`).
-  All 34 tracks come out identical to what the jar produces, loop points
-  included, along with the original's characteristic gritty sound. A test
-  checks this.
-- Menu music from car selection until a stage is confirmed, each stage's
-  music with its original BPM, speed and volume, and `party.zip` on stage 27
-  of NFM 2.
-- Every sound effect: engines (5 types × 5 revs), air, crashes, skids,
-  scrapes, countdown, checkpoint, repair, wasted.
-
-**Extras in this port**
-- A **Settings** screen in the pause menu: motion-blur intensity from 0 to
-  100 in steps of 20, saved between sessions.
-- A control scheme designed for the Vita (table above).
-- Home-screen bubble and LiveArea made from the game's own main-menu art
-  (`native/platform/vita/make_livearea.py` regenerates them).
-
-**Performance**
-- The race draws once per physics tick (53 ms, as in the original) and the
-  menus every 40 ms, presenting the last frame in between, which cuts two
-  thirds of the drawing work without changing what is on screen.
-- Instructions per race frame down from 13.25M to 8.68M (sorting, stack
-  buffers, inlined functions, fewer render passes).
-- Memory leaks fixed (car copies in the replay ring, per-race HUD textures).
-
-**Still different from the original**
-- Text uses a 5×7 uppercase-only vector font; the original uses Arial bold.
-  This is the biggest visual difference left.
-- Online multiplayer exists in the web port, not in the native one.
-- The Vita target builds and runs on hardware, but every change is tested on
-  Linux first; the most recent ones (controls, LiveArea) still need to be
-  checked on the device.
+**Not yet brought over from the web port**
+([HopeAero/nfm](https://github.com/HopeAero/nfm))
+- Extended Mode, the car and stage editors, custom cars from the SD card, and
+  the Extended, R&R and Origins car sets.
+- Rivals, raw "Recharged" car stats, `lightBrake`, 1000-piece cars and the
+  Re-Lit arrow stunts.
+- A low-detail mode that only changes the picture, and the lightweight intro.
 
 ---
 
@@ -185,25 +229,39 @@ NFM 2 campaigns and Free Play.
 
 | Folder | Contents |
 |---|---|
-| `native/` | **The native port.** `core/` is the platform-independent game (physics, rendering, audio, decoders); `platform/common/game.c` is the game loop and menus; `platform/linux/` and `platform/vita/` are each target's thin layer; `tests/` are the core tests. |
-| `web/` | The JavaScript/WebGL port the C was translated from. Open `index.html` with `python3 -m http.server 8123`. |
-| `decompilation/` | The decompiled Java (`java-src/`), a reading reference, not a build input. |
-| `java/` | The original `Game.jar` patched for modern Java (`./start.sh`) and the untouched original (`Game.jar.bak`). |
-| `data/`, `stages/`, `mycars/`, `mystages/`, `music/` | Original assets, **do not modify**. `data/vita/` holds the Vita button art (generated by `tools/gen_vita_assets.py`). |
-| `tools/` | Helper scripts (Vita art, music). |
+| `native/` | **The native port.** `core/` is the platform-independent game (physics, rendering, audio, decoders). `platform/common/game.c` is the game loop, menus and settings; `platform/common/diag.c` holds the freeze/crash reports. `platform/switch/`, `platform/vita/` and `platform/linux/` are each target's thin layer. `tests/` holds the core tests. |
+| `web/` | The JavaScript/WebGL port the C was translated from. |
+| `decompilation/` | The decompiled Java (`java-src/`). A reading reference, not a build input. |
+| `java/` | The original `Game.jar` patched for modern Java (`./start.sh`), plus the untouched original. |
+| `data/`, `stages/`, `mycars/`, `mystages/`, `music/` | The original assets: **don't modify them**. `data/switch/` and `data/vita/` hold the button art; `data/port/` holds the port's own menu labels. |
+| `tools/` | Helper scripts (button art, menu labels, music). |
 
-## Documentation for contributors
+## Documentation
 
-- [`native/PORT_SPEC.md`](native/PORT_SPEC.md) — the native port's rules.
-- [`native/TASKS_NATIVE.md`](native/TASKS_NATIVE.md) — what was done, how it was verified and what is left.
-- [`WORK.md`](WORK.md) — discoveries and pitfalls, one per line (for example: the decompiled `RadicalMod` constructor is wrong; the `intToBytes16` bug that gives the music its sound).
-- [`AGENTS.md`](AGENTS.md) — how to run, measure and verify; the invariants that must not break (no depth buffer, one draw call in submission order).
-- [`web/TRANSPILE_SPEC.md`](web/TRANSPILE_SPEC.md) — the Java → code translation contract (integer overflow, float32).
-
-To compare with the original: `./start.sh` runs the jar. For automatic
-screenshots of any of the jar's screens, it can be driven with
-`java.awt.Robot` under `xvfb-run` (see `WORK.md`).
+- [`TASKS_SWITCH.md`](TASKS_SWITCH.md): the Switch port, what was done, how it
+  was checked and what is left.
+- [`native/PORT_SPEC.md`](native/PORT_SPEC.md): the native port's rules.
+- [`native/TASKS_NATIVE.md`](native/TASKS_NATIVE.md): the native port's history.
+- [`WORK.md`](WORK.md): discoveries and pitfalls, one per line.
+- [`AGENTS.md`](AGENTS.md): how to run, measure and verify, and the invariants
+  that must not break (no depth buffer; one draw call in submission order).
+- [`web/TRANSPILE_SPEC.md`](web/TRANSPILE_SPEC.md): the Java → code translation
+  contract (integer overflow, float32).
+- [`CONTROLES.txt`](CONTROLES.txt): the Vita and Linux controls.
 
 ---
 
-*Need for Madness © Radicalplay. A non-commercial fan project.*
+## Credits
+
+- **Need for Madness**: Radicalplay (Omar Waly), the original game.
+- [**radicalarchive/nfm**](https://github.com/radicalarchive/nfm): the
+  decompilation and the JavaScript/WebGL port this work stands on.
+- [**PedrelliMath/nfm-psvita-port**](https://github.com/PedrelliMath/nfm-psvita-port):
+  the native C port for PS Vita and Linux this repository forks.
+- [**HopeAero/nfm**](https://github.com/HopeAero/nfm): the web port the later
+  fixes were ported from.
+- [devkitPro](https://devkitpro.org), libnx, SDL2 and Mesa for the Switch
+  toolchain and libraries.
+
+*Need for Madness © Radicalplay. A non-commercial fan project, not affiliated
+with Radicalplay or Nintendo.*
