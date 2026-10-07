@@ -84,6 +84,179 @@ void cont_o_recopy(ContO *dst, ContO *src, int32_t x, int32_t y, int32_t z, int3
   cont_o_init_copy(dst, src, x, y, z, a);
 }
 
+// Ports ContO.java's procedural constructor (ContO.java:1072-1300), written
+// from the Java rather than web/ContO.js where the two round differently:
+// `2.2f + n20` and `Math.abs(n16 - n20)` are float in Java.
+void cont_o_init_pile(ContO *co, int32_t seed, int32_t n2, int32_t n3, Medium *m, Trackers *t,
+                      int32_t x, int32_t z, int32_t y) {
+  memset(co, 0, sizeof(*co));
+  co->m = m;
+  co->t = t;
+  co->baseIndex = -1;
+  co->x = x;
+  co->z = z;
+  co->y = y;
+  co->disline = 4;
+  co->noline = true;
+  co->grounded = 115.0f;
+  co->decor = true;
+  co->npl = 5;
+  co->p = calloc(5, sizeof(Plane));
+  JavaRandom random;
+  jrandom_init(&random, seed);
+  int32_t a1[8] = {0}, a2[8] = {0}, a3[8] = {0}, a4[8] = {0}, a5[8] = {0};
+  float n4 = (float)n2, n5 = (float)n3;
+  if (n5 < 2.0f) n5 = 2.0f;
+  if (n5 > 6.0f) n5 = 6.0f;
+  if (n4 < 2.0f) n4 = 2.0f;
+  if (n4 > 6.0f) n4 = 6.0f;
+  const float n6 = n4 / 1.5f;
+  const float n7 = n5 / 1.5f * (1.0f + (n6 - 2.0f) * 0.1786f);
+  const float n8 = (float)(50.0 + 100.0 * jrandom_next_double(&random));
+  a1[0] = -jtrunc(n8 * n6 * 0.7071f);
+  a2[0] = jtrunc(n8 * n6 * 0.7071f);
+  const float n9 = (float)(50.0 + 100.0 * jrandom_next_double(&random));
+  a2[1] = jtrunc(n9 * n6);
+  const float n10 = (float)(50.0 + 100.0 * jrandom_next_double(&random));
+  a1[2] = jtrunc_d((double)(n10 * n6) * 0.7071);
+  a2[2] = jtrunc_d((double)(n10 * n6) * 0.7071);
+  a1[3] = jtrunc((float)(50.0 + 100.0 * jrandom_next_double(&random)) * n6);
+  const float n11 = (float)(50.0 + 100.0 * jrandom_next_double(&random));
+  a1[4] = jtrunc_d((double)(n11 * n6) * 0.7071);
+  a2[4] = -jtrunc_d((double)(n11 * n6) * 0.7071);
+  const float n12 = (float)(50.0 + 100.0 * jrandom_next_double(&random));
+  a2[5] = -jtrunc(n12 * n6);
+  const float n13 = (float)(50.0 + 100.0 * jrandom_next_double(&random));
+  a1[6] = -jtrunc_d((double)(n13 * n6) * 0.7071);
+  a2[6] = -jtrunc_d((double)(n13 * n6) * 0.7071);
+  a1[7] = -jtrunc((float)(50.0 + 100.0 * jrandom_next_double(&random)) * n6);
+  for (int32_t i = 0; i < 8; i++) {
+    a3[i] = jtrunc_d(a1[i] * (0.2 + 0.4 * jrandom_next_double(&random)));
+    a4[i] = jtrunc_d(a2[i] * (0.2 + 0.4 * jrandom_next_double(&random)));
+    a5[i] = -jtrunc_d((10.0 + 15.0 * jrandom_next_double(&random)) * n7);
+  }
+  co->maxR = 0;
+  for (int32_t j = 0; j < 8; j++) {
+    const int32_t p = j == 0 ? 7 : j - 1, q = j == 7 ? 0 : j + 1;
+    a1[j] = ((a1[p] + a1[q]) / 2 + a1[j]) / 2;
+    a2[j] = ((a2[p] + a2[q]) / 2 + a2[j]) / 2;
+    a3[j] = ((a3[p] + a3[q]) / 2 + a3[j]) / 2;
+    a4[j] = ((a4[p] + a4[q]) / 2 + a4[j]) / 2;
+    a5[j] = ((a5[p] + a5[q]) / 2 + a5[j]) / 2;
+    const int32_t r1 = jtrunc_d(sqrt((double)(a1[j] * a1[j] + a2[j] * a2[j])));
+    if (r1 > co->maxR) co->maxR = r1;
+    const int32_t r2 = jtrunc_d(sqrt((double)(a3[j] * a3[j] + a5[j] * a5[j] + a4[j] * a4[j])));
+    if (r2 > co->maxR) co->maxR = r2;
+  }
+  co->disp = co->maxR / 17;
+  int32_t col[3];
+  float n16 = -1.0f;
+  float n17 = (n6 / n7 - 0.33f) / 33.4f;
+  if (n17 < 0.005) n17 = 0.0f;
+  if (n17 > 0.057) n17 = 0.057f;
+  // The four slopes, each a hexagon from two outer points to the inner ring.
+  for (int32_t k = 0; k < 4; k++) {
+    const int32_t n18 = k * 2, n19 = (n18 + 2) % 8;
+    int32_t ox[6] = {a1[n18], a1[n18 + 1], a1[n19], a3[n19], a3[n18 + 1], a3[n18]};
+    int32_t oz[6] = {a2[n18], a2[n18 + 1], a2[n19], a4[n19], a4[n18 + 1], a4[n18]};
+    int32_t oy[6] = {0, 0, 0, a5[n19], a5[n18 + 1], a5[n18]};
+    // Re-rolled until the slope's shade differs from the last one's. Java's
+    // own Random, not the replayed draw randoms, so it always ends.
+    float n20;
+    do {
+      n20 = (float)((0.17 - n17) * jrandom_next_double(&random));
+    } while (fabsf(n16 - n20) < 0.03 - n17 * 0.176f);
+    n16 = n20;
+    for (int32_t l = 0; l < 3; l++) {
+      col[l] = m->trk == 2 ? jtrunc(390.0f / (2.2f + n20 - n17))
+                           : jtrunc((float)(m->cpol[l] + m->cgrnd[l]) / (2.2f + n20 - n17));
+    }
+    plane_init(&co->p[k], m, t, ox, oz, oy, 6, col, 3, -8, 0, 0, 0, 0, co->disline, 0, true, 0, false);
+  }
+  const float n21 = (float)(0.02 * jrandom_next_double(&random));
+  for (int32_t l = 0; l < 3; l++) {
+    col[l] = m->trk == 2 ? jtrunc(390.0f / (2.15f + n21))
+                         : jtrunc((float)(m->cpol[l] + m->cgrnd[l]) / (2.15f + n21));
+  }
+  plane_init(&co->p[4], m, t, a3, a4, a5, 8, col, 3, -8, 0, 0, 0, 0, co->disline, 0, true, 0, false);
+
+  // Collision: four ramps up the slopes and a flat top. Full Trackers: none
+  // added, and game_sparker_loadstage rejects the stage.
+  if (t->nt + 5 > TRACKERS_MAX) {
+    t->nt = TRACKERS_MAX;
+    return;
+  }
+  int32_t ex[2] = {0, 0}, ez[2] = {0, 0};
+  for (int32_t n23 = 0; n23 < 4; n23++) {
+    const int32_t n24 = n23 * 2 + 1, nt = t->nt, nx = (n23 * 2 + 2) % 8;
+    t->y[nt] = a5[n24] / 2;
+    t->rady[nt] = abs(a5[n24] / 2);
+    if (n23 == 0 || n23 == 2) {
+      t->z[nt] = (a2[n24] + a4[n24]) / 2;
+      t->radz[nt] = abs(t->z[nt] - a2[n24]);
+      t->x[nt] = (a1[n23 * 2] + a1[nx]) / 2;
+      t->radx[nt] = abs(t->x[nt] - a1[n23 * 2]);
+    } else {
+      t->x[nt] = (a1[n24] + a3[n24]) / 2;
+      t->radx[nt] = abs(t->x[nt] - a1[n24]);
+      t->z[nt] = (a2[n23 * 2] + a2[nx]) / 2;
+      t->radz[nt] = abs(t->z[nt] - a2[n23 * 2]);
+    }
+    const double deg = 0.017453292519943295;
+    if (n23 == 0) {
+      ez[0] = t->z[nt] - t->radz[nt];
+      t->zy[nt] = jtrunc_d(atan(t->rady[nt] / (double)t->radz[nt]) / deg);
+      if (t->zy[nt] > 40) t->zy[nt] = 40;
+      t->xy[nt] = 0;
+    }
+    if (n23 == 1) {
+      ex[0] = t->x[nt] - t->radx[nt];
+      t->xy[nt] = jtrunc_d(atan(t->rady[nt] / (double)t->radx[nt]) / deg);
+      if (t->xy[nt] > 40) t->xy[nt] = 40;
+      t->zy[nt] = 0;
+    }
+    if (n23 == 2) {
+      ez[1] = t->z[nt] + t->radz[nt];
+      t->zy[nt] = -jtrunc_d(atan(t->rady[nt] / (double)t->radz[nt]) / deg);
+      if (t->zy[nt] < -40) t->zy[nt] = -40;
+      t->xy[nt] = 0;
+    }
+    if (n23 == 3) {
+      ex[1] = t->x[nt] + t->radx[nt];
+      t->xy[nt] = -jtrunc_d(atan(t->rady[nt] / (double)t->radx[nt]) / deg);
+      if (t->xy[nt] < -40) t->xy[nt] = -40;
+      t->zy[nt] = 0;
+    }
+    t->x[nt] += co->x;
+    t->z[nt] += co->z;
+    t->y[nt] += co->y;
+    for (int32_t l = 0; l < 3; l++) t->c[nt][l] = co->p[n23].oc[l];
+    t->skd[nt] = 2;
+    t->dam[nt] = 1;
+    t->notwall[nt] = false;
+    t->decor[nt] = true;
+    t->rady[nt] += 10;
+    t->nt++;
+  }
+  const int32_t nt = t->nt;
+  t->y[nt] = 0;
+  for (int32_t i = 0; i < 8; i++) t->y[nt] += a5[i];
+  t->y[nt] = t->y[nt] / 8 + co->y;
+  t->rady[nt] = 200;
+  t->radx[nt] = ex[0] - ex[1];
+  t->radz[nt] = ez[0] - ez[1];
+  t->x[nt] = (ex[0] + ex[1]) / 2 + co->x;
+  t->z[nt] = (ez[0] + ez[1]) / 2 + co->z;
+  t->zy[nt] = 0;
+  t->xy[nt] = 0;
+  for (int32_t l = 0; l < 3; l++) t->c[nt][l] = co->p[4].oc[l];
+  t->skd[nt] = 4;
+  t->dam[nt] = 1;
+  t->notwall[nt] = false;
+  t->decor[nt] = true;
+  t->nt++;
+}
+
 void cont_o_init_copy(ContO *dst, ContO *src, int32_t x, int32_t y, int32_t z, int32_t a) {
   memset(dst, 0, sizeof(*dst));
   dst->m = src->m;

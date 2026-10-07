@@ -204,7 +204,11 @@ PC with `nxlink -s`.
       Java's `stage = -3` (model id out of range, Trackers full, under 2
       checkpoints, 16000+ ground cells) -- the stage list shows ERROR LOADING
       STAGE and a race on it returns to the menu; face points cap at 100.
-- [ ] Batch 2: `pile(` rock piles (procedural `ContO.#initModel`, 31 stages).
+- [x] Batch 2: `pile(` dirt hills -- `cont_o_init_pile` ports ContO.java's
+      procedural constructor (java.util.Random geometry, five faces, four slope
+      ramps and a flat-top Tracker); 31 stages place 47-187 each. Checked against
+      web #initModel under Node (cont_o_test). Also `-ffp-contract=off`: AArch64
+      GCC fused a*b+c into FMA, which Java's float math never does.
 - [ ] Batch 3: visual-only low detail (not `resdown=2`, which drops scenery
       collisions) and the web's lightweight intro; draw distance keeps cars'
       `dist` neutral.

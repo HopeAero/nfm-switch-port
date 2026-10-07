@@ -54,7 +54,10 @@ project(nfm_native C CXX) # CXX only for the Vita link step below (vitaGL's
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-add_compile_options(-Wall -Wextra -fwrapv) # -fwrapv: see core/java_compat.c
+# -fwrapv: see core/java_compat.c. -ffp-contract=off: GNU C lets GCC fuse
+# a*b+c into one FMA (rounded once), which AArch64 has and Java never does,
+# so the Switch build drifted from the Java float math the port mirrors.
+add_compile_options(-Wall -Wextra -fwrapv -ffp-contract=off)
 
 set(NFM_PLATFORM "linux" CACHE STRING "Target platform: linux, vita or switch")
 set_property(CACHE NFM_PLATFORM PROPERTY STRINGS linux vita switch)

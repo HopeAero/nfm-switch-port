@@ -18,7 +18,9 @@
 // cont_o_init_copy and populating Trackers, dropping only the
 // CheckPoints/XtGraphics bookkeeping those commands also do in the JS).
 //
-// Dropped: `pile` (needs #initModel), `nlaps`/`name`/`soundtrack`
+// (`pile` is now placed, via cont_o_init_pile.)
+//
+// Dropped: `nlaps`/`name`/`soundtrack`
 // (race/audio metadata, not geometry), `clouds(`/`texture(`/`polys(`/
 // `density(`/`fadefrom(`/`lightson`/`mountains(` (colour/atmosphere
 // refinements on top of what setgrnd/setsky/setfade already establish),

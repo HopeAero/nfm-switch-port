@@ -197,6 +197,15 @@ void cont_o_init_buf(ContO *co, const char *text, Medium *m, Trackers *t);
 void cont_o_init_copy(ContO *dst, ContO *src, int32_t x, int32_t y, int32_t z, int32_t a);
 
 /**
+ * Ports ContO.java's procedural constructor (the stage file's
+ * `pile(seed,size,height,x,z)`): a five-face dirt hill at (x, y, z) shaped by
+ * java.util.Random(seed), plus its five Trackers (four slopes, a flat top).
+ * `co` is zeroed and fully initialised.
+ */
+void cont_o_init_pile(ContO *co, int32_t seed, int32_t n2, int32_t n3, Medium *m, Trackers *t,
+                      int32_t x, int32_t z, int32_t y);
+
+/**
  * cont_o_init_copy() over a ContO that may already own allocations:
  * frees `dst` first, then copies. init_copy itself starts with a memset,
  * so calling it on a live ContO drops every Plane and array it held --

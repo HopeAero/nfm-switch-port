@@ -316,6 +316,16 @@ bool game_sparker_loadstage(ContO *out_objects, int32_t out_capacity, int32_t *o
       notb = nob;
       nfix++;
     }
+    // GameSparker.java:2572 -- `pile(seed,size,height,x,z)`, a procedural
+    // dirt hill (cont_o_init_pile). checkPoints.notb is only ever set by a
+    // multiplayer lobby, so single player always places them.
+    if (!cp->notb && starts_with(trimmed, "pile")) {
+      if (nob >= out_capacity) { ok = false; break; }
+      cont_o_init_pile(&out_objects[nob], gs_getint("pile", trimmed, 0), gs_getint("pile", trimmed, 1),
+                       gs_getint("pile", trimmed, 2), m, t, gs_getint("pile", trimmed, 3),
+                       gs_getint("pile", trimmed, 4), m->ground);
+      nob++;
+    }
     if (starts_with(trimmed, "nlaps")) {
       // Always applied (not gated on multion like the JS -- that gate is
       // `xtGraphics.multion === 0`, always true in this single-player-
