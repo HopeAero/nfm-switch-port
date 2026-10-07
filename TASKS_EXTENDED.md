@@ -27,10 +27,12 @@ fixes for many cars in view (trackgrid, archive loading) are reused.
 - [x] 1000 pieces per model (`CONT_O_MAX_PLANES`, as web/ContO.js).
 - [x] `.radq` archives: zip, 14 of 78 byte-pair swapped (vfs_read_zip, as web/ext/radq.js).
       Extended's data is in `ext/` (career music left out until phase 4).
-- [ ] Per-car live stats: each Mad owns a copy of its car's table (specials,
-      tourney and career rewrite them every frame).
+- [x] Per-car live stats: each racing Mad points at its own CarDefine copy
+      (game.c `live_cd`), as each Extended Madness owns its tables. The race
+      is pixel-identical before/after (scratchpad ab.sh, smooth frames off).
 - [ ] Limits: 6 wheels, objects per stage 610 -> 1106+, checkpoints 140 ->
       440+, fix points 5 -> 50, cars per race 8 -> 20 (+ per-car arrays).
+      Moved to phase 3: Classic Mode needs none of them (7 cars, NFM2 stages).
 
 ## Phase 2 -- Classic Mode as Extended plays it
 

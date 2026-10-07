@@ -4292,6 +4292,7 @@ int game_run(void) {
   XtGraphicsStub xt;
   Control control[BOTS_MAX_PLAYERS];
   Mad mad[BOTS_MAX_PLAYERS];
+  static CarDefine live_cd[BOTS_MAX_PLAYERS]; // each racing car's own stats (see mad_init below)
   // Which car (0-15) each slot drives -- ports xtGraphics.java's own
   // persistent `sc[]` field (xtGraphics.java:94,460 -- `new int[]{0,0,...}`,
   // never reset between races). sc[0] (the player's own car) is refreshed
@@ -5394,7 +5395,12 @@ int game_run(void) {
         // for the exact keymap. Polled once per frame in the loop below,
         // after platform_poll() reads this frame's hardware state. Slots
         // 1-6 are driven by control_preform() instead, see the tick loop.
-        mad_init(&mad[i], &cd, &m, &rpd, &xt, i);
+        // Each car races on its own copy of the stat tables, as Extended's
+        // Madness instances do: specials (and later tourney and career
+        // stats) rewrite a car's values every frame without touching the
+        // others or the car-select screen's `cd`.
+        live_cd[i] = cd;
+        mad_init(&mad[i], &live_cd[i], &m, &rpd, &xt, i);
         mad_reseto(&mad[i], sc[i], &co[i], &cp);
       }
       // GameSparker.java:2768 -- record.reset(array) at the tail of
