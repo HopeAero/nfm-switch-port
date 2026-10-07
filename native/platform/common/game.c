@@ -7821,6 +7821,28 @@ int game_run(void) {
         font_set(FONT_BOLD, 13);
         font_draw(&g, class_str, 549 - font_width(class_str) / 2, 95);
 
+        // Extended's "SPECIAL ATTACK:" panel (its carselect, xtGraphics.java:
+        // 16120-16330), top left: a white tab sized to the lines. Moved by
+        // (65, 27) into this screen's letterboxed 670x400 interior and
+        // under the title.
+        const char *const *spec = specials_describe(cn);
+        int32_t lines = 0;
+        while (lines < 4 && spec[lines]) lines++;
+        if (lines > 0) {
+          const int32_t dx = 65, dy = 27;
+          const int32_t px[8] = {10 + dx, 20 + dx, 280 + dx, 290 + dx, 290 + dx, 280 + dx, 20 + dx, 10 + dx};
+          const int32_t py[8] = {43 + dy, 28 + dy, 28 + dy, 43 + dy, 43 + dy + lines * 15, 58 + dy + lines * 15,
+                                 58 + dy + lines * 15, 43 + dy + lines * 15};
+          gfx_set_composite(&g, 210.0f / 255.0f);
+          gfx_set_color(&g, 255, 255, 255);
+          gfx_fill_polygon(&g, px, py, 8);
+          gfx_set_composite(&g, 1.0f);
+          gfx_set_color(&g, 30, 30, 30);
+          font_set(FONT_BOLD, 13);
+          draw_centered(&g, "SPECIAL ATTACK:", 140 + dx, 43 + dy);
+          font_set(FONT_BOLD, 11);
+          for (int32_t li = 0; li < lines; li++) font_draw(&g, spec[li], 20 + dx, 60 + dy + 15 * li);
+        }
       }
 
       // 8. Navigation buttons -- :5298-5305. `back` at (95,275) is drawn
