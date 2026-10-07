@@ -99,7 +99,7 @@ typedef struct {
  * Returns false (and leaves *out zeroed) on a malformed archive or missing
  * file. Entry order matches the zip's central directory order.
  */
-bool vfs_read_zip(const char *path, VfsZip *out);
+bool vfs_read_zip(const char *path, VfsZip *out); // also Extended's .radq, swapped or not
 
 /** Frees every entry's name/data and the entries array itself. */
 void vfs_free_zip(VfsZip *zip);

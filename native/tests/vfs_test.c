@@ -118,10 +118,29 @@ static void test_read_zip(void) {
   vfs_free_zip(&zip);
 }
 
+// Extended's .radq: a byte-swapped one (models, the track packs) reads as the
+// zip it is, and a plain one as before. Sizes from Python's zipfile.
+static void test_read_radq(void) {
+  vfs_set_fpath("../../../");
+  VfsZip zip;
+  CHECK(vfs_read_zip("ext/data/models.radq", &zip), "swapped models.radq read");
+  CHECK(zip.count == 129, "models.radq entry count");
+  int64_t total = 0;
+  for (int32_t i = 0; i < zip.count; i++) total += zip.entries[i].len;
+  CHECK(total == 1851994, "models.radq inflates whole (every entry's size)");
+  CHECK(zip.count && strcmp(zip.entries[0].name, "offroad.rad") == 0, "models.radq first entry");
+  vfs_free_zip(&zip);
+  CHECK(vfs_read_zip("ext/data/Files/classictracks.radq", &zip) && zip.count == 17, "classictracks.radq: 17 stages");
+  vfs_free_zip(&zip);
+  CHECK(vfs_read_zip("ext/data/images.radq", &zip) && zip.count == 60, "plain images.radq read");
+  vfs_free_zip(&zip);
+}
+
 int main(void) {
   test_read_lines();
   test_read_stage_1();
   test_read_zip();
+  test_read_radq();
   if (failures == 0) {
     printf("all tests passed\n");
     return 0;

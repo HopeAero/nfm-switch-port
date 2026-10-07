@@ -25,7 +25,8 @@ fixes for many cars in view (trackgrid, archive loading) are reused.
 
 - [x] Branch, `nfm_extended.nro`, own title and save folder.
 - [x] 1000 pieces per model (`CONT_O_MAX_PLANES`, as web/ContO.js).
-- [ ] `.radq` archives: zip, 14 of 78 byte-pair swapped (web/ext/radq.js).
+- [x] `.radq` archives: zip, 14 of 78 byte-pair swapped (vfs_read_zip, as web/ext/radq.js).
+      Extended's data is in `ext/` (career music left out until phase 4).
 - [ ] Per-car live stats: each Mad owns a copy of its car's table (specials,
       tourney and career rewrite them every frame).
 - [ ] Limits: 6 wheels, objects per stage 610 -> 1106+, checkpoints 140 ->

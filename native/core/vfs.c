@@ -153,6 +153,22 @@ static bool inflate_raw(const uint8_t *src, uint32_t src_len, uint8_t *dst, uint
   return ok;
 }
 
+/** Extended Mode's .radq archives are zips; 14 of its 78 have seven byte
+ * pairs swapped throughout, which its GameSparker undoes before reading
+ * (web/ext/radq.js). The swap is its own inverse. A swapped zip starts
+ * "PU" (0x4B <-> 0x55) instead of "PK". */
+static void radq_unswap(uint8_t *b, int32_t n) {
+  static const uint8_t kPairs[7][2] = {{0x4B, 0x55}, {0x24, 0x40}, {0x35, 0x13}, {0x15, 0x2C},
+                                       {0x3B, 0x48}, {0x0B, 0x31}, {0x0D, 0x44}};
+  uint8_t table[256];
+  for (int32_t i = 0; i < 256; i++) table[i] = (uint8_t)i;
+  for (int32_t i = 0; i < 7; i++) {
+    table[kPairs[i][0]] = kPairs[i][1];
+    table[kPairs[i][1]] = kPairs[i][0];
+  }
+  for (int32_t i = 0; i < n; i++) b[i] = table[b[i]];
+}
+
 bool vfs_read_zip(const char *path, VfsZip *out) {
   memset(out, 0, sizeof(*out));
 
@@ -160,6 +176,7 @@ bool vfs_read_zip(const char *path, VfsZip *out) {
   uint8_t *buf = vfs_read_bytes(path, &buf_len);
   if (!buf) return false;
   if (buf_len < 22) { vfs_free_bytes(buf); return false; }
+  if (buf[0] == 0x50 && buf[1] == 0x55 && buf[2] == 0x03 && buf[3] == 0x04) radq_unswap(buf, buf_len);
 
   // Locate the EOCD: scan backwards over the maximum comment length.
   int32_t eocd = -1;
