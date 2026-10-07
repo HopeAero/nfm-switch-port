@@ -1,7 +1,7 @@
 # Nintendo Switch port — tasks
 
 This repository starts from the PS Vita / Linux native port (first commit,
-`049c2ae`) and adds a Switch target. The plan: first the Vita port as it is,
+`599c005`) and adds a Switch target. The plan: first the Vita port as it is,
 running on Switch; then, a piece at a time, what the web port in `nfm-master`
 gained (Extended Mode, the car and stage editors, raw "Recharged" stats,
 community cars, lightBrake, 1000-piece cars, touch controls ...).
@@ -56,7 +56,7 @@ PC with `nxlink -s`.
 
 - [x] `native/platform/switch/`: SDL2 window, legacy GL 2.1 context, the 33 GL
       functions loaded at runtime (`gl_include.h`: no libGL, devkitPro's glad is
-      core-only), romfs assets, SD-card save, libnx pads. **Builds** (`23a6e5e`).
+      core-only), romfs assets, SD-card save, libnx pads. **Builds** (`950fc23`).
 - [x] **Runs in Eden** (yuzu fork, v0.2.0-rc2, 2026-10-06): 60 FPS, menus and
       Instructions drawn right. The first build was black at 37 FPS: without
       `SDL_GL_CONTEXT_PROFILE_MASK` SDL's Switch backend creates an **OpenGL ES 3.2**
