@@ -216,6 +216,10 @@ PC with `nxlink -s`.
       (`kJavaDarkSkyBoxes`). No stock stage has a dark sky; custom ones will.
 - [x] `jdiv` (java_compat.h): web idiv's x/0 = 0 for data-driven divisors --
       the only reachable one was a glass plane's colour with `fadefrom(-1500)`.
+- [x] Smooth frames blend car angles with their fraction too (ContO.fxz/fxy/
+      fzy, read by plane_d/plane_s through Medium.ofxz/ofxy/ofzy around
+      cont_o_d): turns and flips no longer step a whole degree between ticks.
+      Zero on ticks, so tick draws and the simulation are unchanged.
 - [ ] Batch 3: visual-only low detail (not `resdown=2`, which drops scenery
       collisions) and the web's lightweight intro; draw distance keeps cars'
       `dist` neutral.

@@ -91,6 +91,9 @@ typedef struct Medium {
   // (the angles are whole degrees in the game; a whole-degree step on a
   // turn is ~13px of yaw). Zero leaves every draw bit-identical.
   float fxz, fzy;
+  // The same for the object being drawn (cont_o_d sets them from its ContO's
+  // fxz/fxy/fzy around its planes): smooth frames' blended car angles.
+  float ofxz, ofxy, ofzy;
   int32_t x, y, z;
   int32_t iw, ih;
   int32_t w, h;

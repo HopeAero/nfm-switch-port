@@ -1728,19 +1728,21 @@ static int32_t smooth_lerp(int32_t a, int32_t b, float t) {
   return (int32_t)lroundf((float)a + (float)(b - a) * t);
 }
 
-// ponytail: car angles are whole degrees here (ContO's are ints all the way
-// into plane_d); only the camera, which the whole frame pivots on, keeps the
-// fraction (Medium.fxz/fzy). Thread a fraction through plane_d too if a car's
-// own turn ever looks steppy.
+// Cars and camera both keep the blended angle's fraction (ContO.fxz/fxy/fzy,
+// Medium.fxz/fzy), so a turn or a flip moves between ticks instead of in
+// whole-degree steps.
 static void smooth_apply(const SmoothSnap *a, const SmoothSnap *b, float t, ContO *co, int32_t n, Medium *m) {
   for (int32_t i = 0; i < n; i++) {
     const SmoothPose *p = &a->car[i], *c = &b->car[i];
     co[i].x = smooth_lerp(p->x, c->x, t);
     co[i].y = smooth_lerp(p->y, c->y, t);
     co[i].z = smooth_lerp(p->z, c->z, t);
-    co[i].xz = (int32_t)lroundf(smooth_angle(p->xz, c->xz, t));
-    co[i].xy = (int32_t)lroundf(smooth_angle(p->xy, c->xy, t));
-    co[i].zy = (int32_t)lroundf(smooth_angle(p->zy, c->zy, t));
+    // Whole degrees in xz/xy/zy, the fraction in fxz/fxy/fzy for the draw.
+    const float xz = smooth_angle(p->xz, c->xz, t), xy = smooth_angle(p->xy, c->xy, t),
+                zy = smooth_angle(p->zy, c->zy, t);
+    co[i].xz = (int32_t)floorf(xz); co[i].fxz = xz - (float)co[i].xz;
+    co[i].xy = (int32_t)floorf(xy); co[i].fxy = xy - (float)co[i].xy;
+    co[i].zy = (int32_t)floorf(zy); co[i].fzy = zy - (float)co[i].zy;
   }
   m->x = smooth_lerp(a->x, b->x, t);
   m->y = smooth_lerp(a->y, b->y, t);
@@ -1755,6 +1757,7 @@ static void smooth_restore(const SmoothSnap *s, ContO *co, int32_t n, Medium *m)
     const SmoothPose *c = &s->car[i];
     co[i].x = c->x; co[i].y = c->y; co[i].z = c->z;
     co[i].xz = c->xz; co[i].xy = c->xy; co[i].zy = c->zy;
+    co[i].fxz = co[i].fxy = co[i].fzy = 0.0f;
   }
   m->x = s->x; m->y = s->y; m->z = s->z; m->xz = s->xz; m->zy = s->zy;
   m->fxz = m->fzy = 0.0f;

@@ -80,6 +80,9 @@ typedef struct ContO {
   int32_t npl;
   int32_t x, y, z;
   int32_t xz, xy, zy;
+  // Fractions of a degree on top of xz/xy/zy, drawing only: smooth frames
+  // blend a car's angles between ticks (0 on every tick and in the sim).
+  float fxz, fxy, fzy;
   int32_t wxz, wzy;
   int32_t dist;
   int32_t maxR;

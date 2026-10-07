@@ -1290,7 +1290,16 @@ static void cont_o_dsprk(ContO *co, struct Graphics2D *g, bool b) {
   if (co->sprk_ != 0) co->sprk_ = 0;
 }
 
+static void cont_o_d_inner(ContO *co, struct Graphics2D *g);
+
 void cont_o_d(ContO *co, struct Graphics2D *g) {
+  Medium *m = co->m;
+  m->ofxz = co->fxz, m->ofxy = co->fxy, m->ofzy = co->fzy;
+  cont_o_d_inner(co, g);
+  m->ofxz = m->ofxy = m->ofzy = 0.0f;
+}
+
+static void cont_o_d_inner(ContO *co, struct Graphics2D *g) {
   Medium *m = co->m;
   g->objCalls++;
   if (co->dist != 0) co->dist = 0;

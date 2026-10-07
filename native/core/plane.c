@@ -213,6 +213,9 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
              int32_t n4, int32_t n5, int32_t n6, int32_t n7, bool b, int32_t n8) {
   g->faceCalls++;
   g->projVerts += p->n;
+  // The object's angles plus smooth frames' fraction (Medium.ofxz..., 0 on a
+  // tick): the vertex rotations take these, the integer tests keep cxz/n4/n5.
+  const float fxz = (float)cxz + p->m->ofxz, fxy = (float)n4 + p->m->ofxy, fzy = (float)n5 + p->m->ofzy;
   if (p->master == 1) {
     if (p->av > 1500 && !p->m->crs) p->n = 12;
     else p->n = 20;
@@ -246,9 +249,9 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
         float jz = 15.0f - (medium_random(p->m) * 30.0f);
         array2[k] = jtrunc_d((double)p->oz[k] + (double)n3 + (double)jz);
       }
-      plane_rot(p, array, array3, n, n2, n4, p->n);
-      plane_rot(p, array3, array2, n2, n3, n5, p->n);
-      plane_rot(p, array, array2, n, n3, cxz, p->n);
+      plane_rot(p, array, array3, n, n2, fxy, p->n);
+      plane_rot(p, array3, array2, n2, n3, fzy, p->n);
+      plane_rot(p, array, array2, n, n3, fxz, p->n);
       plane_rot(p, array, array2, p->m->cx, p->m->cz, p->m->xz + p->m->fxz, p->n);
       plane_rot(p, array3, array2, p->m->cy, p->m->cz, p->m->zy + p->m->fzy, p->n);
       int32_t array4[PLANE_MAX_N];
@@ -329,9 +332,9 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
                      ((double)(medium_random(p->m) / 2.0f) + 0.5);
       int32_t n18 = jtrunc_d(n18d);
       array3[2] = (array3[0] + array3[1]) / 2 - (n10 * n11) * n18;
-      plane_rot(p, array, array3, n, n2, n4, 3);
-      plane_rot(p, array3, array2, n2, n3, n5, 3);
-      plane_rot(p, array, array2, n, n3, cxz, 3);
+      plane_rot(p, array, array3, n, n2, fxy, 3);
+      plane_rot(p, array3, array2, n2, n3, fzy, 3);
+      plane_rot(p, array, array2, n, n3, fxz, 3);
       plane_rot(p, array, array2, p->m->cx, p->m->cz, p->m->xz + p->m->fxz, 3);
       plane_rot(p, array3, array2, p->m->cy, p->m->cz, p->m->zy + p->m->fzy, 3);
       for (int32_t i = 0; i < 3; i++) {
@@ -370,9 +373,9 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
       array[2] = (array[0] + array[1]) / 2 + n16;
       array2[2] = (array2[0] + array2[1]) / 2 + n17;
       array3[2] = (array3[0] + array3[1]) / 2 - (n10 * n11) * jtrunc_d((double)n18 * 0.8);
-      plane_rot(p, array, array3, n, n2, n4, 3);
-      plane_rot(p, array3, array2, n2, n3, n5, 3);
-      plane_rot(p, array, array2, n, n3, cxz, 3);
+      plane_rot(p, array, array3, n, n2, fxy, 3);
+      plane_rot(p, array3, array2, n2, n3, fzy, 3);
+      plane_rot(p, array, array2, n, n3, fxz, 3);
       plane_rot(p, array, array2, p->m->cx, p->m->cz, p->m->xz + p->m->fxz, 3);
       plane_rot(p, array3, array2, p->m->cy, p->m->cz, p->m->zy + p->m->fzy, 3);
       for (int32_t i = 0; i < 3; i++) {
@@ -509,10 +512,10 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
     }
   }
 
-  plane_rot(p, array, array3, n, n2, n4, p->n);
-  plane_rot(p, array3, array2, n2, n3, n5, p->n);
-  plane_rot(p, array, array2, n, n3, cxz, p->n);
-  if ((n4 != 0 || n5 != 0 || cxz != 0) && p->m->trk != 2) {
+  plane_rot(p, array, array3, n, n2, fxy, p->n);
+  plane_rot(p, array3, array2, n2, n3, fzy, p->n);
+  plane_rot(p, array, array2, n, n3, fxz, p->n);
+  if ((fxy != 0.0f || fzy != 0.0f || fxz != 0.0f) && p->m->trk != 2) {
     p->projf = 1.0f;
     for (int32_t a34 = 0; a34 < 3; a34++) {
       for (int32_t a35 = 0; a35 < 3; a35++) {
@@ -864,9 +867,9 @@ void plane_s(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
     array3[i] = p->oy[i] + n2;
     array2[i] = p->oz[i] + n3;
   }
-  plane_rot(p, array, array3, n, n2, n5, p->n);
-  plane_rot(p, array3, array2, n2, n3, n6, p->n);
-  plane_rot(p, array, array2, n, n3, n4, p->n);
+  plane_rot(p, array, array3, n, n2, (float)n5 + p->m->ofxy, p->n);
+  plane_rot(p, array3, array2, n2, n3, (float)n6 + p->m->ofzy, p->n);
+  plane_rot(p, array, array2, n, n3, (float)n4 + p->m->ofxz, p->n);
 
   // trunc(fr(fr(crgrnd[i])/1.5)) -- fr(x) on a plain int is a no-op value-
   // wise (int is exactly representable as float32 here), then fr(that/1.5)
