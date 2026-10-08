@@ -673,6 +673,8 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
     const int32_t ident = car_identity(mad->cn);   // a new car counts as its donor
     const int32_t ext_cn = ident < 16 ? ident + 23 : ident - 16;
     const bool no_knockback = ext && mad->specialact && (ext_cn == 15 || ext_cn == 25 || ext_cn == 38);
+  // GROUNDED (this port's): hitting lifts the player up to 100% less.
+  const float grounded = (mad->perks && mad->im == 0) ? 1.0f - career_perk_points(mad->perks, PERK_GROUNDED) / 20.0f : 1.0f;
     for (int32_t j = 0; j < 4; j++) {
       for (int32_t k = 0; k < 4; k++) {
         float compradSum = cd->comprad[mad2->cn] + cd->comprad[mad->cn];
@@ -698,7 +700,7 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
             if (mad2->colidim) mad2->colidim = false;
             mad->scx[j] = mad->scx[j] - n6;
             n2 += regx_by(mad, j, (-n6 * recoil) * n5, contO, mad->im);
-            mad->scy[j] = mad->scy[j] - (float)cd->revlift[mad->cn];
+            mad->scy[j] = mad->scy[j] - (float)cd->revlift[mad->cn] * grounded;
             if (mad->im == mad->xt->im) mad2->colidim = true;
             n = n9 + regy_by(mad2, k, cd->revlift[mad->cn] * 7.0f, contO2, mad2->im);
             if (mad2->colidim) mad2->colidim = false;
@@ -723,7 +725,7 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
             if (mad2->colidim) mad2->colidim = false;
             mad->scz[j] = mad->scz[j] - n12;
             n2 += regz_by(mad, j, (-n12 * recoil) * n5, contO, mad2->im);
-            mad->scy[j] = mad->scy[j] - (float)cd->revlift[mad->cn];
+            mad->scy[j] = mad->scy[j] - (float)cd->revlift[mad->cn] * grounded;
             if (mad->im == mad->xt->im) mad2->colidim = true;
             n = n15 + regy_by(mad2, k, cd->revlift[mad->cn] * 7.0f, contO2, mad->im);
             if (mad2->colidim) mad2->colidim = false;
@@ -744,6 +746,11 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
         }
       }
     }
+  }
+  if (mad->perks && mad->im == 0 && n > 0) {
+    // LEECH (this port's): the player mends up to 15% of the damage it deals.
+    const int32_t heal = jtrunc_d((double)n * 0.15 * career_perk_points(mad->perks, PERK_LEECH) / 20.0);
+    mad->hitmag = mad->hitmag > heal ? mad->hitmag - heal : 0;
   }
   if (mad->xt->multion == 1) {
     if (mad2->im == mad->xt->im && n != 0) mad->xt->dcrashes[mad->im] += n;
@@ -775,8 +782,10 @@ static float acel_step_mod(float power, float acelf, float accelmod) {
 // and a running special drains speclast at 343000 / 2500000 a tick (about
 // 875 ticks); when it is spent the bar empties.
 static void mad_special_tick(Mad *mad, Control *control) {
+  // CHARGING (this port's): the player's bar fills up to 20% faster.
+  const float charging = (mad->perks && mad->im == 0) ? 1.0f + career_perk_points(mad->perks, PERK_CHARGING) / 100.0f : 1.0f;
   if (mad->im > 0 && mad->powerup <= career_phys_splimit(mad->career) && !mad->isabot) mad->spatk += mad->powerup / 500.0f;
-  else mad->spatk += mad->powerup / 3500.0f;
+  else mad->spatk += mad->powerup / 3500.0f * charging;
   if (control->spatk && mad->spatk < 120.0f) control->spatk = false;
   if (mad->spatk > 120.0f) mad->spatk = 120.0f;
   if (mad->spatk < 0.0f) mad->spatk = 0.0f;
@@ -797,6 +806,17 @@ static void mad_special_tick(Mad *mad, Control *control) {
   if (mad->speclast == 0.0f && mad->spatk == 0.0f) {
     mad->speclast = 120.0f;
     mad->speclast2 = 120.0f;
+  }
+  // HEALING (this port's): while the player's special runs, its damage
+  // mends -- up to 60% of the car's health over a whole special (~875 ticks).
+  if (mad->perks && mad->im == 0 && mad->specialact && mad->hitmag > 0) {
+    const int32_t h = career_perk_points(mad->perks, PERK_HEALING);
+    if (h > 0) {
+      mad->perkheal += (float)mad->cd->maxmag[mad->cn] * 0.6f * (float)h / 20.0f / 875.0f;
+      const int32_t heal = (int32_t)mad->perkheal;
+      mad->perkheal -= (float)heal;
+      mad->hitmag = mad->hitmag > heal ? mad->hitmag - heal : 0;
+    }
   }
 }
 
@@ -1869,6 +1889,10 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
 
   const bool fakedest = career_phys_fakedest_stage(cs, mad->im);
   const bool whichdest = fakedest ? cs->fakedest[mad->im] : mad->dest;
+  if (mad->hitmag >= cd->maxmag[mad->cn] && !whichdest && !career_phys_undead(cs, mad->im) && mad->cntdest == 0 &&
+      mad->perks && mad->im == 0 && career_perk_saved(mad->perks, &mad->perkroll)) {
+    mad->hitmag = (int32_t)((float)cd->maxmag[mad->cn] * 0.85f);   // SAVIOUR (this port's): not this time
+  }
   if (mad->hitmag >= cd->maxmag[mad->cn] && !whichdest && !career_phys_undead(cs, mad->im)) {
     mad_distruct(mad, contO);
     if (mad->cntdest == 7) {
@@ -2039,6 +2063,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
       mad->startedgoing = true;
       if (mad->fixtime > 0) mad->fixtime = mad->dest ? 0 : mad->fixtime - 1;
     }
+    if (mad->comebacktime > 0) mad->comebacktime = mad->dest ? 0 : mad->comebacktime - 1;
     if (mad->im == 0) {
       for (int32_t a = 0; a < 2; a++) {
         if (mad->perks->killtime[a] > 0) mad->perks->killtime[a] = mad->dest ? 0 : mad->perks->killtime[a] - 1;
@@ -2128,6 +2153,9 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
         // ESCAPE: the player rights a bad landing sooner (Madness.js 2979-2985).
         const int32_t captime = (mad->perks && mad->im == 0) ? career_perk_captime(mad->perks) : 30;
         if (mad->capcnt == captime) {
+          // COMEBACK (this port's): righted, the player gets a burst of speed.
+          if (mad->perks && mad->im == 0 && career_perk_points(mad->perks, PERK_COMEBACK) > 0)
+            mad->comebacktime = 60 + career_perk_points(mad->perks, PERK_COMEBACK) * 3;
           mad->speed = 0.0f;
           contO->y += cd->flipy[mad->cn];
           mad->pxy += 180;
@@ -2154,6 +2182,19 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
     // ENERGY, PUSHING, RAMPAGE and LIFTING, every tick (career_perk_tables).
     career_perk_tables(mad->perks, &cd->powerloss[mad->cn], &cd->push[mad->cn], &cd->revpush[mad->cn],
                        &cd->lift[mad->cn]);
+    // TURNING and STABILITY (this port's): the car's steering toward Speedy
+    // 7's and its bounce toward Stampede's (this port's cars 17 and 29), from
+    // its own as the race began.
+    if (mad->perk_turn0 == 0.0f) {
+      mad->perk_turn0 = cd->turn[mad->cn];
+      mad->perk_bounce0 = cd->bounce[mad->cn];
+    }
+    const int32_t tv = career_perk_points(mad->perks, PERK_TURNING);
+    const int32_t sv = career_perk_points(mad->perks, PERK_STABILITY);
+    if (tv > 0 && cd->turn[17] > mad->perk_turn0)
+      cd->turn[mad->cn] = mad->perk_turn0 + (cd->turn[17] - mad->perk_turn0) * (float)tv / 20.0f;
+    if (sv > 0 && cd->bounce[29] < mad->perk_bounce0)
+      cd->bounce[mad->cn] = mad->perk_bounce0 + (cd->bounce[29] - mad->perk_bounce0) * (float)sv / 20.0f;
   }
 
   if (mad->isabot && control->wall != -1) control->wall = -1;   // Madness.js:3173

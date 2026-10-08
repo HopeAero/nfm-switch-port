@@ -62,6 +62,11 @@ int main(void) {
   int32_t failures = 0;
   for (int32_t c = 0; c < n; c++) {
     const ShuffleCase *sc = &shuffle_cases[c];
+    // This port spends no points on a perk that does nothing (REFLECT, BLEED,
+    // FREEZE, GRAVITY, UNDEAD) and gives Extended's 23-31 their own perks:
+    // those cases leave the JS's rules.
+    if (sc->op == 3 && (!career_perk_applied(career_statsalc[sc->car][sc->slot]) || (sc->car >= 23 && sc->car <= 31)))
+      continue;
     const int32_t cars[2] = {sc->car, sc->to};
     CareerSave s;
     career_reset(&s);

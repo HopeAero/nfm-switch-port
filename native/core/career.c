@@ -17,15 +17,15 @@ const int8_t career_statsalc[CAREER_CARS][CAREER_PERK_SLOTS] = {
     {3, 6, 16, 25, 36, 39},  {7, 14, 17, 26, 28, 32},  {0, 12, 19, 27, 30, 37},  {4, 8, 11, 17, 26, 35},
     {7, 9, 19, 20, 23, 28},  {5, 13, 16, 21, 25, 37},  {4, 10, 14, 18, 22, 34},  {3, 11, 23, 24, 32, 33},
     {4, 19, 26, 28, 29, 32}, {3, 8, 10, 31, 33, 38},   {8, 14, 23, 26, 29, 36},
-    {0, 3, 5, 20, 21, 24},     // Tornado Shark: all-rounder
-    {2, 3, 5, 10, 21, 24},     // Formula 7: speed, fragile
-    {0, 1, 5, 10, 20, 21},     // Wow Caninaro: stunts
-    {4, 7, 11, 15, 16, 23},    // La Vita Crab: bruiser
-    {1, 2, 5, 6, 10, 20},      // Nimi: light stunter
-    {6, 9, 12, 14, 19, 22},    // MAX Revenge: fighter
-    {7, 11, 15, 16, 17, 18},   // Lead Oxide: tank
-    {0, 2, 3, 13, 21, 24},     // Kool Kat: racer
-    {4, 9, 12, 19, 22, 23},    // Drifter X: waster
+    {0, 3, 5, 20, 21, 30},     // Tornado Shark: all-rounder
+    {2, 3, 5, 21, 27, 39},     // Formula 7: speed, fragile
+    {0, 1, 5, 20, 30, 37},     // Wow Caninaro: stunts
+    {4, 7, 11, 15, 23, 29},    // La Vita Crab: bruiser
+    {1, 2, 5, 6, 37, 39},      // Nimi: light stunter
+    {6, 9, 12, 19, 28, 33},    // MAX Revenge: fighter
+    {7, 11, 15, 16, 25, 35},   // Lead Oxide: tank
+    {0, 2, 3, 21, 25, 27},     // Kool Kat: racer
+    {4, 9, 23, 29, 33, 38},    // Drifter X: waster
     {1, 2, 9, 12, 22, 30},   {6, 10, 13, 15, 25, 37},  {5, 11, 15, 27, 29, 34},  {21, 30, 31, 33, 36, 39},
     {7, 16, 17, 20, 28, 38}, {0, 3, 13, 25, 27, 37},   {17, 18, 22, 24, 34, 35}};
 
@@ -81,7 +81,18 @@ const CareerPerkText career_perk_text[CAREER_PERKS] = {
     {{"reduces the bounciness of", "your car."}, {"stampede level at maximum."}},
 };
 
-bool career_perk_applied(int32_t perk) { return perk >= 0 && perk <= 24 && perk != 8; }
+bool career_perk_applied(int32_t perk) {
+  // v2.8's 0-24 but RESISTANCE, and the eleven this port adds (career.h).
+  return perk >= 0 && perk < CAREER_PERKS && perk != 26 && perk != 31 && perk != 32 && perk != 34 && perk != 36;
+}
+
+int32_t career_perk_rows(int32_t car, int32_t *slots) {
+  int32_t n = 0;
+  if (car < 0 || car >= CAREER_CARS) return 0;
+  for (int32_t a = 0; a < CAREER_PERK_SLOTS; a++)
+    if (career_perk_applied(career_statsalc[car][a])) slots[n++] = a;
+  return n;
+}
 
 void career_reset(CareerSave *s) {
   memset(s, 0, sizeof(*s));
@@ -217,7 +228,7 @@ void career_bonus_car_points(CareerSave *s, int32_t car) {
 
 bool career_spend_perk(CareerSave *s, int32_t car, int32_t slot) {
   if (car < 0 || car >= CAREER_CARS || slot < 0 || slot >= CAREER_PERK_SLOTS || s->carpoints <= 0) return false;
-  if (s->perk[car][slot] >= CAREER_PERK_MAX) return false;
+  if (s->perk[car][slot] >= CAREER_PERK_MAX || !career_perk_applied(career_statsalc[car][slot])) return false;
   s->perk[car][slot]++;
   s->carpoints--;
   return true;

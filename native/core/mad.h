@@ -146,6 +146,13 @@ typedef struct Mad {
   struct CareerPerks *perks;
   int32_t fixtime;       // FRESHNESS / STEROIDS: ticks of their boost left after a fix (Madness.fixtime)
   bool startedgoing;
+  // The perks this port adds (career.h): COMEBACK's clock, HEALING's
+  // fraction of a point, SAVIOUR's roll, and the car's own turn and bounce
+  // that TURNING and STABILITY move from (0: not read yet this race).
+  int32_t comebacktime;
+  float perkheal;
+  uint32_t perkroll;
+  float perk_turn0, perk_bounce0;
 
   CarDefine *cd;   // borrowed
   Medium *m;       // borrowed

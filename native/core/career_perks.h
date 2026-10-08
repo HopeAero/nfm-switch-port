@@ -31,6 +31,42 @@ static const int32_t kPerkPowerloss2[CAREER_CARS] = {
     16700000, 4900000, 20000000, 2500000, 2500000, 3500000, 2500000,  4000000,  2500000,  3200000,
     3200000,  2750000, 5500000,  2750000, 4500000, 3500000, 16700000, 3000000,  5500000};
 
+/** The player's points in `perk`: its slot's, 0 when its car has none.
+ * (This port's helper for the perks below that v2.8 never applied.) */
+static inline int32_t career_perk_points(const CareerPerks *pk, int32_t perk) {
+  if (!pk) return 0;
+  int32_t v = 0;
+  for (int32_t a = 0; a < CAREER_PERK_SLOTS; a++) {
+    const int32_t p = career_specialstat(pk, pk->car[0], perk, a);
+    if (p > v) v = p;
+  }
+  return v;
+}
+
+/** DEBUFF and RESISTANCE (this port's): a special's debuff from slot `from`
+ * on slot `to` is up to 50% stronger from the player, 50% weaker on it. */
+static inline double career_perk_debuff(const CareerPerks *pk, int32_t from, int32_t to) {
+  double m = 1.0;
+  if (from == 0) m *= 1.0 + 0.5 * career_perk_points(pk, PERK_DEBUFF) / 20.0;
+  if (to == 0) m *= 1.0 - 0.5 * career_perk_points(pk, PERK_RESISTANCE) / 20.0;
+  return m;
+}
+
+/** COMEBACK (this port's): up to 20% more speed while its clock runs after a
+ * bad landing (the clock itself: 60 + 3 ticks a point, FRESHNESS's). */
+static inline double career_perk_comeback(const CareerPerks *pk, int32_t comebacktime) {
+  return comebacktime > 0 ? 1.0 + career_perk_points(pk, PERK_COMEBACK) / 100.0 : 1.0;
+}
+
+/** SAVIOUR (this port's): whether a fatal hit is survived, up to 20% of the
+ * time; `seed` is the car's own roll. */
+static inline bool career_perk_saved(const CareerPerks *pk, uint32_t *seed) {
+  const int32_t v = career_perk_points(pk, PERK_SAVIOUR);
+  if (v <= 0) return false;
+  *seed = *seed * 1103515245u + 12345u;
+  return (int32_t)((*seed >> 16) % 100u) < v;
+}
+
 /** ENERGY, PUSHING, RAMPAGE and LIFTING (Madness.js 3013-3036): every tick,
  * the player's power loss, push, recoil and lift move from its car's own
  * toward the perk's model (cars 15, 17, 13; 20; none; 7). Values without

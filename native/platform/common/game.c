@@ -90,6 +90,7 @@
 #include "ext_pt.h"
 #include "new_cars.h"
 #include "career.h"
+#include "career_perks.h"
 #include "career_bots.h"
 #include "career_stage.h"
 #include "diag.h"
@@ -3559,7 +3560,7 @@ static bool scene_targets_build(GfxGlRenderTarget *scene, GfxGlRenderTarget *acc
 // Back -- adding an option is one line in kSettingsPages.
 
 typedef enum { SET_MAIN, SET_GRAPHICS, SET_AUDIO, SET_INTERFACE, SET_GAMEPLAY, SET_CONTROLS, SET_PAGE_COUNT } SettingsPageId;
-typedef enum { ROW_OPEN, ROW_CHOICE, ROW_RESET, ROW_BACK, ROW_BENCH } SettingsRowKind;
+typedef enum { ROW_OPEN, ROW_CHOICE, ROW_RESET, ROW_BACK, ROW_BENCH, ROW_CAREER_RESET } SettingsRowKind;
 
 typedef struct {
   SettingsRowKind kind;
@@ -3590,7 +3591,7 @@ static const char *const kSteerNames[] = {ICON_LSTICK " Left Stick", ICON_DPAD "
 
 #define SET_FIELD(f) offsetof(GameSettings, f)
 static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
-  [SET_MAIN] = {"SETTINGS", 9, {
+  [SET_MAIN] = {"SETTINGS", 10, {
     {ROW_OPEN, "Graphics", SET_GRAPHICS, 0, 0, 0, NULL, false},
     {ROW_OPEN, "Audio", SET_AUDIO, 0, 0, 0, NULL, false},
     {ROW_OPEN, "Interface", SET_INTERFACE, 0, 0, 0, NULL, false},
@@ -3598,6 +3599,7 @@ static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
     {ROW_OPEN, "Controls", SET_CONTROLS, 0, 0, 0, NULL, NEED_REMAP},
     {ROW_BENCH, "Performance Test", 0, 0, 0, 0, NULL, false},
     {ROW_BENCH, "Stress Test", 1, 0, 0, 0, NULL, false},
+    {ROW_CAREER_RESET, "Reset RPG Mode", 0, 0, 0, 0, NULL, false},
     {ROW_RESET, "Reset to Defaults", 0, 0, 0, 0, NULL, false},
     {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
   [SET_GRAPHICS] = {"SETTINGS - GRAPHICS", 8, {
@@ -3641,12 +3643,16 @@ static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
 };
 #undef SET_FIELD
 
-typedef struct { int32_t page, row; } SettingsUi;
+typedef struct {
+  int32_t page, row;
+  bool armed;       // Reset RPG Mode pressed once: the next press erases it
+  int32_t notice;   // frames left of "RPG Mode reset." in the hint line
+} SettingsUi;
 
 // A touch's target: what it selects (sel = sel_value) and the button it
 // presses on release (BTN_COUNT: none).
 typedef struct { int32_t *sel; int32_t sel_value; Button btn; } TouchHit;
-typedef enum { SETTINGS_STAY, SETTINGS_EXIT, SETTINGS_BENCH, SETTINGS_STRESS } SettingsAction;
+typedef enum { SETTINGS_STAY, SETTINGS_EXIT, SETTINGS_BENCH, SETTINGS_STRESS, SETTINGS_CAREER_RESET } SettingsAction;
 
 static int32_t *settings_field(GameSettings *s, const SettingsRow *r) {
   return (int32_t *)((char *)s + r->off);
@@ -3657,7 +3663,7 @@ static int32_t *settings_field(GameSettings *s, const SettingsRow *r) {
 static bool g_settings_in_race;
 
 static bool settings_row_shown(const SettingsRow *r, bool has_rumble) {
-  if (r->kind == ROW_BENCH && g_settings_in_race) return false;
+  if ((r->kind == ROW_BENCH || r->kind == ROW_CAREER_RESET) && g_settings_in_race) return false;
   if ((r->needs & NEED_RUMBLE) && !has_rumble) return false;
   return !(r->needs & NEED_REMAP) || HAS_REMAP;
 }
@@ -3705,6 +3711,8 @@ static SettingsAction settings_screen_input(SettingsUi *ui, GameSettings *s, int
                                             bool has_rumble) {
   const SettingsPage *pg = &kSettingsPages[ui->page];
   const int32_t n = pg->nrows;
+  if (ui->notice > 0) ui->notice--;
+  if (down || up || left || right || back) ui->armed = false;
   if (down || up) {
     int32_t r = ui->row;
     do { r = (r + (down ? 1 : n - 1)) % n; } while (!settings_row_shown(&pg->rows[r], has_rumble));
@@ -3729,6 +3737,15 @@ static SettingsAction settings_screen_input(SettingsUi *ui, GameSettings *s, int
       back = true;
     } else if (row->kind == ROW_BENCH) {
       return row->page ? SETTINGS_STRESS : SETTINGS_BENCH;
+    } else if (row->kind == ROW_CAREER_RESET) {
+      // Twice to erase: the first press asks.
+      if (!ui->armed) {
+        ui->armed = true;
+      } else {
+        ui->armed = false;
+        ui->notice = 120;
+        return SETTINGS_CAREER_RESET;
+      }
     }
   }
   if (back) {
@@ -3833,7 +3850,12 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
     }
     const int32_t cy = y + h / 2;
     if (sel) gfx_set_color(g, SET_YELLOW); else gfx_set_color(g, SET_INK);
-    font_draw(g, row->label, x0 + 34, cy + ty);
+    if (row->kind == ROW_CAREER_RESET && sel && ui->armed) {
+      gfx_set_color(g, 255, 80, 60);
+      font_draw(g, "Press again: erase all RPG progress", x0 + 34, cy + ty);
+    } else {
+      font_draw(g, row->label, x0 + 34, cy + ty);
+    }
     if (row->kind == ROW_OPEN || row->kind == ROW_BENCH) {
       draw_settings_arrow(g, x0 + w - 26, cy, true, true, sel);
     } else if (row->kind == ROW_CHOICE) {
@@ -3860,7 +3882,8 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
 
   gfx_set_color(g, 90, 88, 80);
   char hint[96];
-  snprintf(hint, sizeof(hint), "Left/Right: Change    %s: Select    %s: Back", KEY_CONTINUE, KEY_BACK);
+  if (ui->notice > 0) snprintf(hint, sizeof(hint), "RPG Mode reset: back to stage 1.");
+  else snprintf(hint, sizeof(hint), "Left/Right: Change    %s: Select    %s: Back", KEY_CONTINUE, KEY_BACK);
   font_set(FONT_BOLD, 12);
   draw_centered(g, hint, 400, 428);
 }
@@ -4249,13 +4272,21 @@ static void draw_career_panel(Graphics2D *g, const CareerSave *s, int32_t ec, in
     }
     font_draw(g, line, x0 + w - 20 - font_width(line), y0 + 50);
     font_set(FONT_BOLD, 12);
-    for (int32_t k = 0; k < CAREER_PERK_SLOTS; k++) {
+    // Only the perks that work (career_perk_rows): v2.8's described-only
+    // ones are left out.
+    int32_t slots[CAREER_PERK_SLOTS];
+    const int32_t nperk = career_perk_rows(ec, slots);
+    if (nperk == 0) {
+      gfx_set_color(g, 170, 170, 170);
+      draw_centered(g, "This car has no perks.", 400, ry + 40);
+    }
+    for (int32_t r = 0; r < nperk; r++) {
+      const int32_t k = slots[r];
       const int32_t p = career_statsalc[ec][k], v = s->perk[ec][k];
-      const bool sel = k == row, used = career_perk_applied(p);
-      const int32_t yy = ry + k * 20;
-      if (used) gfx_set_color(g, sel ? 255 : 210, sel ? 196 : 210, sel ? 0 : 210);
-      else gfx_set_color(g, sel ? 200 : 140, sel ? 160 : 140, sel ? 60 : 140);
-      snprintf(line, sizeof(line), "%s%s%s", sel ? "> " : "", career_perk_name[p], used ? "" : " *");
+      const bool sel = r == row;
+      const int32_t yy = ry + r * 20;
+      gfx_set_color(g, sel ? 255 : 210, sel ? 196 : 210, sel ? 0 : 210);
+      snprintf(line, sizeof(line), "%s%s", sel ? "> " : "", career_perk_name[p]);
       font_draw(g, line, x0 + 30, yy);
       // Its points, 0-20, as a bar.
       gfx_set_color(g, 60, 60, 80);
@@ -4272,21 +4303,19 @@ static void draw_career_panel(Graphics2D *g, const CareerSave *s, int32_t ec, in
       }
     }
     // writeboosts' text for the chosen one.
-    const int32_t p = career_statsalc[ec][row < CAREER_PERK_SLOTS ? row : 0];
-    const CareerPerkText *t = &career_perk_text[p];
-    font_set(FONT_BOLD, 11);
-    int32_t ty = ry + 6 * 20 - 2;
-    char what[96];
-    snprintf(what, sizeof(what), "%s %s %s", career_perk_name[p], t->what[0], t->what[1] ? t->what[1] : "");
-    gfx_set_color(g, 235, 235, 235);
-    draw_centered(g, what, 400, ty);
-    ty += 14;
-    snprintf(what, sizeof(what), "%s %s", t->max[0], t->max[1] ? t->max[1] : "");
-    gfx_set_color(g, 150, 240, 150);
-    draw_centered(g, what, 400, ty);
-    if (!career_perk_applied(p)) {
-      gfx_set_color(g, 170, 170, 170);
-      draw_centered(g, "* Extended v2.8 describes this perk but never applies it.", 400, ty + 14);
+    if (nperk > 0) {
+      const int32_t p = career_statsalc[ec][slots[row < nperk ? row : 0]];
+      const CareerPerkText *t = &career_perk_text[p];
+      font_set(FONT_BOLD, 11);
+      int32_t ty = ry + 6 * 20 - 2;
+      char what[96];
+      snprintf(what, sizeof(what), "%s %s %s", career_perk_name[p], t->what[0], t->what[1] ? t->what[1] : "");
+      gfx_set_color(g, 235, 235, 235);
+      draw_centered(g, what, 400, ty);
+      ty += 14;
+      snprintf(what, sizeof(what), "%s %s", t->max[0], t->max[1] ? t->max[1] : "");
+      gfx_set_color(g, 150, 240, 150);
+      draw_centered(g, what, 400, ty);
     }
   } else {
     snprintf(line, sizeof(line), "Reshuffles: %d   Transfers: %d", (int)s->statchangers[0], (int)s->statchangers[1]);
@@ -5488,7 +5517,7 @@ int game_run(void) {
     motion_blur_ok = scene_targets_build(&scene_rt, &accum_rt, motion_blur_ok, width, height, settings.graphics);
   }
   apply_settings(&settings, &m);
-  SettingsUi settings_ui = {SET_MAIN, 0};
+  SettingsUi settings_ui = {.page = SET_MAIN};
   // Where Back leaves Settings: the pause menu or the main menu.
   GameState settings_return = STATE_PAUSED;
   if (progress_path_ok) {
@@ -5949,7 +5978,7 @@ int game_run(void) {
       // NFM_SCREENSHOT_MENU=mainsettings: open Settings from here, headless.
       if (screenshot_menu && strcmp(screenshot_menu, "mainsettings") == 0 && frame == screenshot_frame - 3) {
         mainmenu_opselect = 3;
-        settings_ui = (SettingsUi){SET_MAIN, 0};
+        settings_ui = (SettingsUi){.page = SET_MAIN};
         // NFM_SETTINGS_PAGE=n (and NFM_SETTINGS_ROW=n) open a section directly.
         const char *page_env = getenv("NFM_SETTINGS_PAGE"), *row_env = getenv("NFM_SETTINGS_ROW");
         if (page_env && atoi(page_env) >= 0 && atoi(page_env) < SET_PAGE_COUNT) settings_ui.page = atoi(page_env);
@@ -6007,7 +6036,7 @@ int game_run(void) {
             break;
           case 2: state = STATE_CREDITS; break;
           case 3:
-            settings_ui = (SettingsUi){SET_MAIN, 0};
+            settings_ui = (SettingsUi){.page = SET_MAIN};
             settings_return = STATE_MAIN_MENU;
             state = STATE_SETTINGS;
             break;
@@ -6202,7 +6231,10 @@ int game_run(void) {
         }
       } else if (career_panel) {
         const int32_t ec = ext_car_of(car_index);
-        const int32_t nrows = career_panel_page == 2 ? 3 : CS_N;
+        int32_t perk_slots[CAREER_PERK_SLOTS];
+        const int32_t nperk = career_perk_rows(ec, perk_slots);   // only the perks that work
+        int32_t nrows = career_panel_page == 2 ? 3 : (career_panel_page == 1 ? nperk : CS_N);
+        if (nrows < 1) nrows = 1;
         if (career_panel_row >= nrows) career_panel_row = 0;
         if (KEY_EDGE(BTN_DOWN)) career_panel_row = (career_panel_row + 1) % nrows;
         if (KEY_EDGE(BTN_UP)) career_panel_row = (career_panel_row + nrows - 1) % nrows;
@@ -6216,8 +6248,9 @@ int game_run(void) {
             career_pend[0][career_panel_row]++;
           }
           // Car points work once bonus stage 4 is won (its "extra stats" button).
-          if (career_panel_page == 1 && csave.boncomp[3] > 0 && career_spend_perk(&csave, ec, career_panel_row))
-            career_pend[1][career_panel_row]++;
+          if (career_panel_page == 1 && career_panel_row < nperk && csave.boncomp[3] > 0 &&
+              career_spend_perk(&csave, ec, perk_slots[career_panel_row]))
+            career_pend[1][perk_slots[career_panel_row]]++;
           if (career_panel_page == 2) {
             if (career_panel_row == 0) career_confirm = CC_RESHUFFLE;
             if (career_panel_row == 1 && csave.statchangers[1] > 0) career_confirm = CC_TRANSFER;
@@ -6225,13 +6258,15 @@ int game_run(void) {
             career_confirm_yes = false;
           }
         }
-        if (KEY_EDGE(BTN_VIEW) && career_panel_page < 2 && career_pend[career_panel_page][career_panel_row] > 0) {
-          career_pend[career_panel_page][career_panel_row]--;
+        const int32_t back_k = career_panel_page == 1 ? (career_panel_row < nperk ? perk_slots[career_panel_row] : -1)
+                                                       : career_panel_row;
+        if (KEY_EDGE(BTN_VIEW) && career_panel_page < 2 && back_k >= 0 && career_pend[career_panel_page][back_k] > 0) {
+          career_pend[career_panel_page][back_k]--;
           if (career_panel_page == 0) {
-            csave.sp[ec][career_panel_row]--;
+            csave.sp[ec][back_k]--;
             csave.statpoints[ec]++;
           } else {
-            csave.perk[ec][career_panel_row]--;
+            csave.perk[ec][back_k]--;
             csave.carpoints++;
           }
         }
@@ -6557,7 +6592,7 @@ int game_run(void) {
       }
       // NFM_SCREENSHOT_MENU=settings: open the Settings screen headless.
       if (screenshot_menu && strcmp(screenshot_menu, "settings") == 0 && frame == screenshot_frame - 3) {
-        settings_ui = (SettingsUi){SET_MAIN, 0};
+        settings_ui = (SettingsUi){.page = SET_MAIN};
         settings_return = STATE_PAUSED;
         state = STATE_SETTINGS;
       }
@@ -6582,7 +6617,7 @@ int game_run(void) {
             state = STATE_CANTREPLY;
           }
         } else if (pause_opselect == 4) {
-          settings_ui = (SettingsUi){SET_MAIN, 0};
+          settings_ui = (SettingsUi){.page = SET_MAIN};
           settings_return = STATE_PAUSED;
           state = STATE_SETTINGS;
         } else if (pause_opselect == 5) {
@@ -6643,6 +6678,10 @@ int game_run(void) {
       if (act == SETTINGS_EXIT) {
         if (progress_path_ok) game_settings_save(progress_path, &settings);
         state = settings_return;
+      } else if (act == SETTINGS_CAREER_RESET) {
+        // Settings > Reset RPG Mode: the career from scratch, saved.
+        career_reset(&csave);
+        if (career_path[0]) career_save(career_path, &csave);
       } else if (act == SETTINGS_BENCH || act == SETTINGS_STRESS) {
         if (progress_path_ok) game_settings_save(progress_path, &settings);
         bench_start = true;
@@ -7718,6 +7757,12 @@ int game_run(void) {
                   crace.bonus != 1 && crace.bonus != 3) {
                 career_seen_clear = mad[0].clear;
                 career_xp_checkpoint(&crun, &crace, &csave, cp.clear[0]);
+                // RECOVERY (this port's): up to 4% of the car's health back.
+                const int32_t rv = career_perk_points(&crun.perks, PERK_RECOVERY);
+                if (rv > 0) {
+                  const int32_t heal = (int32_t)((float)mad[0].cd->maxmag[mad[0].cn] * 0.04f * (float)rv / 20.0f);
+                  mad[0].hitmag = mad[0].hitmag > heal ? mad[0].hitmag - heal : 0;
+                }
               }
               for (int32_t k = 1; k < nplayers; k++) {
                 if (cp.dested[k] == 2 && career_seen_dested[k] != 2) career_xp_waste(&crun, &crace, &csave, k);

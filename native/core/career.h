@@ -22,6 +22,14 @@ extern "C" {
 #define CAREER_PERK_SLOTS 6     // each car's six (statsalc)
 #define CAREER_PERK_MAX 20      // points per perk
 
+// The perks Extended v2.8 describes but never applies that this port does
+// (career_perks.h); REFLECT, BLEED, FREEZE, GRAVITY and UNDEAD stay out.
+enum {
+  PERK_RESISTANCE = 8, PERK_RECOVERY = 25, PERK_TURNING = 27, PERK_DEBUFF = 28, PERK_LEECH = 29,
+  PERK_CHARGING = 30, PERK_SAVIOUR = 33, PERK_GROUNDED = 35, PERK_COMEBACK = 37, PERK_HEALING = 38,
+  PERK_STABILITY = 39
+};
+
 /** The six stats points go into, in the original's order: top speed,
  * acceleration, grip (handling), stunts, strength, endurance (Madness's
  * aitssp, aiaccsp, aigripsp, aistusp, aistrsp, aiendsp). */
@@ -120,6 +128,9 @@ typedef struct {
 extern const CareerPerkText career_perk_text[CAREER_PERKS];
 /** The original describes 40 perks but applies only these 24 (0-7, 9-24). */
 bool career_perk_applied(int32_t perk);
+/** The slots of `car` whose perk is applied, in order, into `slots`; how many.
+ * The upgrade panel shows only these. */
+int32_t career_perk_rows(int32_t car, int32_t *slots);
 
 /** The player's perks as the race reads them (Madness and nitroandspecials
  * look them up by car: xt.specialstats). NULL outside the career. */

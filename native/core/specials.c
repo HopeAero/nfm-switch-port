@@ -190,6 +190,7 @@ void specials_tick(Specials *sp, Mad *mads, Control *controls, int32_t nplayers,
               if (sp->specpower[a2] < 1.0) speedmod = 0.01 + 0.2823529411764706 * (sp->specpower[a2] - 0.15);
               else speedmod = 0.25 * ((sp->specpower[a2] - 1.0) / 1.25 + 1.0);
               if (speedmod > 0.45) speedmod = 0.45;
+              speedmod *= career_perk_debuff(sp->perks, a2, t);   // DEBUFF / RESISTANCE
               sp->statreduce[t][0] = 1.0 - speedmod;
               mads[t].frozen = true;
             } else {
@@ -233,6 +234,7 @@ void specials_tick(Specials *sp, Mad *mads, Control *controls, int32_t nplayers,
             if (elrato > 2.5 * beastmod) elrato = 2.5 * beastmod;
             sp->drainrate[a2] = tmax / (1500.0 * beastmod) * elrato;
           }
+          sp->drainrate[a2] *= career_perk_debuff(sp->perks, a2, t);   // DEBUFF / RESISTANCE
           if (mads[t].hitmag < (int32_t)(0.9 * tmax)) mads[t].hitmag += (int32_t)sp->drainrate[a2];
         }
         sp->finalfix[3][a2] = true;
@@ -263,6 +265,7 @@ void specials_tick(Specials *sp, Mad *mads, Control *controls, int32_t nplayers,
               if (sp->specpower[a2] < 1.0) sp->healthloss[t] = 0.01 + 0.3411764705882353 * (sp->specpower[a2] - 0.15);
               else sp->healthloss[t] = 0.3 * ((sp->specpower[a2] - 1.0) / 1.2 + 1.0);
               if (sp->healthloss[t] > 0.55) sp->healthloss[t] = 0.55;
+              sp->healthloss[t] *= career_perk_debuff(sp->perks, a2, t);   // DEBUFF / RESISTANCE
               sp->statreduce[t][5] = sp->healthloss[t];
               sp->updatehealth[t] = true;
               sp->proportion[t] = (float)mads[t].hitmag / (float)mads[t].cd->maxmag[mads[t].cn];
@@ -353,6 +356,7 @@ void specials_tick(Specials *sp, Mad *mads, Control *controls, int32_t nplayers,
       const float health = ((float)md->hitmag / (float)live->maxmag[c]) * 100.0f;
       career_perk_specials(sp->perks, health, md->fixtime, &spdboost, &fixspd, &strboost, &fixstr, &specialboost);
       spdmod = ((1.0 + (spdboost - 1.0)) + (fixspd - 1.0)) - (1.0 - rufreeze);
+      spdmod += career_perk_comeback(sp->perks, md->comebacktime) - 1.0;   // COMEBACK
       strmod = (1.0f + (fixstr - 1.0f)) + (strboost - 1.0f);
     }
     double spdspboost = 0.0;
