@@ -159,7 +159,26 @@ static const int32_t kCarGatePgaty[9] = {193, 213, 226, 237, 244, 239, 228, 214,
 // list all 32 stages' real display names cheaply. Falls back to "Stage
 // N" if the file is missing or has no name() line -- never blocks the
 // menu on a malformed/missing stage file.
+// Free Play's Extended stages, after NFM's 27 (stage 28 on): Extended's
+// normal-mode tracks the career does not race -- 20 and 27 are career stages
+// too, 26 is the Premier Tournament.
+static const int8_t kFreePlayExt[] = {1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13,
+                                      14, 15, 16, 17, 18, 19, 21, 22, 23, 24, 25, 28};
+#define FREE_PLAY_EXT_COUNT ((int32_t)(sizeof(kFreePlayExt) / sizeof(kFreePlayExt[0])))
+#define FREE_PLAY_LAST_STAGE (27 + FREE_PLAY_EXT_COUNT)
+
+/** The Extended normal-mode stage Free Play's `stage_num` races, 0 for NFM's own. */
+static int32_t free_play_ext_stage(int32_t stage_num) {
+  return stage_num > 27 && stage_num <= FREE_PLAY_LAST_STAGE ? kFreePlayExt[stage_num - 28] : 0;
+}
+
+static void ext_read_name(int32_t stage, char *out, size_t outsz);
+
 static void stage_read_name(int32_t stage_num, char *out, size_t outsz) {
+  if (free_play_ext_stage(stage_num)) {
+    ext_read_name(free_play_ext_stage(stage_num), out, outsz);
+    return;
+  }
   char path[64];
   snprintf(path, sizeof(path), "stages/%d.txt", stage_num);
   char *text = vfs_read_text(path);
@@ -1182,6 +1201,7 @@ static int32_t stage_music_id(int32_t stage_num, int32_t gmode) {
   if (gmode == 4) return g_career_bonus ? 250 + g_career_bonus : 200 + stage_num;   // Extended's career (callers pass 4)
   if (gmode == 3) return 100 + stage_num;   // Extended's normal mode (callers pass 3), ext_stage_music
   if (stage_num == 27 && gmode == 2) return 33;
+  if (gmode == 0 && free_play_ext_stage(stage_num)) return 100 + free_play_ext_stage(stage_num);
   return stage_num;
 }
 
@@ -2941,15 +2961,14 @@ static void draw_gamemode_menu(Graphics2D *g,
   // Drawing all rows unconditionally is therefore the FAITHFUL
   // behaviour, not a simplification of one.
   struct MenuOpt { int32_t x, y, w; int32_t r_aflk, g_aflk, b_aflk; int32_t r_solid, g_solid, b_solid; };
-  const struct MenuOpt opts[5] = {
+  const struct MenuOpt opts[4] = {
     { 358, 262,  82, 200,  64,   0, 255, 128,  0 },  // NFM 1     (Java opselect=0)
     { 358, 290,  82, 200,  64,   0, 255,  95,  0 },  // NFM 2     (Java opselect=1)
     { 348, 318, 102, 200,  64,   0, 255, 128,  0 },  // Free Play (Java opselect=3, moved from y=346)
-    { 354, 346,  90, 200,  64,   0, 255, 128,  0 },  // Extended (its normal mode), the original's 4th slot
-    { 348, 374, 102, 200,  64,   0, 255, 128,  0 },  // RPG Mode, Extended's career
+    { 348, 346, 102, 200,  64,   0, 255, 128,  0 },  // RPG Mode, Extended's career, the original's 4th slot
   };
 
-  for (int32_t i = 0; i < 5; i++) {
+  for (int32_t i = 0; i < 4; i++) {
     const struct MenuOpt *o = &opts[i];
     draw_menu_option_rect(g, o->x, o->y, o->w, 22, i == opselect,
                            o->r_aflk, o->g_aflk, o->b_aflk,
@@ -2984,9 +3003,9 @@ static void draw_gamemode_menu(Graphics2D *g,
     gfx_draw_image_sub(g, opti2.tex, 346, 322, opti2.w, 15,
                         0, 85, opti2.w, 15, opti2.w, opti2.h);
   }
-  if (extlabel.tex >= 0) gfx_draw_image(g, extlabel.tex, 400 - extlabel.w / 2, 349, extlabel.w, extlabel.h);
+  (void)extlabel;
   if (careerlabel.tex >= 0)
-    gfx_draw_image(g, careerlabel.tex, 400 - careerlabel.w / 2, 377, careerlabel.w, careerlabel.h);
+    gfx_draw_image(g, careerlabel.tex, 400 - careerlabel.w / 2, 349, careerlabel.w, careerlabel.h);
 
   // Footer bylines, same positions as main menu.
   if (byrd.tex >= 0) {
@@ -5570,7 +5589,7 @@ int game_run(void) {
             if (OVERON(kRows[i][0], kRows[i][1], kRows[i][2], 22)) HIT(&mainmenu_opselect, i, BTN_CONFIRM);
         } else if (state == STATE_GAMEMODE_MENU) {
           // draw_gamemode_menu's rows.
-          static const int32_t kRows[4][3] = {{358, 262, 82}, {358, 290, 82}, {348, 318, 102}, {354, 346, 90}};
+          static const int32_t kRows[4][3] = {{358, 262, 82}, {358, 290, 82}, {348, 318, 102}, {348, 346, 102}};
           for (int32_t i = 0; i < 4; i++)
             if (OVERON(kRows[i][0], kRows[i][1], kRows[i][2], 22)) HIT(&gamemode_opselect, i, BTN_CONFIRM);
         } else if (state == STATE_INSTRUCTIONS) {
@@ -5725,8 +5744,8 @@ int game_run(void) {
       // hidden same as main menu.
       // A fourth row, Extended (its normal mode), where the original's own
       // fourth row sat.
-      if (KEY_EDGE(BTN_DOWN)) gamemode_opselect = (gamemode_opselect + 1) % 5;
-      if (KEY_EDGE(BTN_UP)) gamemode_opselect = (gamemode_opselect + 4) % 5;
+      if (KEY_EDGE(BTN_DOWN)) gamemode_opselect = (gamemode_opselect + 1) % 4;
+      if (KEY_EDGE(BTN_UP)) gamemode_opselect = (gamemode_opselect + 3) % 4;
       if (KEY_EDGE(BTN_CANCEL)) {
         state = STATE_MAIN_MENU;
       }
@@ -5740,11 +5759,10 @@ int game_run(void) {
           case 0: gmode = 1; break;  // NFM 1
           case 1: gmode = 2; break;  // NFM 2
           case 2: gmode = 0; break;  // Free Play
-          case 3: gmode = 0; break;  // Extended (Free Play's flow, ext_normal)
-          case 4: gmode = 0; break;  // Extended's career (normal mode's flow, ext_career)
+          case 3: gmode = 0; break;  // RPG Mode: Extended's career (its normal mode's flow, ext_career)
         }
-        ext_normal = gamemode_opselect == 3 || gamemode_opselect == 4;
-        ext_career = gamemode_opselect == 4;
+        ext_normal = gamemode_opselect == 3;
+        ext_career = gamemode_opselect == 3;
         g_ext_career = ext_career;
         // :4646-4659 -- Java resets its cursor to 0 when confirming NFM2
         // or Free Play (its own opselect 1 and 3); the NFM1 branch does
@@ -5975,7 +5993,7 @@ int game_run(void) {
                        : (gm == GMODE_NFM2) ? progress.unlocked[1] + 10
                        : -1;
       // Extended's normal mode: stages 1..28, up to the one reached.
-      const int32_t last_stage = ext_normal ? EXT_LAST_STAGE : 27;
+      const int32_t last_stage = ext_normal ? EXT_LAST_STAGE : (gm == GMODE_FREE_PLAY ? FREE_PLAY_LAST_STAGE : 27);
       if (ext_normal) frontier = EXT_UNLOCKED;
       if (KEY_EDGE(BTN_RIGHT)) {
         if (frontier >= 0 && stage_num == frontier && stage_num != last_stage) {
@@ -6016,7 +6034,8 @@ int game_run(void) {
         stage_loadcnt = 30;
       }
       if (KEY_EDGE(BTN_CONFIRM)) {
-        if (ext_normal ? stage_num > EXT_UNLOCKED : !game_progress_can_pick_stage(&progress, gm, stage_num)) {
+        if (ext_normal ? stage_num > EXT_UNLOCKED
+                       : !free_play_ext_stage(stage_num) && !game_progress_can_pick_stage(&progress, gm, stage_num)) {
           // Java cantgo() -- xtGraphics.java:1993, armed at :2615-2616.
           // The countdown is 100 frames, not the 40 this port used (its
           // comment asserted Java used 40; :2616 is `lockcnt = 100`).
@@ -6390,6 +6409,8 @@ int game_run(void) {
       char ext_spec[48] = "";
       if (ext_stage_env) snprintf(ext_spec, sizeof(ext_spec), "%s", ext_stage_env);
       else if (ext_normal) ext_stage_spec(stage_num, ptmatch, ext_spec, sizeof(ext_spec));
+      else if (gmode == GMODE_FREE_PLAY && free_play_ext_stage(stage_num))
+        ext_stage_spec(free_play_ext_stage(stage_num), 1, ext_spec, sizeof(ext_spec));
       ExtStageInfo ext_info;
       memset(&ext_info, 0, sizeof(ext_info));
       bool stage_ok = ext_spec[0]
@@ -7335,7 +7356,8 @@ int game_run(void) {
               for (int32_t i = 0; i < nplayers; i++)
                 career_stage_stats(&cstage, &crace, i, &race_base[i], &cd, sc[i], live_cd[i].grip[sc[i]], &cp);
             }
-            specials_tick(&specials, mad, control, nplayers, &cp, &cd, race_base);
+            if (gmode != GMODE_NFM1 && gmode != GMODE_NFM2)   // NFM 1 / 2 race without specials
+              specials_tick(&specials, mad, control, nplayers, &cp, &cd, race_base);
             if (ext_career) {
               // Experience (career.c): checkpoints, wastes, stunts, full
               // power, level-ups -- stat$m and careermode$m's bookkeeping.
@@ -8235,7 +8257,7 @@ int game_run(void) {
         font_set(FONT_BOLD, 12);
         draw_hud_img(&g, hud_images.dmg, 600, 7);
         draw_hud_img(&g, hud_images.pwr, 600, 27);
-        if (xt.extended) draw_specials_hud(&g, &m, &specials, mad, nplayers, sc, &hud_images.spec);
+        if (xt.extended && gmode != GMODE_NFM1 && gmode != GMODE_NFM2) draw_specials_hud(&g, &m, &specials, mad, nplayers, sc, &hud_images.spec);
         draw_hud_img(&g, hud_images.lap, 19, 7);
         hud_set_ink(&g, 0, 0, 100);
         char hud[64];
@@ -9551,7 +9573,7 @@ int game_run(void) {
           mainmenu_aflk = true;
         }
         // Extended's credit over the name (XT 15341-15398), its modes only.
-        const char *by = ext_normal ? car_author(car_index) : NULL;
+        const char *by = (ext_normal || gmode == GMODE_FREE_PLAY) ? car_author(car_index) : NULL;
         if (by) {
           char line[64];
           snprintf(line, sizeof(line), "Created by %s", by);
@@ -9863,9 +9885,10 @@ int game_run(void) {
       if (stage_preview_loaded_num != stage_num) {
         int32_t center_x = 0, center_z = 0;
         bool loaded;
-        if (ext_normal) {
+        const int32_t fp_ext = gmode == GMODE_FREE_PLAY ? free_play_ext_stage(stage_num) : 0;
+        if (ext_normal || fp_ext) {
           char spec[32];
-          ext_stage_spec(stage_num, ptmatch, spec, sizeof(spec));
+          ext_stage_spec(fp_ext ? fp_ext : stage_num, fp_ext ? 1 : ptmatch, spec, sizeof(spec));
           ExtStageInfo info;
           loaded = load_ext_stage_objects(&stage_objects, &stage_count, stage_count, ext_models, &m, &t, &cp, spec,
                                           ext_car_of(car_index), &info);
