@@ -2,6 +2,7 @@
 #include "new_cars.h"
 
 #include <ctype.h>
+#include <math.h>
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -83,6 +84,164 @@ static int32_t ext_line(const char *text, const char *name, int32_t lo, int32_t 
   return v;
 }
 
+// ---- the Car Maker's Extended stats (web/ext/extlines.js forLoadstat) ----
+// extstat(5) and extphysics(11) are the car's own stats and handling in
+// Extended: when both are there and valid, Extended loads the car with them
+// in place of stat() and physics()'s first 11 values (the crash look, engine
+// and actmag stay the shared ones). NFM 2 never reads a line starting with e.
+
+/** The first line whose trimmed form starts with `name(` (rad.js findLine):
+ * where it starts and how long it is, trimmed. */
+static bool find_line(const char *text, const char *name, const char **start, size_t *len) {
+  const size_t nl = strlen(name);
+  for (const char *l = text; l && *l;) {
+    const char *eol = strchr(l, '\n');
+    const char *e = eol ? eol : l + strlen(l);
+    const char *a = l;
+    while (a < e && isspace((unsigned char)*a)) a++;
+    const char *b = e;
+    while (b > a && isspace((unsigned char)b[-1])) b--;
+    if ((size_t)(b - a) > nl && strncmp(a, name, nl) == 0 && a[nl] == '(') {
+      *start = a;
+      *len = (size_t)(b - a);
+      return true;
+    }
+    l = eol ? eol + 1 : NULL;
+  }
+  return false;
+}
+
+/** rad.js argsOf: the comma-separated pieces between the first ( and the
+ * last ), trimmed, into out (each cut to 31 chars); how many, -1 when no ( ). */
+static int32_t line_args(const char *line, size_t len, char out[][32], int32_t max) {
+  const char *a = memchr(line, '(', len);
+  const char *b = line + len;
+  while (b > line && b[-1] != ')') b--;
+  if (!a || b == line || b - 1 < a) return -1;
+  b--;   // on the )
+  int32_t n = 0;
+  for (const char *p = a + 1;;) {
+    const char *c = memchr(p, ',', (size_t)(b - p));
+    const char *e = c ? c : b;
+    const char *x = p, *y = e;
+    while (x < y && isspace((unsigned char)*x)) x++;
+    while (y > x && isspace((unsigned char)y[-1])) y--;
+    if (n < max) {
+      const size_t k = (size_t)(y - x) < 31 ? (size_t)(y - x) : 31;
+      memcpy(out[n], x, k);
+      out[n][k] = '\0';
+    }
+    n++;
+    if (!c) break;
+    p = c + 1;
+  }
+  return n;
+}
+
+/** extlines.js ints(): exactly n integers in [lo, hi]. 1 valid, 0 missing, -1 invalid. */
+static int32_t ext_ints(const char *text, const char *name, int32_t n, int32_t lo, int32_t hi, int32_t *v) {
+  const char *l;
+  size_t len;
+  if (!find_line(text, name, &l, &len)) return 0;
+  char a[24][32];
+  if (line_args(l, len, a, 24) != n) return -1;
+  for (int32_t i = 0; i < n; i++) {
+    const char *q = a[i] + (a[i][0] == '-');
+    if (!*q) return -1;
+    for (; *q; q++)
+      if (!isdigit((unsigned char)*q)) return -1;
+    const long x = strtol(a[i], NULL, 10);
+    if (x < lo || x > hi) return -1;
+    v[i] = (int32_t)x;
+  }
+  return 1;
+}
+
+/** rad.js setLine: the first `name(` line becomes `repl` (later copies
+ * dropped), or `repl` is appended. A new string. */
+static char *set_line(const char *text, const char *name, const char *repl) {
+  const size_t tl = strlen(text), rl = strlen(repl), nl = strlen(name);
+  char *out = malloc(tl + rl + 4);
+  if (!out) return NULL;
+  const char *found;
+  size_t flen;
+  if (!find_line(text, name, &found, &flen)) {
+    // Appended after the text, its trailing blanks gone, past an empty line.
+    size_t n = tl;
+    while (n > 0 && isspace((unsigned char)text[n - 1])) n--;
+    memcpy(out, text, n);
+    out[n] = '\n';
+    out[n + 1] = '\n';
+    memcpy(out + n + 2, repl, rl);
+    out[n + 2 + rl] = '\n';
+    out[n + 3 + rl] = '\0';
+    return out;
+  }
+  size_t o = 0;
+  bool done = false, first = true;
+  for (const char *l = text;;) {
+    const char *eol = strchr(l, '\n');
+    const char *e = eol ? eol : l + strlen(l);
+    const char *a = l;
+    while (a < e && isspace((unsigned char)*a)) a++;
+    const bool hit = (size_t)(e - a) > nl && strncmp(a, name, nl) == 0 && a[nl] == '(';
+    if (!hit || !done) {
+      if (!first) out[o++] = '\n';
+      first = false;
+      if (hit) {
+        memcpy(out + o, repl, rl);
+        o += rl;
+        done = true;
+      } else {
+        memcpy(out + o, l, (size_t)(e - l));
+        o += (size_t)(e - l);
+      }
+    }
+    if (!eol) break;
+    l = eol + 1;
+  }
+  out[o] = '\0';
+  return out;
+}
+
+/** forLoadstat: the text loadstat reads in Extended (NULL: the file's own). */
+static char *ext_for_loadstat(const char *text) {
+  int32_t stat[5], phys[11];
+  if (ext_ints(text, "extstat", 5, 16, 200, stat) != 1 || ext_ints(text, "extphysics", 11, 0, 100, phys) != 1)
+    return NULL;
+  // readPhysics: the shared crash look, engine and actmag (defaults 50,50,50 / 0 / 0)
+  int32_t crash[3] = {50, 50, 50}, engsel = 0, actmag = 0;
+  const char *l;
+  size_t len;
+  if (find_line(text, "physics", &l, &len)) {
+    char a[24][32];
+    const int32_t n = line_args(l, len, a, 24);
+    if (n >= 15) {
+      int32_t v[16] = {0};
+      for (int32_t i = 0; i < 16 && i < n; i++) {
+        char *end;
+        const double d = strtod(a[i], &end);
+        v[i] = (end != a[i] && *end == '\0' && isfinite(d)) ? jtrunc_d(d) : 0;   // Number(), trunc
+      }
+      for (int32_t i = 0; i < 3; i++) crash[i] = v[11 + i];
+      engsel = v[14] < 0 ? 0 : (v[14] > 4 ? 4 : v[14]);
+      actmag = n > 15 ? v[15] : 0;
+    }
+  }
+  char sl[96], pl[256];
+  snprintf(sl, sizeof(sl), "stat(%d,%d,%d,%d,%d)", (int)stat[0], (int)stat[1], (int)stat[2], (int)stat[3],
+           (int)stat[4]);
+  int o = snprintf(pl, sizeof(pl), "physics(");
+  for (int32_t i = 0; i < 11; i++) o += snprintf(pl + o, sizeof(pl) - (size_t)o, "%d,", (int)phys[i]);
+  snprintf(pl + o, sizeof(pl) - (size_t)o, "%d,%d,%d,%d,%d)", (int)crash[0], (int)crash[1], (int)crash[2],
+           (int)engsel, (int)actmag);
+  char *t1 = set_line(text, "stat", sl);
+  if (!t1) return NULL;
+  char *t2 = set_line(t1, "physics", pl);
+  free(t1);
+  return t2;
+}
+
 /** "saleens7twinturbo.rad" -> "Saleens7twinturbo". */
 static void display_name(const char *file, char *out, size_t outsz) {
   const char *base = strrchr(file, '/');
@@ -109,8 +268,12 @@ bool new_car_from_rad(const char *name, const char *text, ContO *model, CarDefin
   }
   m->loadnew = loadnew;
   const int32_t slot = NEW_CAR_FIRST + i;
-  if (model->errd || model->npl <= 60 ||
-      !car_define_loadcar(cd, text, model, model->maxR, model->roofat, model->wh, slot)) {
+  // Extended's own stats and handling, when the Car Maker's Extended tab set them.
+  char *ext_text = ext_for_loadstat(text);
+  const bool loaded = !model->errd && model->npl > 60 &&
+                      car_define_loadcar(cd, ext_text ? ext_text : text, model, model->maxR, model->roofat, model->wh, slot);
+  free(ext_text);
+  if (!loaded) {
     cont_o_free(model);
     return false;
   }
