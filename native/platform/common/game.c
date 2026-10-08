@@ -4549,6 +4549,7 @@ int game_run(void) {
   static CareerRun crun;          // this race's experience (career.c)
   int32_t career_seen_clear = 0;  // the player's checkpoints already paid for
   int32_t career_seen_dested[NFM_MAX_CARS] = {0};
+  bool career_undead_wrecked[NFM_MAX_CARS] = {false};
   bool career_settled = false;    // the race's end already paid or taken back
   // The car select's stat panel: the player's points into the six stats
   // (XT carselect 15705-15760, statincrease), one row at a time.
@@ -6071,7 +6072,12 @@ int game_run(void) {
 
       for (int32_t i = 0; i < nplayers; i++) {
         ContO *base = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : CAR_MODEL(sc[i]);
+        // A career beast races its car's "B" model (GameSparker.loadstage,
+        // Extended's model sc + 78).
+        if (ext_career && crace.beast[i]) base = &ext_models[EXT_MODEL_BEAST + crace.sc[i]];
         cont_o_recopy(&co[i], base, kXstart[i], 250 - base->grat, kZstart[i], 0);
+        // A shadow car is see-through, no outlines (Plane.d, shadowtrans 80).
+        if (ext_career && crace.shadow[i]) co[i].fade = 255 - 80;
         // Keyboard/pad input drives slot 0 -- see platform/<name>/input.h
         // for the exact keymap. Polled once per frame in the loop below,
         // after platform_poll() reads this frame's hardware state. Slots
@@ -6083,12 +6089,19 @@ int game_run(void) {
         race_base[i] = cd;
         if (ext_career) {
           career_apply_stats(&race_base[i], sc[i], crace.sc[i], crace.sp[i], crace.level[i], crace.shadow[i], i == 0);
+          if (crace.beast[i]) {
+            // nitroandspecials (XT 6390-6397): a beast loses power three
+            // times as fast and hits from twice as far (Madness.multiplier).
+            race_base[i].powerloss[sc[i]] *= 3;
+            race_base[i].clrad[sc[i]] *= 2;
+          }
         }
         live_cd[i] = race_base[i];
         mad_init(&mad[i], &live_cd[i], &m, &rpd, &xt, i);
         mad_reseto(&mad[i], sc[i], &co[i], &cp);
         if (ext_career && i == 0) mad[i].powfactor = career_power_factor(crace.sc[0], crace.sp[0], crace.level[0]);
         career_seen_dested[i] = 0;
+        career_undead_wrecked[i] = false;
       }
       specials_reset(&specials);
       if (ext_career) {
@@ -6472,6 +6485,22 @@ int game_run(void) {
               const bool full = mad[0].power == 98.0f && starcnt == 0 && !mad[0].dest && !race_holdit &&
                                 fabsf(mad[0].speed) > 0.0f;
               career_tick(&crun, &crace, &csave, starcnt == 0, full);
+              // The undead (careermode$m, XT 7777-7800 / 9007-9015): wrecked
+              // once, then immortal at full power, no special, out of the
+              // ranking.
+              for (int32_t a = 1; a < nplayers; a++) {
+                if (!crace.undead[a]) continue;
+                if (!career_undead_wrecked[a]) {
+                  mad_distruct(&mad[a], &co[a]);
+                  career_undead_wrecked[a] = true;
+                }
+                mad[a].hitmag = 0;
+                mad[a].dest = false;
+                mad[a].spatk = 0.0f;
+                mad[a].power = 98.0f;
+                mad[a].clear = -2;
+                cp.clear[a] = -2;
+              }
               crace.level[0] = csave.level[crace.sc[0]];
             }
             for (int32_t k = 0; k < nplayers; k++) mad[k].stunt_gain = 0.0f;

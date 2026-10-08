@@ -156,8 +156,12 @@ Map of the original: docs/extended-career.md.
       bar; winning the newest stage opens the next; Ogg music (stages 1-25)
       and modules (26-28). Headless: NFM_CAREER=1 NFM_STAGE_NUM=n
       NFM_CAR_INDEX=c (a career.txt with unlocked >= n), NFM_CAREER_PANEL=1.
-- [ ] Beasts (B models, x3 powerloss, x2 radius), shadows (dark outline),
-      undead (immortal, out of the ranking), the Titan boss on 23.
+- [x] Beasts (B model, x3 powerloss, x2 collision radius), shadows
+      (see-through at shadowtrans 80, no outlines), undead (wrecked once,
+      then immortal at full power, no special, out of the ranking).
+- [ ] The Titan boss on 23; the undead's per-stage scripts (17's late
+      entry and targeting, 11's wrecks turning undead); the name prefixes
+      ("Beast ", "Shadow ", "Undead ") in the car list; the start ghosting.
 - [ ] Stage effects and gimmicks per stage (Medium.effect, water, snow,
       floors and teleports on 13, lives on 20, crumbling 21, gravity 15).
 - [ ] Career AI (Control's per-stage branches) and recorded bots.
