@@ -4582,6 +4582,10 @@ int game_run(void) {
   static const char *career_names[NFM_MAX_CARS];
   // Cars the last win opened (finish()'s congratulations, XT 12116-12167).
   int32_t career_new_cars[4] = {-1, -1, -1, -1};
+  // A beaten stage's options (XT stageselect 13482-13523): 0 as it is,
+  // 1 hard mode (the newest stage's field), 2 scale levels (to yours),
+  // 3 no levels (everyone level 1, no experience).
+  int32_t career_mode = 0;
   int32_t cbots_last_clear[NFM_MAX_CARS] = {0}, cbots_since[NFM_MAX_CARS] = {0};
   bool career_settled = false;    // the race's end already paid or taken back
   // The car select's stat panel: the player's points into the six stats
@@ -5453,6 +5457,10 @@ int game_run(void) {
         car_select_needs_intro = true;
       }
       g_career_bonus = 0;
+      const bool career_modes_ok = ext_career && stage_num < csave.unlocked && csave.unlocked >= 3;
+      if (!career_modes_ok || KEY_EDGE(BTN_LEFT) || KEY_EDGE(BTN_RIGHT)) career_mode = 0;
+      if (career_modes_ok && KEY_EDGE(BTN_DOWN)) career_mode = (career_mode + 1) % 4;
+      if (career_modes_ok && KEY_EDGE(BTN_UP)) career_mode = (career_mode + 3) % 4;
       if (ext_career && KEY_EDGE(BTN_SPECIAL) && stage_preview_ok && stage_num <= EXT_UNLOCKED &&
           (stage_num == 5 || stage_num == 11 || stage_num == 15 || stage_num == 18)) {
         // BONUS STAGE! (XT 13433, 16938-16960): the bonus hanging off this
@@ -6008,6 +6016,9 @@ int game_run(void) {
         memset(&crace, 0, sizeof(crace));
         crace.stage = stage_num;
         crace.bonus = g_career_bonus;
+        crace.hardstage = !g_career_bonus && career_mode == 1;
+        crace.scalelevels = !g_career_bonus && career_mode == 2;
+        crace.nolevels = !g_career_bonus && career_mode == 3;
         crace.sc[0] = ext_car_of(car_index);
         career_randomno(&crace, &csave);
         nplayers = crace.nplayers;
@@ -9142,6 +9153,18 @@ int game_run(void) {
         gfx_draw_image(&g, menu_next.tex, 625, 135, menu_next.w, menu_next.h);
       }
 
+      if (ext_career && stage_num < csave.unlocked && csave.unlocked >= 3) {
+        static const char *const kModes[4] = {"Normal", "Hard mode", "Scale levels", "No levels"};
+        char ml[64];
+        snprintf(ml, sizeof(ml), "Mode: %s   (Up / Down)", kModes[career_mode]);
+        gfx_set_composite(&g, 0.6f);
+        gfx_set_color(&g, 0, 0, 0);
+        gfx_fill_rect(&g, 250, 326, 300, 22);
+        gfx_set_composite(&g, 1.0f);
+        font_set(FONT_BOLD, 13);
+        gfx_set_color(&g, career_mode ? 255 : 220, career_mode ? 196 : 220, career_mode ? 0 : 220);
+        draw_centered(&g, ml, 400, 340);
+      }
       if (ext_career && stage_num <= EXT_UNLOCKED &&
           (stage_num == 5 || stage_num == 11 || stage_num == 15 || stage_num == 18)) {
         char bl[64];
