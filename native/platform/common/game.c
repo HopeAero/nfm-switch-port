@@ -2697,6 +2697,42 @@ static void draw_car_preview(Graphics2D *g, Medium *m, ContO *car,
   car->shadow = had_shadow;
 }
 
+/** A car side on, scaled to about 140 px long, centred on screen (sx, sy):
+ * the Race Setup's rival list (its rows, lobby style). The camera fields it
+ * sets are draw_car_preview's, moved: the projection centre is (sx, sy). */
+static void draw_car_thumb(Graphics2D *g, Medium *m, ContO *car, int32_t sx, int32_t sy) {
+  m->trk = 0;
+  m->crs = true;
+  m->x = -sx;
+  m->y = -sy;
+  m->z = -50;
+  m->xz = 0;
+  m->zy = 0;
+  m->ground = 495;
+  m->ih = 0;
+  m->iw = 0;
+  m->w = 800;
+  m->h = 450;
+  m->focus_point = 400;
+  m->cx = sx;
+  m->cy = sy;
+  m->cz = 50;
+  const int32_t r = car->maxR > 0 ? car->maxR : 300;
+  car->x = 0;
+  car->y = -(int32_t)car->grat / 2;
+  car->z = r * 400 / 70;   // its radius projects to ~70 px
+  car->xz = -90;   // facing right, as the lobby shows them
+  car->zy = 0;
+  car->xy = 0;
+  car->wzy = 0;
+  const bool had_shadow = car->shadow;
+  car->shadow = false;
+  nfm_set_draw_phase(true);
+  cont_o_d(car, g);
+  nfm_set_draw_phase(false);
+  car->shadow = had_shadow;
+}
+
 // draw_stage_preview (overhead 3D stage render) removed in Part 6 --
 // the Java stage-select screen doesn't have a 3D preview, and its
 // br.png torn-paper backdrop is the intended empty visual there.
@@ -3768,6 +3804,20 @@ static bool settings_row_shown(const SettingsRow *r, const GameSettings *s, bool
 
 // A page shows at most this many rows; a longer one (the rivals) scrolls.
 #define SETTINGS_VISIBLE 13
+#define SETTINGS_VISIBLE_RIVALS 5   // the rivals' rows are tall: each shows its car
+
+/** A page's row height, gap, text offset and font size for `nvis` rows. */
+static void settings_metrics(int32_t page, int32_t nvis, int32_t *h, int32_t *gap, int32_t *ty, int32_t *font) {
+  if (page == SET_RIVALS) {
+    *h = 58; *gap = 6; *ty = 7; *font = 18;
+    return;
+  }
+  const bool tight = nvis > 8, tighter = nvis > 11;
+  *h = tighter ? 22 : (tight ? 28 : 34);
+  *gap = tighter ? 4 : (tight ? 4 : 6);
+  *ty = tighter ? 5 : (tight ? 6 : 7);
+  *font = tight ? (tighter ? 14 : 16) : 18;
+}
 
 /** The rows the page draws, top to bottom, scrolled to keep the selected
  * one in view; how many. */
@@ -3780,11 +3830,12 @@ static int32_t settings_window(const SettingsUi *ui, const GameSettings *s, bool
     all[n++] = r;
   }
   int32_t first = 0;
-  if (n > SETTINGS_VISIBLE) {
-    first = at - SETTINGS_VISIBLE / 2;
+  const int32_t most = ui->page == SET_RIVALS ? SETTINGS_VISIBLE_RIVALS : SETTINGS_VISIBLE;
+  if (n > most) {
+    first = at - most / 2;
     if (first < 0) first = 0;
-    if (first > n - SETTINGS_VISIBLE) first = n - SETTINGS_VISIBLE;
-    n = SETTINGS_VISIBLE;
+    if (first > n - most) first = n - most;
+    n = most;
   }
   for (int32_t i = 0; i < n; i++) rows[i] = all[first + i];
   return n;
@@ -3795,8 +3846,8 @@ static int32_t settings_window(const SettingsUi *ui, const GameSettings *s, bool
 static int32_t settings_row_at(const SettingsUi *ui, const GameSettings *s, bool has_rumble, int32_t y) {
   int32_t rows[SETTINGS_MAX_ROWS];
   const int32_t n = settings_window(ui, s, has_rumble, rows);
-  const bool tight = n > 8, tighter = n > 11;
-  const int32_t h = tighter ? 22 : (tight ? 28 : 34), gap = tighter ? 4 : (tight ? 4 : 6);
+  int32_t h, gap, ty, fs;
+  settings_metrics(ui->page, n, &h, &gap, &ty, &fs);
   int32_t top = 68;
   for (int32_t i = 0; i < n; i++) {
     if (y >= top && y < top + h + gap) return rows[i];
@@ -3970,10 +4021,10 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
   // tighter still past eleven; past SETTINGS_VISIBLE it scrolls.
   int32_t rows[SETTINGS_MAX_ROWS];
   const int32_t nvis = settings_window(ui, s, has_rumble, rows);
-  const bool tight = nvis > 8, tighter = nvis > 11;
-  const int32_t x0 = 120, w = 560, h = tighter ? 22 : (tight ? 28 : 34), gap = tighter ? 4 : (tight ? 4 : 6);
-  const int32_t ty = tighter ? 5 : (tight ? 6 : 7);
-  if (tight) font_set(FONT_BOLD, tighter ? 14 : 16);
+  int32_t h, gap, ty, fs;
+  settings_metrics(ui->page, nvis, &h, &gap, &ty, &fs);
+  const int32_t x0 = 120, w = 560;
+  font_set(FONT_BOLD, fs);
   int32_t y = 68;
   for (int32_t i = 0; i < nvis; i++) {
     const int32_t r = rows[i];
@@ -3989,6 +4040,20 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
     }
     const int32_t cy = y + h / 2;
     if (sel) gfx_set_color(g, SET_YELLOW); else gfx_set_color(g, SET_INK);
+    if (row->kind == ROW_CAR) {
+      // A rival, lobby style: who over which car, the car itself drawn on
+      // the right by the caller (draw_car_thumb), between the arrows.
+      const int32_t v = *(const int32_t *)((const char *)s + row->off);
+      font_set(FONT_BOLD, 18);
+      font_draw(g, row->label, x0 + 34, y + 24);
+      font_set(FONT_BOLD, 14);
+      font_draw(g, car_name(v), x0 + 34, y + 46);
+      font_set(FONT_BOLD, fs);
+      draw_settings_arrow(g, x0 + 290, cy, false, settings_step_car(v, -1) != v, sel);
+      draw_settings_arrow(g, x0 + w - 26, cy, true, settings_step_car(v, 1) != v, sel);
+      y += h + gap;
+      continue;
+    }
     if (row->kind == ROW_CAREER_RESET && sel && ui->armed) {
       gfx_set_color(g, 255, 80, 60);
       font_draw(g, "Press again: erase all RPG progress", x0 + 34, cy + ty);
@@ -3997,16 +4062,6 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
     }
     if (row->kind == ROW_OPEN || row->kind == ROW_BENCH || row->kind == ROW_START) {
       draw_settings_arrow(g, x0 + w - 26, cy, true, true, sel);
-    } else if (row->kind == ROW_CAR) {
-      const int32_t v = *(const int32_t *)((const char *)s + row->off);
-      const char *name = car_name(v);
-      const int32_t tw = font_width(name);
-      const int32_t right_x = x0 + w - 26;
-      if (sel) gfx_set_color(g, SET_YELLOW);
-      else gfx_set_color(g, SET_INK);
-      font_draw(g, name, right_x - 14 - tw, cy + ty);
-      draw_settings_arrow(g, right_x - 22 - tw, cy, false, settings_step_car(v, -1) != v, sel);
-      draw_settings_arrow(g, right_x, cy, true, settings_step_car(v, 1) != v, sel);
     } else if (row->kind == ROW_CHOICE) {
       const int32_t v = *(const int32_t *)((const char *)s + row->off);
       const int32_t i = v / row->step;
@@ -9570,6 +9625,19 @@ int game_run(void) {
     } else if (state == STATE_SETTINGS) {
       // Opaque, the whole 800x450 (see settings_screen_draw()).
       settings_screen_draw(&g, &settings_ui, &settings, platform_has_rumble());
+      if (settings_ui.page == SET_RIVALS) {
+        // Each rival's car in its row (settings_screen_draw left it room).
+        int32_t rows[SETTINGS_MAX_ROWS], h, gap, ty, fs;
+        const int32_t n = settings_window(&settings_ui, &settings, platform_has_rumble(), rows);
+        settings_metrics(SET_RIVALS, n, &h, &gap, &ty, &fs);
+        for (int32_t i = 0; i < n; i++) {
+          const SettingsRow *row = &kSettingsPages[SET_RIVALS].rows[rows[i]];
+          if (row->kind != ROW_CAR) continue;
+          const int32_t v = *(const int32_t *)((const char *)&settings + row->off);
+          ContO *model = (v >= 0 && v != CUSTOM_CAR_INDEX) ? CAR_MODEL(v) : NULL;
+          if (model && model->p) draw_car_thumb(&g, &m, model, 545, 68 + i * (h + gap) + h / 2);
+        }
+      }
     } else if (state == STATE_BENCH_RESULT) {
       bench_result_draw(&g, &bench);
     } else if (state == STATE_PAUSED || state == STATE_CANTREPLY) {
