@@ -325,6 +325,10 @@ static bool load_stage_objects(ContO **objects_ptr, int32_t *count_ptr, int32_t 
   }
   *objects_ptr = calloc(STAGE_OBJECT_CAPACITY, sizeof(ContO));
   check_points_init(cp);
+  // CheckPoints.stage is the stage being raced (the original's stage list
+  // writes it, GameSparker.loadstagePreview): init leaves a random one, which
+  // made the AI's per-stage rules and stage 10's no-arrow rule a dice roll.
+  cp->stage = stage_num;
   bool ok = game_sparker_loadstage(*objects_ptr, STAGE_OBJECT_CAPACITY, count_ptr,
                                     base_models, m, t, cp, stage_text, out_center_x, out_center_z);
   free(stage_text);
@@ -2069,6 +2073,7 @@ static void stop_all_sfx_loops(Audio *audio, int32_t engine_channel[5], int32_t 
  * below carries the rest, under the wider `if (!this.holdit)` of :8009.
  */
 static void hud_wrongway_tick(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad *mad) {
+  font_set(FONT_BOLD, 11);   // the original's own font for every HUD message (Arial bold 11)
   if (xt->auscnt == 45 && mad->capcnt == 0) {
     if (mad->missedcp > 0) {
       if (mad->missedcp > 15 && mad->missedcp < 50) {
@@ -2102,6 +2107,10 @@ static void hud_wrongway_tick(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad 
  */
 static void hud_messages_tick(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad *mad,
                               const CheckPoints *cp, int32_t nplayers, const int32_t *sc) {
+  // The original's font for every one of these lines (Arial bold 11). Set
+  // here: before, they took whatever the frame drew last -- the career
+  // arrow's level label made them larger with the arrow on the cars.
+  font_set(FONT_BOLD, 11);
   // 1463-1465 -- looped resets the instant a fresh trick attempt starts
   // (mad->loop reaching 2, the "armed" state -- see mad.c's own loop
   // state machine), so the "Please read the Game Instructions!" escalated
@@ -5618,6 +5627,10 @@ int game_run(void) {
   // This race follows Free Play's Race Setup (settings.fp_*), and whether
   // its specials run (NFM 1 and 2 race without them).
   bool fp_race = false, race_specials = true;
+  // NFM's stage 10 races without the arrow, the radar or their messages; on
+  // Extended's own stages (the career's 10, Free Play's 28 on) that rule is
+  // gone, as it is in Extended.
+#define NFM_NO_ARROW_STAGE (cp.stage == 10 && xt.classicmode)
   // gmode is Java xtGraphics.gmode: 0 = Free Play (any car, any stage,
   // no progression); 1 = NFM 1 campaign (stages 1..10 sequential);
   // 2 = NFM 2 campaign (stages 11..27 sequential). Set by the gamemode
@@ -6261,6 +6274,12 @@ int game_run(void) {
         if (gmode != 0) {
           stage_num = game_progress_default_stage(&progress, (GameMode)gmode);
         }
+        // The stage list opens on this mode's stage: its name and preview,
+        // not the last mode's.
+        if (gmode == GMODE_FREE_PLAY && !ext_normal && stage_num > FREE_PLAY_LAST_STAGE) stage_num = 1;
+        if (ext_normal) ext_read_name(stage_num, stage_name_buf, sizeof(stage_name_buf));
+        else stage_read_name(stage_num, stage_name_buf, sizeof(stage_name_buf));
+        stage_preview_loaded_num = -1;
         state = STATE_CAR_SELECT;
         car_select_needs_intro = true;
       }
@@ -6975,6 +6994,10 @@ int game_run(void) {
                                    ext_car_of(car_index), &ext_info)
           : load_stage_objects(&stage_objects, &stage_count, stage_count,
                                base_models, &m, &t, &cp, stage_num, NULL, NULL);
+      // Extended's stages by its own numbers: the career's, its normal
+      // mode's (Free Play's 28 on are those). load_stage_objects sets NFM's.
+      if (ext_spec[0] && !ext_stage_env)
+        cp.stage = (gmode == GMODE_FREE_PLAY && !ext_normal) ? free_play_ext_stage(stage_num) : stage_num;
       // xtGraphics.wallcode's walls (careermode$m, realwalls).
       career_walls[0] = ext_info.wallr;
       career_walls[1] = ext_info.walll;
@@ -7687,7 +7710,7 @@ int game_run(void) {
           // guard xtGraphics.java:7917 puts it behind -- see the helper's
           // own doc comment (fase != -6 and multion < 2 are always true in
           // this single-player port, so only these three terms remain).
-          if (!race_holdit && starcnt == 0 && cp.stage != 10) {
+          if (!race_holdit && starcnt == 0 && !NFM_NO_ARROW_STAGE) {
             tick_missed_cp(&mad[0]);
           }
           // Stunt naming/scoring's ANNOUNCER half -- see hud_stunt_detect()'s
@@ -8705,7 +8728,7 @@ int game_run(void) {
         // fires once per flip. `multion < 2` and the `multion == 1` radar
         // auto-enable are multiplayer-only; nplayers != 1 is real and holds
         // whenever bots are racing.
-        if (cp.stage != 10 && nplayers != 1 && xt.arrace != control[0].arrace) {
+        if (!NFM_NO_ARROW_STAGE && nplayers != 1 && xt.arrace != control[0].arrace) {
           xt.arrace = control[0].arrace;
           if (xt.arrace) {
             xt.wasay = true;
@@ -8719,7 +8742,7 @@ int game_run(void) {
             xt.alocked = -1;
           }
         }
-        if (!race_holdit && starcnt == 0 && cp.stage != 10 && !(fp_race && !settings.fp_arrow)) {
+        if (!race_holdit && starcnt == 0 && !NFM_NO_ARROW_STAGE && !(fp_race && !settings.fp_arrow)) {
           draw_checkpoint_arrow(&g, &m, &xt, &cp, mad[0].point, mad[0].missedcp,
                                 xt.arrace, nplayers, sc);
           // :7919 -- the missed/wrong-way banner is the `if (!this.arrace)`
@@ -9061,7 +9084,7 @@ int game_run(void) {
         // radar_stat() and now appears only while the radar is toggled on.
         // See that function's own doc comment for the evidence (`this.sped`
         // has exactly one draw site in the whole source, line 9067).
-        if (control[0].radar && cp.stage != 10) {
+        if (control[0].radar && !NFM_NO_ARROW_STAGE) {
           radar_stat(&g, &m, &xt, &mad[0], &co[0], &cp, control[0].arrace, nplayers,
                      hud_images.sped);
         }
