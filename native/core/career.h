@@ -129,6 +129,12 @@ void career_xp_lose(CareerRun *run, const CareerRace *r, CareerSave *s);
 void career_xp_stunt(CareerRun *run, const CareerRace *r, CareerSave *s, float powerup, int32_t stat3);
 int32_t career_stunt_stat(const CarDefine *cd, int32_t cn, const int32_t sp[CS_N]);
 
+/** Slot `j`'s start (GameSparker.loadstage's grid in the career): x, y
+ * (the car's ground offset `grat` taken off) and z, and the floor it starts
+ * on (stage 13's tower, 0 elsewhere). */
+void career_grid(const CareerRace *r, const CareerSave *s, int32_t j, int32_t grat, int32_t *x, int32_t *y, int32_t *z,
+                 int32_t *floor);
+
 /** The player's power factor (0.76 outside career, Madness.drive). */
 double career_power_factor(int32_t car, const int32_t sp[CS_N], int32_t level);
 

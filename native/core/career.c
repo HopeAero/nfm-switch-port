@@ -333,3 +333,120 @@ int32_t career_stunt_stat(const CarDefine *cd, int32_t cn, const int32_t sp[CS_N
       ((float)(cd->airc[cn] + sp[CS_STU]) + (cd->airs[cn] + (float)sp[CS_STU] * 0.025f) * 10.0f) / 125.0f;
   return (int32_t)(stunts * 100.0f);
 }
+
+void career_grid(const CareerRace *r, const CareerSave *s, int32_t j, int32_t grat, int32_t *x, int32_t *y, int32_t *z,
+                 int32_t *floor) {
+  // GameSparker.loadstage's start grid (GameSparker.js 1270-1481), the
+  // career's: rows of three, the stages' own layouts ("specialar"), and the
+  // field moved back on 3, 6, 17 and 19.
+  const int32_t n = r->nplayers, st = r->stage;
+  const bool hard = s->unlocked == st || r->hardstage;
+  int32_t moveback = 0;
+  if (st == 17) moveback = j >= 4 ? 760 : (j > 0 ? 100000 : 0);
+  if (st == 19) moveback = 760;
+  if (st == 3) moveback = 3040;
+  if (st == 6) moveback = -16800;
+  const bool specialar = ((st == 5 || st == 11) && !r->bonus) || st == 13 || st == 14 || st == 20 || st == 21 ||
+                         (st == 23 && hard) || (r->bonus == 4 && j > 0);
+  *floor = 0;
+  int32_t ybase = 250;   // Medium.ground
+  *x = 0;
+  *z = 0;
+  if (specialar) {
+    if (st == 5 && !r->bonus) {
+      if (j < n - 1) {
+        static const int32_t kX[3] = {0, -350, 350};
+        *x = kX[j % 3];
+        *z = (j % 3 == 0 ? 760 : 1140) + (j / 3) * 760;
+      } else {
+        *z = 2280;
+      }
+    }
+    if (st == 11 && r->bonus != 2) {
+      if (j >= 1 && j <= 4) {
+        *z = -500000;   // the undead vans wait off the map
+      } else if (j > 0) {
+        const int32_t off = j - 4;
+        if (j < n - 1) {
+          static const int32_t kX[3] = {0, -350, 350};
+          *x = kX[off % 3];
+          *z = (off % 3 == 0 ? -760 : -380) + (off / 3) * 760;
+        } else {
+          *z = -760 + (off / 3) * 760;
+        }
+      } else {
+        *z = -760;
+      }
+    }
+    if (st == 14) {
+      if (j < n - 3) {
+        if (j == 0) *z = 0;
+        if (j == n - 4) { *x = -350; *z = -38000; }
+        if (j == n - 5) { *x = 350; *z = -38000; }
+      } else {
+        if (j == n - 1) *z = 760;
+        if (j == n - 2) { *x = -350; *z = -380; }
+        if (j == n - 3) { *x = 350; *z = -380; }
+      }
+    }
+    if (r->bonus == 4) {
+      *x = 100000;
+      *z = 100000;
+    }
+    if (st == 20) {
+      ybase = -20000;
+      *z = 760;
+    }
+    if (st == 13) {
+      if (j == 0 || j >= 10) {
+        *floor = 3;
+        const int32_t off = j == 0 ? 0 : j - 9;
+        ybase = *floor * -10000;
+        if (j == n - 1) {
+          *z = (off / 3) * 760;
+        } else {
+          static const int32_t kX[3] = {0, -350, 350};
+          *x = kX[j % 3];
+          *z = (j % 3 == 0 ? -380 : 0) + (off / 3) * 760;
+        }
+      } else {
+        *floor = (j - 1) / 3;   // the floor guardians wait on their floors
+        ybase = *floor * -10000;
+        *x = -10000;
+        *z = j * 5000;
+      }
+    }
+    if (st == 21) {
+      ybase = -293500;
+      if (j == n - 1) {
+        *z = (j / 3) * 760 - 202000;
+      } else {
+        static const int32_t kX[3] = {0, -350, 350};
+        *x = kX[j % 3];
+        *z = (j % 3 == 0 ? -760 : -380) + (j / 3) * 760 - 202000;
+      }
+    }
+    if (st == 23 && hard) {
+      if (j == n - 1) {
+        *z = ((j - 1) / 3) * 760;
+      } else if (j > 1) {
+        static const int32_t kX[3] = {350, 0, -350};   // (j % 3) 0, 1, 2
+        *x = kX[j % 3];
+        *z = (j % 3 == 1 ? -760 : -380) + ((j - 1) / 3) * 760;
+      } else {
+        *z = j == 0 ? -760 : -150000;   // the Titan waits off the map
+      }
+    }
+    *y = ybase - grat;
+    return;
+  }
+  if (j < n - 1 || n % 3 == 1) {
+    static const int32_t kX[3] = {0, -350, 350};
+    *x = kX[j % 3];
+    *z = (j % 3 == 0 ? -760 : -380) + (j / 3) * 760 - moveback;
+    *y = (r->bonus == 2 && r->beast[j]) ? -5000 : ybase - grat;   // bonus 2's beasts drop in
+  } else {
+    *z = (j / 3) * 760 - moveback;   // a last car out of a row of three, centred behind
+    *y = ybase - grat;
+  }
+}

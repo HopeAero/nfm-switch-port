@@ -90,6 +90,7 @@
 #include "ext_pt.h"
 #include "new_cars.h"
 #include "career.h"
+#include "career_bots.h"
 #include "diag.h"
 
 // GameSparker.js's own ContO[610] held NFM 2's stages; Extended's reach 1106
@@ -4550,6 +4551,8 @@ int game_run(void) {
   int32_t career_seen_clear = 0;  // the player's checkpoints already paid for
   int32_t career_seen_dested[NFM_MAX_CARS] = {0};
   bool career_undead_wrecked[NFM_MAX_CARS] = {false};
+  static CareerBots cbots;        // this race's recorded bots (career_bots.c)
+  int32_t cbots_last_clear[NFM_MAX_CARS] = {0}, cbots_since[NFM_MAX_CARS] = {0};
   bool career_settled = false;    // the race's end already paid or taken back
   // The car select's stat panel: the player's points into the six stats
   // (XT carselect 15705-15760, statincrease), one row at a time.
@@ -6075,7 +6078,18 @@ int game_run(void) {
         // A career beast races its car's "B" model (GameSparker.loadstage,
         // Extended's model sc + 78).
         if (ext_career && crace.beast[i]) base = &ext_models[EXT_MODEL_BEAST + crace.sc[i]];
-        cont_o_recopy(&co[i], base, kXstart[i], 250 - base->grat, kZstart[i], 0);
+        int32_t gx = kXstart[i], gy = 250 - base->grat, gz = kZstart[i];
+        if (ext_career) {
+          int32_t gfloor;
+          career_grid(&crace, &csave, i, base->grat, &gx, &gy, &gz, &gfloor);
+        } else if (ext_normal && i == nplayers - 1 && nplayers % 3 != 1) {
+          // Extended's grid puts a last car that would start a new row of
+          // three centred behind (GameSparker.java 1555-1574): normal
+          // mode's 11th.
+          gx = 0;
+          gz = (i / 3) * 760;
+        }
+        cont_o_recopy(&co[i], base, gx, gy, gz, 0);
         // A shadow car is see-through, no outlines (Plane.d, shadowtrans 80).
         if (ext_career && crace.shadow[i]) co[i].fade = 255 - 80;
         // Keyboard/pad input drives slot 0 -- see platform/<name>/input.h
@@ -6108,6 +6122,35 @@ int game_run(void) {
         career_run_start(&crun, &crace, &csave);
         career_seen_clear = 0;
         career_settled = false;
+        // The stage's recorded bots (GameSparker.java 1749-1790).
+        career_bots_free(&cbots);
+        int32_t bot_slots[NFM_MAX_CARS];
+        const bool hard = csave.unlocked == stage_num || crace.hardstage;
+        const int32_t nbots = career_bots_slots(stage_num, nplayers, hard, crace.bonus, bot_slots);
+        if (nbots > 0) {
+          char path[64];
+          snprintf(path, sizeof(path), "ext/data/Files/Bots/stage%d.radq", (int)stage_num);
+          VfsZip zip;
+          if (vfs_read_zip(path, &zip)) {
+            for (int32_t b = 0; b < nbots; b++) {
+              char want[16];
+              snprintf(want, sizeof(want), "%d.txt", (int)bot_slots[b]);
+              for (int32_t e = 0; e < zip.count; e++) {
+                if (strcmp(zip.entries[e].name, want) != 0) continue;
+                char *text = vfs_entry_text(&zip.entries[e]);
+                if (text && text[0]) career_bots_parse(&cbots, bot_slots[b], text);
+                free(text);
+              }
+            }
+            vfs_free_zip(&zip);
+          }
+        }
+        for (int32_t i = 0; i < nplayers; i++) {
+          mad[i].isabot = false;   // set each tick once the race is on
+          cbots_last_clear[i] = 0;
+          cbots_since[i] = 0;
+          mad[i].bot_hit = false;
+        }
       }
       // NFM_HOOK_SPECIALS=1: every bar starts full, to see specials headless.
       if (getenv("NFM_HOOK_SPECIALS")) for (int32_t i = 0; i < nplayers; i++) mad[i].spatk = mad[i].speclast = mad[i].speclast2 = 120.0f;
@@ -6462,6 +6505,69 @@ int game_run(void) {
             g_diag.aux[4] = cp.n;
             g_diag.aux[5] = cp.nsp;
             control_preform(&control[i], &mad[i], &co[i], &cp, &t);
+          }
+          if (ext_career && starcnt == 0) {
+            // GameSparker.java 2228-2356: a bot breaks off for good when it
+            // was hit, races the wrong car, or sits far ahead of a player
+            // close by who could take it; until then it replays its keys.
+            const bool hard = csave.unlocked == stage_num || crace.hardstage;
+            const bool cantbot = crace.scalelevels || crace.nolevels;
+            const int32_t st = stage_num;
+            for (int32_t s = 1; s < nplayers; s++) {
+              if (!cbots.keys[s]) continue;
+              if (mad[s].bot_hit) cbots.brk[s] = true;
+              const int32_t dx = co[s].x / 100 - co[0].x / 100, dz = co[s].z / 100 - co[0].z / 100;
+              const int32_t dist = dx * dx + dz * dz;
+              const int32_t lead = cp.clear[s] - cp.clear[0];
+              const int32_t car = crace.sc[s];
+              const float mine = live_cd[0].moment[sc[0]], its = live_cd[s].moment[sc[s]];
+              bool brk = cantbot || mad[s].frozen;
+              if (st == 5 || st == 9 || st == 10 || st == 14) {
+                int32_t whichcar = st == 14 ? 14 : (st == 5 ? 10 : 12), threshold = 2;
+                if (st == 9) {
+                  if (cp.clear[0] >= 2 && cp.clear[0] <= 4) threshold = 4;
+                  if (cp.clear[0] >= 9 && cp.clear[0] <= 15) threshold = 7;
+                  if (cp.clear[0] >= 15 && cp.clear[0] <= 19) threshold = 5;
+                }
+                brk = brk || (dist < 10000 && lead >= threshold) || car != whichcar;
+              }
+              if (st == 13) {
+                const int32_t rightcar = s == nplayers - 1 ? 14 : car;
+                brk = brk || (dist < 8000 && lead >= 5 && mine > its + 1.0f) || car != rightcar || !hard;
+              }
+              if (st == 18) brk = brk || (dist < 6500 && lead >= 4 && mine > its) || car != 16;
+              if ((st == 11 || st == 21) && hard)
+                brk = brk || (dist < 10000 && lead >= 4 && mine > its + 1.0f) || car != (st == 21 ? 17 : 12);
+              // This port's own guard: its physics are not Extended's bit for
+              // bit, so a recording can drift off its line; a bot that goes
+              // 600 ticks without a checkpoint hands over to the AI.
+              if (cp.clear[s] != cbots_last_clear[s]) {
+                cbots_last_clear[s] = cp.clear[s];
+                cbots_since[s] = 0;
+              } else if (++cbots_since[s] > 600) {
+                brk = true;
+              }
+              if ((brk || mad[s].bot_hit) && !cbots.brk[s])
+                fprintf(stderr, "career bot %d breaks off at tick %d (hit %d, lead %d)\n", (int)s, (int)cbots.timer,
+                        (int)mad[s].bot_hit, (int)lead);
+              if (brk) cbots.brk[s] = true;
+              mad[s].isabot = !cbots.brk[s];
+            }
+            if (st == 5 || st == 9 || st == 10 || st == 13 || st == 14 || st == 18 || st == 20 ||
+                ((st == 11 || st == 21) && hard)) {
+              cbots.timer++;
+              for (int32_t s = 0; s < nplayers; s++) cbots.specialtimer[s]++;
+            }
+            const bool special = st == 13 && hard;
+            for (int32_t s = 1; s < nplayers; s++) {
+              if (!cbots.keys[s] || cbots.brk[s]) continue;
+              const uint8_t k = career_bots_keys(&cbots, s, special);
+              control[s].up = (k & BOT_UP) != 0;
+              control[s].down = (k & BOT_DOWN) != 0;
+              control[s].left = (k & BOT_LEFT) != 0;
+              control[s].right = (k & BOT_RIGHT) != 0;
+              control[s].handb = (k & BOT_HANDB) != 0;
+            }
           }
           // Extended's specials: charged bars fire, boosts and attacks
           // rewrite each car's live stats (xtGraphics.nitroandspecials).

@@ -127,6 +127,9 @@ typedef struct Mad {
   int32_t lastcolider;   // the car that last hit this one (its im), -1 none: who a wasting is credited to
   double powfactor;      // Extended: the player's power below full counts this much (0.76; career raises it)
   float stunt_gain;      // landed stunts' powerup since game.c last read it (career experience)
+  bool isabot;           // the career's recorded bot drives this car (Madness.isabot): no random bumps, no
+                         // auto-righting, its special charges as the player's; a hit ends it (bot_hit)
+  bool bot_hit;          // it collided with a car since game.c last looked (Bots.botbreak)
 
   CarDefine *cd;   // borrowed
   Medium *m;       // borrowed

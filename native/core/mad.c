@@ -688,6 +688,9 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
           }
           if (xt_graphics_stub_human(mad->xt, mad->im)) mad2->lastcolido = 70;
           mad2->lastcolider = mad->im;
+          // Any hit ends both cars' recorded runs (Madness.js:956-959).
+          mad->bot_hit = mad2->bot_hit = true;
+          mad->isabot = mad2->isabot = false;
           if (xt_graphics_stub_human(mad->xt, mad2->im)) mad->lastcolido = 70;
           mad2->scy[k] = mad2->scy[k] - (float)cd->lift[mad->cn];
         }
@@ -718,7 +721,7 @@ static float acel_step(float power, float acelf) {
 // and a running special drains speclast at 343000 / 2500000 a tick (about
 // 875 ticks); when it is spent the bar empties.
 static void mad_special_tick(Mad *mad, Control *control) {
-  if (mad->im > 0 && mad->powerup <= 100.0f) mad->spatk += mad->powerup / 500.0f;
+  if (mad->im > 0 && mad->powerup <= 100.0f && !mad->isabot) mad->spatk += mad->powerup / 500.0f;
   else mad->spatk += mad->powerup / 3500.0f;
   if (control->spatk && mad->spatk < 120.0f) control->spatk = false;
   if (mad->spatk > 120.0f) mad->spatk = 120.0f;
@@ -1275,7 +1278,8 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
         // capped at 1.35. Java: (float)(-100.0f * r * (speed / swits) *
         // (bounciness - 0.3)).
         if (!(n25 < cd->grip[mad->cn])) {
-          const float r = medium_random(m);
+          float r = medium_random(m);
+          if (mad->isabot) r = 0.5f;   // a recorded bot meets the same bumps every run (Madness.js:2119)
           const int32_t idx = (int32_t)(r * 4.0f);
           float bounciness = cd->bounce[mad->cn];
           if (bounciness > 1.35f) bounciness = 1.35f;
@@ -1632,7 +1636,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
 
   if (abs(a2_) > abs(a_)) a_ = a2_;
   if (abs(a4_) > abs(a3_)) a3_ = a4_;
-  if (mad->xt->extended && !mad->mtouch) {
+  if (mad->xt->extended && !mad->mtouch && !mad->isabot) {   // a bot flies as recorded (Madness.js:2648)
     // Extended (Madness.java:2664-2700): in the air, the pitch and roll
     // corrections turn the car toward whichever is nearer, upright or
     // upside down, instead of NFM 2's fixed sign -- kinder landings.
@@ -1959,7 +1963,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
           // special bar too -- a third of it for the AI's ordinary stunts, a
           // fifth for the player's and for big ones -- unless one is running.
           if (mad->xt->extended && !control->spatk) {
-            if (mad->im > 0 && mad->powerup <= 100.0f) mad->spatk += mad->powerup / 3.0f;
+            if (mad->im > 0 && mad->powerup <= 100.0f && !mad->isabot) mad->spatk += mad->powerup / 3.0f;
             else mad->spatk += mad->powerup / 5.0f;
           }
           if (mad->im == mad->xt->im && jtrunc(mad->powerup) > mad->rpd->powered && mad->rpd->wasted == 0 &&
@@ -2019,6 +2023,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
     }
   }
 
+  if (mad->isabot && control->wall != -1) control->wall = -1;   // Madness.js:3173
   if (xt_graphics_stub_human(mad->xt, mad->im)) {
     if (control->wall != -1) control->wall = -1;
   } else if (mad->lastcolido != 0 && !mad->dest) {
