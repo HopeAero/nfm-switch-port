@@ -7688,7 +7688,13 @@ int game_run(void) {
           // turns every direction into a stunt until landing. Tell the
           // input layer, so on the Vita only CROSS + stick reach the car
           // then and the throttle/brake triggers cannot loop it.
-          if (!bench.active) input_set_stunting(&control[0], mad[0].loop == 2 || (control[0].handb && !mad[0].wtouch));
+          // The second case is drive()'s own arming test, all of it: a
+          // handbrake already held on the ground (`pushed`, a drift) arms
+          // nothing when the wheels skip off a bump -- without that term the
+          // throttle went dead for those ticks mid-drift.
+          if (!bench.active)
+            input_set_stunting(&control[0], mad[0].loop == 2 || (control[0].handb && !mad[0].wtouch &&
+                                                                  !mad[0].pushed && mad[0].loop == 0));
           DIAG_PHASE("race tick: driving");
           for (int32_t i = 0; i < nplayers; i++) {
             g_diag.aux[0] = i;
