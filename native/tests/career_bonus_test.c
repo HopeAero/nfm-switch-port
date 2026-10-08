@@ -31,6 +31,7 @@ int main(void) {
   for (int32_t c = 0; c < ncases; c++) {
     const BonusCase *bc = &bonus_cases[c];
     const int32_t me = bc->me;
+    if (me >= 23 && me <= 31) continue;   // this port's own perk sets (career.c), not the JS's empty ones
     CareerSave s;
     career_reset(&s);
     s.unlocked = bc->unlocked;

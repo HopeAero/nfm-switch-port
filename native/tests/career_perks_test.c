@@ -48,11 +48,16 @@ static void set_perks(CareerPerks *pk, int32_t car, const int32_t pts[6]) {
   for (int32_t a = 0; a < CAREER_PERK_SLOTS; a++) pk->special[car][career_statsalc[car][a]][a] = (int8_t)pts[a];
 }
 
+// Extended's 23-31 race this port's own perk sets (career.c), not the JS's
+// empty ones: their cases do not compare.
+static bool port_perks(int32_t car) { return car >= 23 && car <= 31; }
+
 int main(void) {
   static CareerPerks pk;
   const int32_t nt = (int32_t)(sizeof(table_cases) / sizeof(table_cases[0]));
   for (int32_t i = 0; i < nt; i++) {
     const TableCase *c = &table_cases[i];
+    if (port_perks(c->car)) continue;
     memset(&pk, 0, sizeof(pk));
     pk.car[0] = c->car;
     set_perks(&pk, c->car, c->pts);
@@ -67,6 +72,7 @@ int main(void) {
   const int32_t nh = (int32_t)(sizeof(hit_cases) / sizeof(hit_cases[0]));
   for (int32_t i = 0; i < nh; i++) {
     const HitCase *c = &hit_cases[i];
+    if (port_perks(c->car) || port_perks(c->car2)) continue;
     memset(&pk, 0, sizeof(pk));
     pk.car[c->im] = c->car;
     pk.car[c->im2] = c->car2;
@@ -93,6 +99,7 @@ int main(void) {
   const int32_t nm = (int32_t)(sizeof(misc_cases) / sizeof(misc_cases[0]));
   for (int32_t i = 0; i < nm; i++) {
     const MiscCase *c = &misc_cases[i];
+    if (port_perks(c->car)) continue;
     memset(&pk, 0, sizeof(pk));
     pk.car[0] = c->car;
     set_perks(&pk, c->car, c->pts);
