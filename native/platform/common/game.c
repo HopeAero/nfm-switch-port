@@ -3063,14 +3063,15 @@ static void draw_gamemode_menu(Graphics2D *g,
   // Drawing all rows unconditionally is therefore the FAITHFUL
   // behaviour, not a simplification of one.
   struct MenuOpt { int32_t x, y, w; int32_t r_aflk, g_aflk, b_aflk; int32_t r_solid, g_solid, b_solid; };
-  const struct MenuOpt opts[4] = {
+  const struct MenuOpt opts[5] = {
     { 358, 262,  82, 200,  64,   0, 255, 128,  0 },  // NFM 1     (Java opselect=0)
     { 358, 290,  82, 200,  64,   0, 255,  95,  0 },  // NFM 2     (Java opselect=1)
     { 348, 318, 102, 200,  64,   0, 255, 128,  0 },  // Free Play (Java opselect=3, moved from y=346)
     { 348, 346, 102, 200,  64,   0, 255, 128,  0 },  // RPG Mode, Extended's career, the original's 4th slot
+    { 348, 374, 102, 200,  64,   0, 255, 128,  0 },  // Tournament: Extended's Premier Tournament
   };
 
-  for (int32_t i = 0; i < 4; i++) {
+  for (int32_t i = 0; i < 5; i++) {
     const struct MenuOpt *o = &opts[i];
     draw_menu_option_rect(g, o->x, o->y, o->w, 22, i == opselect,
                            o->r_aflk, o->g_aflk, o->b_aflk,
@@ -3105,9 +3106,9 @@ static void draw_gamemode_menu(Graphics2D *g,
     gfx_draw_image_sub(g, opti2.tex, 346, 322, opti2.w, 15,
                         0, 85, opti2.w, 15, opti2.w, opti2.h);
   }
-  (void)extlabel;
   if (careerlabel.tex >= 0)
     gfx_draw_image(g, careerlabel.tex, 400 - careerlabel.w / 2, 349, careerlabel.w, careerlabel.h);
+  if (extlabel.tex >= 0) gfx_draw_image(g, extlabel.tex, 400 - extlabel.w / 2, 377, extlabel.w, extlabel.h);
 
   // Footer bylines, same positions as main menu.
   if (byrd.tex >= 0) {
@@ -5182,7 +5183,7 @@ int game_run(void) {
       menu_opback = load_menu_png(&images_zip, "opback.png");
       menu_opti = load_menu_png(&images_zip, "options.png");
       menu_opti2 = load_menu_png(&images_zip, "options2.png");
-      menu_extlabel = load_menu_png_file("data/port/extended_label.png");
+      menu_extlabel = load_menu_png_file("data/port/tournament_label.png");   // the Tournament row
       menu_careerlabel = load_menu_png_file("data/port/career_label.png");
       // This port's fourth main-menu row. Not an original asset: options.png's
       // style redrawn (tools/gen_menu_label.py), a loose file beside data/vita/.
@@ -6059,8 +6060,9 @@ int game_run(void) {
             if (OVERON(kRows[i][0], kRows[i][1], kRows[i][2], 22)) HIT(&mainmenu_opselect, i, BTN_CONFIRM);
         } else if (state == STATE_GAMEMODE_MENU) {
           // draw_gamemode_menu's rows.
-          static const int32_t kRows[4][3] = {{358, 262, 82}, {358, 290, 82}, {348, 318, 102}, {348, 346, 102}};
-          for (int32_t i = 0; i < 4; i++)
+          static const int32_t kRows[5][3] = {
+              {358, 262, 82}, {358, 290, 82}, {348, 318, 102}, {348, 346, 102}, {348, 374, 102}};
+          for (int32_t i = 0; i < 5; i++)
             if (OVERON(kRows[i][0], kRows[i][1], kRows[i][2], 22)) HIT(&gamemode_opselect, i, BTN_CONFIRM);
         } else if (state == STATE_INSTRUCTIONS) {
           if (inst_flipo >= 1 && inst_flipo <= 15 && OVER(menu_next, 665, 395)) HIT(NULL, 0, BTN_RIGHT);
@@ -6222,8 +6224,8 @@ int game_run(void) {
       // hidden same as main menu.
       // A fourth row, Extended (its normal mode), where the original's own
       // fourth row sat.
-      if (KEY_EDGE(BTN_DOWN)) gamemode_opselect = (gamemode_opselect + 1) % 4;
-      if (KEY_EDGE(BTN_UP)) gamemode_opselect = (gamemode_opselect + 3) % 4;
+      if (KEY_EDGE(BTN_DOWN)) gamemode_opselect = (gamemode_opselect + 1) % 5;
+      if (KEY_EDGE(BTN_UP)) gamemode_opselect = (gamemode_opselect + 4) % 5;
       if (KEY_EDGE(BTN_CANCEL)) {
         state = STATE_MAIN_MENU;
       }
@@ -6238,8 +6240,10 @@ int game_run(void) {
           case 1: gmode = 2; break;  // NFM 2
           case 2: gmode = 0; break;  // Free Play
           case 3: gmode = 0; break;  // RPG Mode: Extended's career (its normal mode's flow, ext_career)
+          case 4: gmode = 0; break;  // Tournament: Extended's Premier Tournament (its normal mode's stage 26)
         }
-        ext_normal = gamemode_opselect == 3;
+        const bool tourney = gamemode_opselect == 4;
+        ext_normal = gamemode_opselect >= 3;
         ext_career = gamemode_opselect == 3;
         g_ext_career = ext_career;
         car_filter = CF_ALL;
@@ -6282,6 +6286,15 @@ int game_run(void) {
         stage_preview_loaded_num = -1;
         state = STATE_CAR_SELECT;
         car_select_needs_intro = true;
+        if (tourney) {
+          // Every match gives every car, the player's too: straight to the
+          // first match's rules.
+          stage_num = EXT_PT_STAGE;
+          ext_read_name(stage_num, stage_name_buf, sizeof(stage_name_buf));
+          ext_pt_start_tournament(&pt);
+          ptmatch = 1;
+          state = STATE_PT_INFO;
+        }
       }
     } else if (state == STATE_INSTRUCTIONS) {
       // :4285-4306 -- the flipbook's paging, ported exactly. Forward is
@@ -6627,7 +6640,8 @@ int game_run(void) {
       }
       if (KEY_EDGE(BTN_CANCEL) && pt.match == 1) {
         ptmatch = 0;
-        state = STATE_STAGE_SELECT;
+        gamemode_opselect = 4;
+        state = STATE_GAMEMODE_MENU;
       }
     } else if (state == STATE_PT_SCORES) {
       if (KEY_EDGE(BTN_CONFIRM)) {
@@ -6645,7 +6659,7 @@ int game_run(void) {
             if (progress_path_ok) ext_progress_save(progress_path, &ext_prog);
           }
           ptmatch = 0;
-          gamemode_opselect = 3;
+          gamemode_opselect = 4;
           state = STATE_GAMEMODE_MENU;
         }
       }
@@ -6731,7 +6745,7 @@ int game_run(void) {
       if (KEY_EDGE(BTN_CONFIRM)) {
         if (gmode == 1) gamemode_opselect = 0;
         else if (gmode == 2) gamemode_opselect = 1;
-        else gamemode_opselect = ext_normal ? 3 : 2;
+        else gamemode_opselect = ext_normal ? (ext_career ? 3 : 4) : 2;
         // Java :6995-6997 -- `if (this.loadedt) { this.strack.unload(); }`
         // stops the stage's music on the way back to the menu.
         audio_stop_music(&audio);
@@ -6819,7 +6833,7 @@ int game_run(void) {
           stage_music_loaded_for = -1;
           if (gmode == 1) gamemode_opselect = 0;
           else if (gmode == 2) gamemode_opselect = 1;
-          else gamemode_opselect = ext_normal ? 3 : 2;
+          else gamemode_opselect = ext_normal ? (ext_career ? 3 : 4) : 2;
           state = STATE_GAMEMODE_MENU;
         }
       }
