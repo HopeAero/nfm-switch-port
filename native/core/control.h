@@ -22,6 +22,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "medium.h"
+#include "nfm_limits.h"
+#include "xt_graphics.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -100,6 +102,19 @@ typedef struct Control {
   int32_t stuck, downuse, fewsecs;
   bool fewsecson;
   int32_t fixby;
+  // The rest of Extended's Control fields, which only its career AI
+  // (control_preform_career) uses. `xavoidnlev` is Extended's int[]
+  // avoidnlev (per slot), renamed beside NFM 2's scalar avoidnlev above.
+  int32_t abboost, abdelay;
+  int32_t campchk, campcool, chkahead;   // campchk -1 until set (Control's constructor)
+  bool waitforuser, intercept;
+  int32_t l1, l3, k5;
+  bool backfix, switchspot, waited, delayturn, dontback, needtofix;
+  int32_t staythere, waitman;
+  bool wrongfloor, setfixfloor;
+  int32_t gotofloor;
+  bool neverhit[NFM_MAX_CARS];
+  int32_t xavoidnlev[NFM_MAX_CARS];
 
   Medium *m; // borrowed, not owned
 } Control;
@@ -122,6 +137,24 @@ void control_reset(Control *c, struct CheckPoints *cp, int32_t n);
  * (cp->stage is then NFM 2's 11-27, else Extended's own 1-28). */
 void control_reset_ext(Control *c, struct CheckPoints *cp, int32_t n, bool classic);
 
+/** Extended's whole reset (Control.java:9824-9937), career included -- the
+ * extended build calls this instead of control_reset_ext when
+ * xt->career.careermode is on. `n` is the car (this port's number), `madness`
+ * the car's own Mad (its slot and car); the player's car is
+ * xt->career.usermad. Unlike control_reset it leaves fpnt[] alone: Extended's
+ * preform loads fpnt from Contva.fixpoint every tick. */
+void control_reset_career(Control *c, struct CheckPoints *cp, int32_t n, XtGraphicsStub *xt,
+                          const struct Mad *madness);
+
+/** Contva.sortvariables (Contva.java): refreshes car `madness`'s flags in the
+ * race's Contva. The original's tick (web/ext/GameSparker.js:2390-2417) calls
+ * it for slots 0..nplayers-1 right after the AI cars' preform, skipping a car
+ * a recorded bot drives (isabot) and, on career stage 13, one held by
+ * forcehandb/speedhack; the career AI reads the result next tick. `u` is the
+ * race's Control array (u[im].trfix). */
+void contva_sortvariables(XtContva *cv, const struct Mad *madness, const struct CheckPoints *cp,
+                          const Control *u, bool careermode, int32_t nplayers, const XtCareerAI *cx);
+
 int32_t control_py(int32_t n, int32_t n2, int32_t n3, int32_t n4);
 int32_t control_pys(int32_t n, int32_t n2, int32_t n3, int32_t n4);
 
@@ -143,6 +176,11 @@ int32_t control_pys(int32_t n, int32_t n2, int32_t n3, int32_t n4);
  * the aim angle into left/right/handb/down; (4) wall-avoidance/recovery;
  * (5) airborne stunt/trick control + landing correction, taken instead
  * of (1)-(4) whenever the car isn't touching the ground.
+ *
+ * In Extended's career (mad->xt->career.careermode) it runs Extended's own
+ * preform instead, whole (control_career.inc, translated from Control.java),
+ * reading what it needs beyond these arguments from mad->xt->career
+ * (XtCareerAI in xt_graphics.h).
  */
 void control_preform(Control *c, struct Mad *mad, struct ContO *contO,
                       struct CheckPoints *checkPoints, struct Trackers *trackers);

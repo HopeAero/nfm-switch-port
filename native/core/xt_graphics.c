@@ -39,6 +39,49 @@ void xt_graphics_stub_init(XtGraphicsStub *xt) {
   // additionally zeroes bfcrash/bfscrape/cntwis/bfskid/pwait/forstart
   // (xtGraphics.java:1495-1499), all already 0 here, so nothing extra to
   // spell out.
+
+  // The career AI's context (xt_graphics.h XtCareerAI): xtGraphics's own
+  // targetcar default (xtGraphics.java:14623) and a reset Contva.
+  xt->career.targetcar = 100;
+  xt_contva_reset(&xt->career.contva);
+}
+
+// Contva.java's resetfp() and reset(), loops over its 101 slots kept to ours.
+void xt_contva_resetfp(XtContva *cv) {
+  for (int32_t a = 0; a < XT_CONTVA_FIX; a++) cv->fixpoint[a] = 0;
+  cv->numfixes = 0;
+  cv->whichfix = 0;
+}
+
+void xt_contva_reset(XtContva *cv) {
+  for (int32_t a = 0; a < NFM_MAX_CARS; a++) {
+    cv->vulnerable[a] = false;
+    cv->freeze[a] = false;
+    cv->swapped[a] = false;
+    cv->leeching[a] = false;
+    cv->weaken[a] = false;
+    cv->specon[a] = false;
+    cv->needhelp[a] = false;
+    cv->camping[a] = false;
+    cv->dontstunt[a] = false;
+    cv->nearchk[a] = false;
+    cv->sharpturn[a] = 0;
+    cv->opbackloops[a] = false;
+    cv->biglead[a] = false;
+    cv->completed[a] = 0;
+    cv->spdexception[a] = false;
+    cv->slowdown[a] = 240;
+    cv->slowrange[a] = 4000;
+    cv->chkcircle[a] = 0;
+    cv->moreslow[a] = 0;
+    cv->dontdistract[a] = false;
+    cv->dontmiss[a] = false;
+    cv->hugelead[a] = false;
+    cv->layoff[a] = false;
+  }
+  cv->lotswasted = false;
+  cv->whichfix = 0;
+  cv->urgency = false;
 }
 
 bool xt_graphics_stub_human(const XtGraphicsStub *xt, int32_t n) {

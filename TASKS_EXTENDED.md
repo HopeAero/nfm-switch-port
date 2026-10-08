@@ -165,6 +165,13 @@ Map of the original: docs/extended-career.md.
 - [ ] Stage effects and gimmicks per stage (Medium.effect, water, snow,
       floors and teleports on 13, lives on 20, crumbling 21, gravity 15).
 - [ ] Career AI (Control's per-stage branches) and recorded bots.
+      Control side done (2026-10-07): in career, control_preform runs
+      Extended's whole preform, translated mechanically from Control.java
+      (tools/control_career_j2c.py -> native/core/control_career.inc), plus
+      control_reset_career and contva_sortvariables; control_career_test
+      matches web/ext/Control.js digest for digest on every stage. Left:
+      game.c filling xt.career (XtCareerAI, xt_graphics.h) and calling
+      reset/sortvariables in the original's order; recorded bots.
 - [ ] Bonus stages 1-4 and their prizes, scouting, perks (car points),
       bonus stat point rolls (winchance/killchance), stat changers / sell,
       hard / scale / no levels, opponent levels on the HUD, start grids.

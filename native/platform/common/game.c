@@ -6002,6 +6002,7 @@ int game_run(void) {
       // headless NFM_EXT_STAGE other than classictracks) are not.
       xt.classicmode = !ext_spec[0] || strncmp(ext_spec, "classictracks", 13) == 0;
       xt.ptmatch = PT_ACTIVE ? ptmatch : 0;
+      xt.career.careermode = false;   // set again below when the career races
       xt.im = 0;
 
       // xtGraphics.java:2354-2358 (loadstage(), top of the function) --
@@ -6203,6 +6204,35 @@ int game_run(void) {
           const char *pre = crace.shadow[i] ? "Shadow " : crace.undead[i] ? "Undead " : crace.beast[i] ? "Beast " : "";
           snprintf(career_names_buf[i], sizeof(career_names_buf[i]), "%s%s", pre, c);
           career_names[i] = career_names_buf[i];
+        }
+        // The career AI (control.c, control_career.inc): its context from
+        // the field, the race's Contva with the stage's fix points, and
+        // Extended's whole reset for every slot (GameSparker.js 1264).
+        {
+          XtCareerAI *cx = &xt.career;
+          memset(cx, 0, sizeof(*cx));
+          cx->targetcar = 100;   // none
+          cx->careermode = true;
+          cx->nplayers = nplayers;
+          cx->bonus = crace.bonus;
+          cx->hardstage = crace.hardstage;
+          cx->unlocked = csave.unlocked;
+          for (int32_t e = 0; e < CAREER_CARS; e++) cx->extpoints[e] = csave.extpoints[e];
+          for (int32_t k = 0; k < nplayers; k++) {
+            cx->sc[k] = crace.sc[k];
+            cx->beastopponent[k] = cx->beast[k] = crace.beast[k];
+            cx->shadowcar[k] = crace.shadow[k];
+            cx->undead[k] = crace.undead[k];
+            cx->level[k] = crace.level[k];
+            cx->aistrsp[k] = crace.sp[k][CS_STR];
+            cx->endsp[k] = crace.sp[k][CS_END];
+          }
+          cx->usermad = &mad[0];
+          xt_contva_reset(&cx->contva);
+          xt_contva_resetfp(&cx->contva);
+          for (int32_t f = 0; f < ext_info.numfixes && f < XT_CONTVA_FIX; f++) cx->contva.fixpoint[f] = ext_info.fixpoint[f];
+          cx->contva.numfixes = ext_info.numfixes;
+          for (int32_t k = 0; k < nplayers; k++) control_reset_career(&control[k], &cp, sc[k], &xt, &mad[k]);
         }
         for (int32_t i = 0; i < nplayers; i++) {
           mad[i].isabot = false;   // set each tick once the race is on
@@ -6556,7 +6586,16 @@ int game_run(void) {
           // computed, setting up their input for the NEXT tick's drive().
           // Skips index 0 (the human).
           DIAG_PHASE("race tick: AI (aux: car, point, clear, laps, route points, gates)");
+          if (ext_career) {
+            for (int32_t k = 0; k < nplayers; k++) {
+              xt.career.endsp[k] = crace.sp[k][CS_END];   // xtGraphics 9018
+              xt.career.botbreak[k] = cbots.brk[k];
+              xt.career.undead[k] = crace.undead[k];
+              xt.career.beast[k] = xt.career.beastopponent[k] = crace.beast[k];
+            }
+          }
           for (int32_t i = bench.active ? 0 : 1; i < nplayers; i++) {
+            if (ext_career && mad[i].isabot) continue;   // a recorded bot drives it
             g_diag.aux[0] = i;
             g_diag.aux[1] = mad[i].point;
             g_diag.aux[2] = mad[i].clear;
@@ -6564,6 +6603,13 @@ int game_run(void) {
             g_diag.aux[4] = cp.n;
             g_diag.aux[5] = cp.nsp;
             control_preform(&control[i], &mad[i], &co[i], &cp, &t);
+          }
+          if (ext_career) {
+            // Contva.sortvariables after the AI (GameSparker.js 2390-2417).
+            for (int32_t k = 0; k < nplayers; k++) {
+              if (mad[k].isabot) continue;
+              contva_sortvariables(&xt.career.contva, &mad[k], &cp, control, true, nplayers, &xt.career);
+            }
           }
           if (ext_career && starcnt == 0) {
             // GameSparker.java 2228-2356: a bot breaks off for good when it

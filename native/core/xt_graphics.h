@@ -31,6 +31,90 @@ struct Medium;
 struct Mad;
 struct Control;
 
+// ---- Extended's career AI context -------------------------------------------
+//
+// What Extended's Control.preform/reset read (and in a few places write)
+// outside Control itself when xtGraphics.careermode is on: fields of
+// xtGraphics, of Madness and ContO the C structs do not carry, of Bots, and
+// the shared Contva (Contva.java). control.c's career AI
+// (control_preform_career, control_reset_career) reads them from
+// XtGraphicsStub.career; nothing here is computed by the AI except where a
+// field says "written by the AI". Every per-slot array is indexed by the
+// car's race slot (Madness.im), sized NFM_MAX_CARS (the original's 101 is
+// only ever indexed by a slot). The zero value of every field is the
+// neutral one (what a stage without that system leaves it at) unless the
+// field says otherwise; xt_graphics_stub_init sets those few.
+
+// xtGraphics.endsp is sorted in place by the AI (Control.java:3695,
+// Arrays.sort over all 101 entries), so its length is part of the
+// behaviour and stays the original's.
+#define XT_CAREER_ENDSP 101
+#define XT_CONTVA_FIX 50   // Contva.fixpoint (new int[50]), = CHECK_POINTS_MAX_FIX
+
+/** Contva (Contva.java): one per race, shared by every car's Control
+ * (Control.variable). contva_sortvariables() (control.c) refreshes the
+ * per-car flags each tick; the career AI also writes nearchk, dontmiss,
+ * dontstunt, sharpturn, slowrange and whichfix itself. */
+typedef struct {
+  bool vulnerable[NFM_MAX_CARS], freeze[NFM_MAX_CARS], swapped[NFM_MAX_CARS], leeching[NFM_MAX_CARS];
+  bool weaken[NFM_MAX_CARS], specon[NFM_MAX_CARS];
+  bool urgency;
+  bool biglead[NFM_MAX_CARS], hugelead[NFM_MAX_CARS];
+  int32_t completed[NFM_MAX_CARS];   // % of the race's checkpoints each car has cleared
+  bool lotswasted;
+  bool needhelp[NFM_MAX_CARS];
+  int32_t fixpoint[XT_CONTVA_FIX];  // the stage's setpoint route points (GameSparker.loadstage)
+  int32_t numfixes;
+  int32_t whichfix;                 // which fpnt[] a fixing car heads for (written by the AI)
+  bool camping[NFM_MAX_CARS], nearchk[NFM_MAX_CARS];
+  int32_t chkcircle[NFM_MAX_CARS], moreslow[NFM_MAX_CARS];
+  int32_t slowdown[NFM_MAX_CARS], slowrange[NFM_MAX_CARS];   // reset 240 / 4000
+  bool opbackloops[NFM_MAX_CARS], dontdistract[NFM_MAX_CARS], dontstunt[NFM_MAX_CARS];
+  bool spdexception[NFM_MAX_CARS], dontmiss[NFM_MAX_CARS], layoff[NFM_MAX_CARS];
+  int32_t sharpturn[NFM_MAX_CARS];
+} XtContva;
+
+typedef struct {
+  // -- xtGraphics -------------------------------------------------------------
+  bool careermode;        // xtGraphics.careermode: control_preform runs the career AI
+  int32_t nplayers;       // xtGraphics.nplayers; 0 = take CheckPoints.nplayers
+  int32_t bonus;          // 0, or the bonus stage 1..4: xtGraphics.bonusstage[bonus - 1]
+                          // (bonstage == bonus != 0); CareerRace.bonus
+  bool hardstage;         // xtGraphics.hardstage (CareerRace.hardstage)
+  int32_t unlocked;       // xtGraphics.unlocked[1], the highest open career stage (CareerSave.unlocked)
+  int32_t extpoints[39];  // xtGraphics.extpoints[car], Extended's car numbers (CareerSave.extpoints); reset only
+  int32_t sc[NFM_MAX_CARS];              // xtGraphics.sc: each slot's car, Extended's numbers (CareerRace.sc)
+  bool beastopponent[NFM_MAX_CARS];      // xtGraphics.beastopponent (CareerRace.beast)
+  bool undead[NFM_MAX_CARS];             // xtGraphics.undead (CareerRace.undead; careermode$m changes it)
+  bool entered[NFM_MAX_CARS];            // xtGraphics.entered: stage 21's cars that made it in (careermode$m)
+  bool fixspecials[NFM_MAX_CARS];        // xtGraphics.fixspecials (careermode$m)
+  int32_t floor[NFM_MAX_CARS];           // xtGraphics.floor: stage 13's floor each car is on (careermode$m)
+  int32_t randomcar[NFM_MAX_CARS];       // xtGraphics.randomcar (careermode$m)
+  int32_t undeadlock[NFM_MAX_CARS];      // xtGraphics.undeadlock (careermode$m)
+  int32_t undeadtarget;                  // xtGraphics.undeadtarget (careermode$m)
+  int32_t targetcar;                     // xtGraphics.targetcar, 100 = none (careermode$m); init 100
+  bool verydark, bossbattle, invulnerable;   // xtGraphics flags (careermode$m)
+  int32_t endsp[XT_CAREER_ENDSP];        // xtGraphics.endsp: each slot's endurance points
+                                         // (airpgstats; CareerRace.sp[k][CS_END]); sorted by the AI
+  int32_t findi[NFM_MAX_CARS];           // xtGraphics.findi: written by the AI (its target route point)
+  struct Mad *usermad;                   // preform's `usermad`: the player's car (amadness[0]);
+                                         // NULL = the AI's own car
+  // -- Madness fields the C Mad does not carry ----------------------------------
+  bool beast[NFM_MAX_CARS];       // Madness.beast[im] (= beastopponent, set by xtGraphics 6193)
+  bool shadowcar[NFM_MAX_CARS];   // Madness.shadowcar (CareerRace.shadow)
+  int32_t level[NFM_MAX_CARS];    // Madness.level[cn] of each slot's car (CareerRace.level)
+  int32_t aistrsp[NFM_MAX_CARS];  // Madness.aistrsp[cn]: each slot's strength points (CareerRace.sp[k][CS_STR])
+  int32_t nostunts[NFM_MAX_CARS]; // Madness.nostunts (stage 21's entry stunts, Madness.drive)
+  bool nofix[NFM_MAX_CARS];       // Madness.nofix (Madness.drive 3582-3622)
+  float groundlevel[NFM_MAX_CARS];// Madness.groundlevel: stage 13's floor height (xtGraphics 7597);
+                                  // anything >= 0 reads as 0, so 0 is the original's 250
+  // -- ContO / Bots -------------------------------------------------------------
+  bool floorguardian[NFM_MAX_CARS];   // ContO.floorguardian (stage 13)
+  bool guardswitch[NFM_MAX_CARS];     // ContO.guardswitch (stage 13)
+  bool botbreak[NFM_MAX_CARS];        // Bots.botbreak
+  XtContva contva;                    // the race's Contva (Control.variable)
+} XtCareerAI;
+
 typedef struct {
   int32_t im;      // which player slot is "the local viewer" -- HUD/camera-shake gate
   int32_t multion; // 0 = single-player; most of drive()'s xt.multion-gated code is dead at 0
@@ -194,6 +278,10 @@ typedef struct {
   // main.c only needs to track ONE active air channel, not six.
   bool air_stop_all;
   int32_t air_start_slot;   // 0-5, or -1 = no new loop requested this tick
+
+  // Extended's career AI: what Control reads from xtGraphics, Madness,
+  // ContO, Bots and Contva when careermode is on (see XtCareerAI above).
+  XtCareerAI career;
 } XtGraphicsStub;
 
 // crash()'s pending_crash outcome -- crash1-3/lowcrash1-3/tires, matching
@@ -219,6 +307,11 @@ typedef enum {
 } XtPendingScrapeSnd;
 
 void xt_graphics_stub_init(XtGraphicsStub *xt);
+
+/** Contva.reset() (every race) and Contva.resetfp() (fixpoint/numfixes/
+ * whichfix, before a stage's setpoints are read). */
+void xt_contva_reset(XtContva *cv);
+void xt_contva_resetfp(XtContva *cv);
 
 /** xt.human(n): true if slot n is the locally-viewed car (n === xt->im).
  * See xt_graphics.c's own comment on why this, not `!isbot[n]`, matches
