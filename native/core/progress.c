@@ -221,6 +221,14 @@ GameSettings game_settings_defaults(int32_t graphics) {
   s.shake = 0;   // the extended build starts without it
   s.rumble = 1;
   s.cam_orbit = s.cam_watch = s.cam_far = 1;
+  s.fp_opponents = 5;   // six rivals, NFM 2's field
+  s.fp_pick = 0;
+  s.fp_tier = 1;        // NFM 2's own draw, as Free Play always raced
+  s.fp_win = 0;
+  s.fp_laps = 0;
+  s.fp_arrow = 1;
+  s.fp_specials = 1;
+  for (int32_t i = 0; i < 19; i++) s.fp_rival[i] = i + 1;
   s.steer_dpad = 0;
   // Indices into game.c's Switch button list: ZR, ZL, B, X, D-Pad Up,
   // D-Pad Down, Plus, Y, Minus -- the scheme v1.0 shipped with.
@@ -249,6 +257,19 @@ static const SettingKey kSettingKeys[] = {
   {"camera_orbit", offsetof(GameSettings, cam_orbit), 0, 1, 1},
   {"camera_tripod", offsetof(GameSettings, cam_watch), 0, 1, 1},
   {"camera_far", offsetof(GameSettings, cam_far), 0, 1, 1},
+  {"fp_rivals", offsetof(GameSettings, fp_opponents), 0, 18, 1},
+  {"fp_pick", offsetof(GameSettings, fp_pick), 0, 1, 1},
+  {"fp_tier", offsetof(GameSettings, fp_tier), 0, 4, 1},
+  {"fp_win", offsetof(GameSettings, fp_win), 0, 2, 1},
+  {"fp_laps", offsetof(GameSettings, fp_laps), 0, 10, 1},
+  {"fp_arrow", offsetof(GameSettings, fp_arrow), 0, 1, 1},
+  {"fp_specials", offsetof(GameSettings, fp_specials), 0, 1, 1},
+#define FP_RIVAL_KEY(i) {"fp_rival" #i, offsetof(GameSettings, fp_rival[(i) - 1]), 0, 255, 1}
+  FP_RIVAL_KEY(1),  FP_RIVAL_KEY(2),  FP_RIVAL_KEY(3),  FP_RIVAL_KEY(4),  FP_RIVAL_KEY(5),
+  FP_RIVAL_KEY(6),  FP_RIVAL_KEY(7),  FP_RIVAL_KEY(8),  FP_RIVAL_KEY(9),  FP_RIVAL_KEY(10),
+  FP_RIVAL_KEY(11), FP_RIVAL_KEY(12), FP_RIVAL_KEY(13), FP_RIVAL_KEY(14), FP_RIVAL_KEY(15),
+  FP_RIVAL_KEY(16), FP_RIVAL_KEY(17), FP_RIVAL_KEY(18), FP_RIVAL_KEY(19),
+#undef FP_RIVAL_KEY
   {"steer_dpad", offsetof(GameSettings, steer_dpad), 0, 1, 1},
   {"bind_accelerate", offsetof(GameSettings, bind[BIND_ACCEL]), 0, 19, 1},
   {"bind_brake", offsetof(GameSettings, bind[BIND_BRAKE]), 0, 19, 1},

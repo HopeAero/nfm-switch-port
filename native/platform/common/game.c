@@ -172,6 +172,44 @@ static int32_t car_step(int32_t cn, int32_t dir, int32_t maxsl, int32_t filter, 
   return -1;
 }
 
+/** Free Play's Race Setup picks the rivals (sc[1..]): by hand, or at random
+ * from a group of cars (fp_tier, car select's filters) without repeats while
+ * it has cars left. "Classic" keeps NFM 2's own draw (bots_sortcars). */
+static void free_play_rivals(int32_t *sc, int32_t nplayers, const GameSettings *s) {
+  const int32_t last = car_last_index(false);
+  if (s->fp_pick == 1) {
+    for (int32_t i = 1; i < nplayers; i++) {
+      const int32_t c = s->fp_rival[i - 1];
+      if (c >= 0 && c <= last && c != CUSTOM_CAR_INDEX) sc[i] = c;
+    }
+    return;
+  }
+  if (s->fp_tier == CF_CLASSIC) return;
+  int32_t pool[NEW_CAR_FIRST + NEW_CARS_MAX], n = 0;
+  for (int32_t c = 0; c <= last; c++)
+    if (c != CUSTOM_CAR_INDEX && car_in_filter(c, s->fp_tier)) pool[n++] = c;
+  if (n == 0) return;
+  bool used[NEW_CAR_FIRST + NEW_CARS_MAX] = {false};
+  int32_t left = n;
+  for (int32_t i = 1; i < nplayers; i++) {
+    if (left == 0) {   // every car of the group is out: again from the top
+      memset(used, 0, sizeof(used));
+      left = n;
+    }
+    int32_t k = (int32_t)(nfm_random() * (double)left);
+    if (k >= left) k = left - 1;
+    for (int32_t j = 0; j < n; j++) {
+      if (used[j]) continue;
+      if (k-- == 0) {
+        used[j] = true;
+        sc[i] = pool[j];
+        break;
+      }
+    }
+    left--;
+  }
+}
+
 /** Who made a car, as Extended's car select credits it (XT 15341-15398,
  * "Created by ..."): Extended's own cars by its table, a new car by its
  * .rad's carmaker(name) line (the web Car Maker's Author field); NULL for
@@ -3559,8 +3597,13 @@ static bool scene_targets_build(GfxGlRenderTarget *scene, GfxGlRenderTarget *acc
 // a page to open, a GameSettings field with its list of values, Reset or
 // Back -- adding an option is one line in kSettingsPages.
 
-typedef enum { SET_MAIN, SET_GRAPHICS, SET_AUDIO, SET_INTERFACE, SET_GAMEPLAY, SET_CONTROLS, SET_PAGE_COUNT } SettingsPageId;
-typedef enum { ROW_OPEN, ROW_CHOICE, ROW_RESET, ROW_BACK, ROW_BENCH, ROW_CAREER_RESET } SettingsRowKind;
+typedef enum {
+  SET_MAIN, SET_GRAPHICS, SET_AUDIO, SET_INTERFACE, SET_GAMEPLAY, SET_CONTROLS,
+  SET_RACE, SET_RIVALS,   // Free Play's Race Setup, opened from its stage list
+  SET_PAGE_COUNT
+} SettingsPageId;
+// ROW_CAR: a car (its `page` is the rival's number, 0-18); ROW_START: start the race.
+typedef enum { ROW_OPEN, ROW_CHOICE, ROW_RESET, ROW_BACK, ROW_BENCH, ROW_CAREER_RESET, ROW_CAR, ROW_START } SettingsRowKind;
 
 typedef struct {
   SettingsRowKind kind;
@@ -3572,14 +3615,16 @@ typedef struct {
   int32_t needs;             // NEED_*: shown only where the platform has it
 } SettingsRow;
 
-enum { NEED_RUMBLE = 1, NEED_REMAP = 2 };
+// NEED_RANDOM / NEED_MANUAL: shown only with the rivals picked that way.
+enum { NEED_RUMBLE = 1, NEED_REMAP = 2, NEED_RANDOM = 4, NEED_MANUAL = 8 };
 #ifdef NFM_TARGET_SWITCH
 #define HAS_REMAP true
 #else
 #define HAS_REMAP false
 #endif
 
-typedef struct { const char *title; int32_t nrows; SettingsRow rows[14]; } SettingsPage;
+#define SETTINGS_MAX_ROWS 21
+typedef struct { const char *title; int32_t nrows; SettingsRow rows[SETTINGS_MAX_ROWS]; } SettingsPage;
 
 static const char *const kOnOff[] = {"Off", "On"};
 static const char *const kQualityNames[] = {"Original", "Smooth", "HD"};
@@ -3588,6 +3633,12 @@ static const char *const kDetailNames[] = {"High", "Low"};
 static const char *const kBlurNames[] = {"Off", "20", "40", "60", "80", "100"};
 static const char *const kFpsNames[] = {"Off", "FPS", "Detailed"};
 static const char *const kSteerNames[] = {ICON_LSTICK " Left Stick", ICON_DPAD " D-Pad"};
+static const char *const kRivalCount[] = {"1",  "2",  "3",  "4",  "5",  "6",  "7",  "8",  "9", "10",
+                                          "11", "12", "13", "14", "15", "16", "17", "18", "19"};
+static const char *const kPickNames[] = {"Random", "Manual"};
+static const char *const kTierNames[] = {"Any", "Classic", "Extended", "R&R", "Custom"};
+static const char *const kWinNames[] = {"Race or Waste", "Wasting Only", "Racing Only"};
+static const char *const kLapNames[] = {"Stage", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"};
 
 #define SET_FIELD(f) offsetof(GameSettings, f)
 static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
@@ -3626,6 +3677,38 @@ static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
     {ROW_CHOICE, "Tripod Camera", 0, SET_FIELD(cam_watch), 2, 1, kOnOff, false},
     {ROW_CHOICE, "Far Camera", 0, SET_FIELD(cam_far), 2, 1, kOnOff, false},
     {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
+  [SET_RACE] = {"RACE SETUP", 10, {
+    {ROW_CHOICE, "Rivals", 0, SET_FIELD(fp_opponents), 19, 1, kRivalCount, 0},
+    {ROW_CHOICE, "Choose Rivals", 0, SET_FIELD(fp_pick), 2, 1, kPickNames, 0},
+    {ROW_CHOICE, "Rival Cars", 0, SET_FIELD(fp_tier), 5, 1, kTierNames, NEED_RANDOM},
+    {ROW_OPEN, "Pick Rivals", SET_RIVALS, 0, 0, 0, NULL, NEED_MANUAL},
+    {ROW_CHOICE, "Win By", 0, SET_FIELD(fp_win), 3, 1, kWinNames, 0},
+    {ROW_CHOICE, "Laps", 0, SET_FIELD(fp_laps), 11, 1, kLapNames, 0},
+    {ROW_CHOICE, "Arrow", 0, SET_FIELD(fp_arrow), 2, 1, kOnOff, 0},
+    {ROW_CHOICE, "Specials", 0, SET_FIELD(fp_specials), 2, 1, kOnOff, 0},
+    {ROW_START, "Start Race", 0, 0, 0, 0, NULL, 0},
+    {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
+  [SET_RIVALS] = {"RACE SETUP - RIVALS", 20, {
+    {ROW_CAR, "Rival 1", 0, SET_FIELD(fp_rival[0]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 2", 1, SET_FIELD(fp_rival[1]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 3", 2, SET_FIELD(fp_rival[2]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 4", 3, SET_FIELD(fp_rival[3]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 5", 4, SET_FIELD(fp_rival[4]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 6", 5, SET_FIELD(fp_rival[5]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 7", 6, SET_FIELD(fp_rival[6]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 8", 7, SET_FIELD(fp_rival[7]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 9", 8, SET_FIELD(fp_rival[8]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 10", 9, SET_FIELD(fp_rival[9]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 11", 10, SET_FIELD(fp_rival[10]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 12", 11, SET_FIELD(fp_rival[11]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 13", 12, SET_FIELD(fp_rival[12]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 14", 13, SET_FIELD(fp_rival[13]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 15", 14, SET_FIELD(fp_rival[14]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 16", 15, SET_FIELD(fp_rival[15]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 17", 16, SET_FIELD(fp_rival[16]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 18", 17, SET_FIELD(fp_rival[17]), 0, 0, NULL, 0},
+    {ROW_CAR, "Rival 19", 18, SET_FIELD(fp_rival[18]), 0, 0, NULL, 0},
+    {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
   [SET_CONTROLS] = {"SETTINGS - CONTROLS", 13, {
     {ROW_CHOICE, "Steer and Stunt With", 0, SET_FIELD(steer_dpad), 2, 1, kSteerNames, false},
     {ROW_CHOICE, "Accelerate", 0, SET_FIELD(bind[BIND_ACCEL]), PAD_COUNT, 1, kPadNames, false},
@@ -3652,7 +3735,9 @@ typedef struct {
 // A touch's target: what it selects (sel = sel_value) and the button it
 // presses on release (BTN_COUNT: none).
 typedef struct { int32_t *sel; int32_t sel_value; Button btn; } TouchHit;
-typedef enum { SETTINGS_STAY, SETTINGS_EXIT, SETTINGS_BENCH, SETTINGS_STRESS, SETTINGS_CAREER_RESET } SettingsAction;
+typedef enum {
+  SETTINGS_STAY, SETTINGS_EXIT, SETTINGS_BENCH, SETTINGS_STRESS, SETTINGS_CAREER_RESET, SETTINGS_START
+} SettingsAction;
 
 static int32_t *settings_field(GameSettings *s, const SettingsRow *r) {
   return (int32_t *)((char *)s + r->off);
@@ -3662,25 +3747,60 @@ static int32_t *settings_field(GameSettings *s, const SettingsRow *r) {
 // own) is not offered there.
 static bool g_settings_in_race;
 
-static bool settings_row_shown(const SettingsRow *r, bool has_rumble) {
+static bool settings_row_shown(const SettingsRow *r, const GameSettings *s, bool has_rumble) {
   if ((r->kind == ROW_BENCH || r->kind == ROW_CAREER_RESET) && g_settings_in_race) return false;
   if ((r->needs & NEED_RUMBLE) && !has_rumble) return false;
+  if ((r->needs & NEED_RANDOM) && s->fp_pick != 0) return false;
+  if ((r->needs & NEED_MANUAL) && s->fp_pick != 1) return false;
+  if (r->kind == ROW_CAR && r->page > s->fp_opponents) return false;   // past the rivals raced
   return !(r->needs & NEED_REMAP) || HAS_REMAP;
+}
+
+// A page shows at most this many rows; a longer one (the rivals) scrolls.
+#define SETTINGS_VISIBLE 13
+
+/** The rows the page draws, top to bottom, scrolled to keep the selected
+ * one in view; how many. */
+static int32_t settings_window(const SettingsUi *ui, const GameSettings *s, bool has_rumble, int32_t *rows) {
+  const SettingsPage *pg = &kSettingsPages[ui->page];
+  int32_t all[SETTINGS_MAX_ROWS], n = 0, at = 0;
+  for (int32_t r = 0; r < pg->nrows; r++) {
+    if (!settings_row_shown(&pg->rows[r], s, has_rumble)) continue;
+    if (r == ui->row) at = n;
+    all[n++] = r;
+  }
+  int32_t first = 0;
+  if (n > SETTINGS_VISIBLE) {
+    first = at - SETTINGS_VISIBLE / 2;
+    if (first < 0) first = 0;
+    if (first > n - SETTINGS_VISIBLE) first = n - SETTINGS_VISIBLE;
+    n = SETTINGS_VISIBLE;
+  }
+  for (int32_t i = 0; i < n; i++) rows[i] = all[first + i];
+  return n;
 }
 
 /** The row of the current page drawn across game-space `y`, or -1 (the
  * layout of settings_screen_draw, for touch). */
-static int32_t settings_row_at(const SettingsUi *ui, bool has_rumble, int32_t y) {
-  const SettingsPage *pg = &kSettingsPages[ui->page];
-  const bool tight = pg->nrows > 8, tighter = pg->nrows > 11;
+static int32_t settings_row_at(const SettingsUi *ui, const GameSettings *s, bool has_rumble, int32_t y) {
+  int32_t rows[SETTINGS_MAX_ROWS];
+  const int32_t n = settings_window(ui, s, has_rumble, rows);
+  const bool tight = n > 8, tighter = n > 11;
   const int32_t h = tighter ? 22 : (tight ? 28 : 34), gap = tighter ? 4 : (tight ? 4 : 6);
   int32_t top = 68;
-  for (int32_t r = 0; r < pg->nrows; r++) {
-    if (!settings_row_shown(&pg->rows[r], has_rumble)) continue;
-    if (y >= top && y < top + h + gap) return r;
+  for (int32_t i = 0; i < n; i++) {
+    if (y >= top && y < top + h + gap) return rows[i];
     top += h + gap;
   }
   return -1;
+}
+
+/** A car a rival can race: any but the custom car's slot (the player's own). */
+static int32_t settings_step_car(int32_t c, int32_t dir) {
+  const int32_t last = car_last_index(false);
+  int32_t n = c + dir;
+  if (n == CUSTOM_CAR_INDEX) n += dir;
+  return (n < 0 || n > last) ? c : n;
 }
 
 /** Whether a Controls row's button is also another action's. */
@@ -3715,10 +3835,14 @@ static SettingsAction settings_screen_input(SettingsUi *ui, GameSettings *s, int
   if (down || up || left || right || back) ui->armed = false;
   if (down || up) {
     int32_t r = ui->row;
-    do { r = (r + (down ? 1 : n - 1)) % n; } while (!settings_row_shown(&pg->rows[r], has_rumble));
+    do { r = (r + (down ? 1 : n - 1)) % n; } while (!settings_row_shown(&pg->rows[r], s, has_rumble));
     ui->row = r;
   }
   const SettingsRow *row = &pg->rows[ui->row];
+  if (row->kind == ROW_CAR && (left || right)) {
+    int32_t *v = settings_field(s, row);
+    *v = settings_step_car(*v, right ? 1 : -1);
+  }
   if (row->kind == ROW_CHOICE && (left || right)) {
     int32_t *v = settings_field(s, row);
     int32_t i = *v / row->step + (right ? 1 : -1);
@@ -3735,6 +3859,8 @@ static SettingsAction settings_screen_input(SettingsUi *ui, GameSettings *s, int
       *s = game_settings_defaults(default_graphics);
     } else if (row->kind == ROW_BACK) {
       back = true;
+    } else if (row->kind == ROW_START) {
+      return SETTINGS_START;
     } else if (row->kind == ROW_BENCH) {
       return row->page ? SETTINGS_STRESS : SETTINGS_BENCH;
     } else if (row->kind == ROW_CAREER_RESET) {
@@ -3749,13 +3875,14 @@ static SettingsAction settings_screen_input(SettingsUi *ui, GameSettings *s, int
     }
   }
   if (back) {
-    if (ui->page == SET_MAIN) return SETTINGS_EXIT;
-    // Back to the main page, on the row that opened this one.
-    const SettingsPage *main_pg = &kSettingsPages[SET_MAIN];
+    if (ui->page == SET_MAIN || ui->page == SET_RACE) return SETTINGS_EXIT;
+    // Back to the page that opened this one, on the row that opened it.
+    const int32_t parent = ui->page == SET_RIVALS ? SET_RACE : SET_MAIN;
+    const SettingsPage *main_pg = &kSettingsPages[parent];
     for (int32_t r = 0; r < main_pg->nrows; r++) {
       if (main_pg->rows[r].kind == ROW_OPEN && main_pg->rows[r].page == ui->page) ui->row = r;
     }
-    ui->page = SET_MAIN;
+    ui->page = parent;
   }
   return SETTINGS_STAY;
 }
@@ -3830,15 +3957,17 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
   font_set(FONT_BOLD, 18);
 
   // A page longer than eight rows (Controls) packs them tighter, and
-  // tighter still past eleven.
-  const bool tight = pg->nrows > 8, tighter = pg->nrows > 11;
+  // tighter still past eleven; past SETTINGS_VISIBLE it scrolls.
+  int32_t rows[SETTINGS_MAX_ROWS];
+  const int32_t nvis = settings_window(ui, s, has_rumble, rows);
+  const bool tight = nvis > 8, tighter = nvis > 11;
   const int32_t x0 = 120, w = 560, h = tighter ? 22 : (tight ? 28 : 34), gap = tighter ? 4 : (tight ? 4 : 6);
   const int32_t ty = tighter ? 5 : (tight ? 6 : 7);
   if (tight) font_set(FONT_BOLD, tighter ? 14 : 16);
   int32_t y = 68;
-  for (int32_t r = 0; r < pg->nrows; r++) {
+  for (int32_t i = 0; i < nvis; i++) {
+    const int32_t r = rows[i];
     const SettingsRow *row = &pg->rows[r];
-    if (!settings_row_shown(row, has_rumble)) continue;
     const bool sel = r == ui->row;
     gfx_set_color(g, 17, 17, 17);
     gfx_fill_rect(g, x0, y, w, h);                       // the 3px black border...
@@ -3856,8 +3985,18 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
     } else {
       font_draw(g, row->label, x0 + 34, cy + ty);
     }
-    if (row->kind == ROW_OPEN || row->kind == ROW_BENCH) {
+    if (row->kind == ROW_OPEN || row->kind == ROW_BENCH || row->kind == ROW_START) {
       draw_settings_arrow(g, x0 + w - 26, cy, true, true, sel);
+    } else if (row->kind == ROW_CAR) {
+      const int32_t v = *(const int32_t *)((const char *)s + row->off);
+      const char *name = car_name(v);
+      const int32_t tw = font_width(name);
+      const int32_t right_x = x0 + w - 26;
+      if (sel) gfx_set_color(g, SET_YELLOW);
+      else gfx_set_color(g, SET_INK);
+      font_draw(g, name, right_x - 14 - tw, cy + ty);
+      draw_settings_arrow(g, right_x - 22 - tw, cy, false, settings_step_car(v, -1) != v, sel);
+      draw_settings_arrow(g, right_x, cy, true, settings_step_car(v, 1) != v, sel);
     } else if (row->kind == ROW_CHOICE) {
       const int32_t v = *(const int32_t *)((const char *)s + row->off);
       const int32_t i = v / row->step;
@@ -5476,6 +5615,9 @@ int game_run(void) {
   // other two endings).
   typedef enum { RACE_END_FINISH, RACE_END_ALL_WASTED, RACE_END_PLAYER_WASTED } RaceEndKind;
   RaceEndKind race_end_kind = RACE_END_FINISH;
+  // This race follows Free Play's Race Setup (settings.fp_*), and whether
+  // its specials run (NFM 1 and 2 race without them).
+  bool fp_race = false, race_specials = true;
   // gmode is Java xtGraphics.gmode: 0 = Free Play (any car, any stage,
   // no progression); 1 = NFM 1 campaign (stages 1..10 sequential);
   // 2 = NFM 2 campaign (stages 11..27 sequential). Set by the gamemode
@@ -5520,6 +5662,12 @@ int game_run(void) {
   SettingsUi settings_ui = {.page = SET_MAIN};
   // Where Back leaves Settings: the pause menu or the main menu.
   GameState settings_return = STATE_PAUSED;
+  // NFM_SCREENSHOT_MENU=racesetup (NFM_HOOK_RACESETUP_PAGE=1: its rivals): Free Play's Race Setup, headless.
+  if (getenv("NFM_SCREENSHOT_MENU") && strcmp(getenv("NFM_SCREENSHOT_MENU"), "racesetup") == 0) {
+    settings_ui = (SettingsUi){.page = getenv("NFM_HOOK_RACESETUP_PAGE") ? SET_RIVALS : SET_RACE, .row = 0};
+    settings_return = STATE_STAGE_SELECT;
+    state = STATE_SETTINGS;
+  }
   if (progress_path_ok) {
     game_progress_load_from_disk(&progress, progress_path);
     ext_progress_load(progress_path, &ext_prog);
@@ -5934,13 +6082,13 @@ int game_run(void) {
           for (int32_t i = 0; i < 6; i++)
             if (OVERON(kRows[i][0], kRows[i][1], kRows[i][2], kRows[i][3])) HIT(&pause_opselect, i, BTN_CONFIRM);
         } else if (state == STATE_SETTINGS) {
-          const int32_t r = (tx > 120 && tx < 680) ? settings_row_at(&settings_ui, platform_has_rumble(), ty) : -1;
+          const int32_t r = (tx > 120 && tx < 680) ? settings_row_at(&settings_ui, &settings, platform_has_rumble(), ty) : -1;
           if (r >= 0) {
             const SettingsRow *row = &kSettingsPages[settings_ui.page].rows[r];
             Button b = BTN_CONFIRM;
             // A value row: its right end steps up, the rest of its value
             // half steps down, its label only selects it.
-            if (row->kind == ROW_CHOICE) b = tx >= 640 ? BTN_RIGHT : (tx >= 400 ? BTN_LEFT : BTN_COUNT);
+            if (row->kind == ROW_CHOICE || row->kind == ROW_CAR) b = tx >= 640 ? BTN_RIGHT : (tx >= 400 ? BTN_LEFT : BTN_COUNT);
             HIT(&settings_ui.row, r, b);
           }
         }
@@ -6438,6 +6586,11 @@ int game_run(void) {
             ext_pt_start_tournament(&pt);
             ptmatch = 1;
             state = STATE_PT_INFO;
+          } else if (gmode == GMODE_FREE_PLAY && !ext_normal) {
+            // Free Play's Race Setup first, on Start Race.
+            settings_ui = (SettingsUi){.page = SET_RACE, .row = 8};
+            settings_return = STATE_STAGE_SELECT;
+            state = STATE_SETTINGS;
           } else {
             state = STATE_STAGE_LOADING;
             stage_loadcnt = 30;
@@ -6678,6 +6831,11 @@ int game_run(void) {
       if (act == SETTINGS_EXIT) {
         if (progress_path_ok) game_settings_save(progress_path, &settings);
         state = settings_return;
+      } else if (act == SETTINGS_START) {
+        // Race Setup's Start Race: kept for next time, then the stage loads.
+        if (progress_path_ok) game_settings_save(progress_path, &settings);
+        state = STATE_STAGE_LOADING;
+        stage_loadcnt = 30;
       } else if (act == SETTINGS_CAREER_RESET) {
         // Settings > Reset RPG Mode: the career from scratch, saved.
         career_reset(&csave);
@@ -6725,7 +6883,8 @@ int game_run(void) {
     // left with Exit (:2674). play() always starts from the top.
     {
       const bool want_interface =
-          state == STATE_CAR_SELECT || state == STATE_STAGE_SELECT || state == STATE_STAGE_LOCKED;
+          state == STATE_CAR_SELECT || state == STATE_STAGE_SELECT || state == STATE_STAGE_LOCKED ||
+          (state == STATE_SETTINGS && settings_return == STATE_STAGE_SELECT);
       if (want_interface && !interface_playing && interface_music.bytes) {
         audio_start_music(&audio, &interface_music);
         audio_set_music_muted(&audio, false);
@@ -6987,6 +7146,10 @@ int game_run(void) {
       // collision, checkstat, AI, cleanup) sees the right car count.
       nplayers = race_nplayers > 0 ? race_nplayers : (ext_normal ? EXT_NORMAL_PLAYERS : BOTS_MAX_PLAYERS);
       if (bench.active && bench.stress) nplayers = NFM_MAX_CARS;
+      fp_race = gmode == GMODE_FREE_PLAY && !ext_normal && !bench.active && race_nplayers == 0;
+      if (fp_race) nplayers = settings.fp_opponents + 2;
+      if (fp_race && settings.fp_laps > 0) cp.nlaps = settings.fp_laps;   // Race Setup's laps (the stage is loaded)
+      race_specials = gmode != GMODE_NFM1 && gmode != GMODE_NFM2 && !(fp_race && !settings.fp_specials);
       if (ext_career) {
         // randomno (XT 18144): the career's field size for the stage.
         memset(&crace, 0, sizeof(crace));
@@ -7075,6 +7238,7 @@ int game_run(void) {
         }
         sc[i] = pick;
       }
+      if (fp_race) free_play_rivals(sc, nplayers, &settings);
       // Extended's normal mode: its own sortcars (ext_mode.c), 11 cars; on
       // stage 26 every car, the player's too, is the match's.
       if (ext_normal && !ext_career) {
@@ -7747,7 +7911,7 @@ int game_run(void) {
               for (int32_t i = 0; i < nplayers; i++)
                 career_stage_stats(&cstage, &crace, i, &race_base[i], &cd, sc[i], live_cd[i].grip[sc[i]], &cp);
             }
-            if (gmode != GMODE_NFM1 && gmode != GMODE_NFM2)   // NFM 1 / 2 race without specials
+            if (race_specials)   // NFM 1 / 2, and Race Setup's Specials Off, race without them
               specials_tick(&specials, mad, control, nplayers, &cp, &cd, race_base);
             if (ext_career) {
               // Experience (career.c): checkpoints, wastes, stunts, full
@@ -7964,8 +8128,11 @@ int game_run(void) {
           // stat$m 3992-4004: the career's undead are not there to waste,
           // and during the Titan's fight nothing ends the race.
           const int32_t undeadextra = ext_career ? career_stage_undeadextra(&cstage) : 0;
-          const bool wasted_end = !ext_career || career_stage_wasted_end_allowed(&cstage);
-          const bool finish_end = !ext_career || career_stage_finish_end_allowed(&cstage);
+          // Race Setup's Win By: wasting only (no finish, endless laps) or
+          // racing only (wasting everyone does not end it).
+          const bool wasted_end = (!ext_career || career_stage_wasted_end_allowed(&cstage)) && !(fp_race && settings.fp_win == 2);
+          const bool finish_end = (!ext_career || career_stage_finish_end_allowed(&cstage)) && !(fp_race && settings.fp_win == 1);
+          if (fp_race && settings.fp_win == 1) mad[0].nlaps = 0;
           if (cp.wasted == nplayers - 1 - undeadextra && nplayers != 1 && wasted_end) {
             // :7683 -- every other car destroyed. Single-player-only
             // port, so this.multion<2 and !b2 (clan mode) always hold --
@@ -8544,7 +8711,7 @@ int game_run(void) {
             xt.alocked = -1;
           }
         }
-        if (!race_holdit && starcnt == 0 && cp.stage != 10) {
+        if (!race_holdit && starcnt == 0 && cp.stage != 10 && !(fp_race && !settings.fp_arrow)) {
           draw_checkpoint_arrow(&g, &m, &xt, &cp, mad[0].point, mad[0].missedcp,
                                 xt.arrace, nplayers, sc);
           // :7919 -- the missed/wrong-way banner is the `if (!this.arrace)`
@@ -8658,11 +8825,12 @@ int game_run(void) {
         font_set(FONT_BOLD, 12);
         draw_hud_img(&g, hud_images.dmg, 600, 7);
         draw_hud_img(&g, hud_images.pwr, 600, 27);
-        if (xt.extended && gmode != GMODE_NFM1 && gmode != GMODE_NFM2) draw_specials_hud(&g, &m, &specials, mad, nplayers, sc, &hud_images.spec);
+        if (xt.extended && race_specials) draw_specials_hud(&g, &m, &specials, mad, nplayers, sc, &hud_images.spec);
         draw_hud_img(&g, hud_images.lap, 19, 7);
         hud_set_ink(&g, 0, 0, 100);
         char hud[64];
-        if (ext_career && (crace.bonus == 1 || crace.bonus == 3)) snprintf(hud, sizeof(hud), "- / %d", cp.nlaps);
+        if ((ext_career && (crace.bonus == 1 || crace.bonus == 3)) || (fp_race && settings.fp_win == 1))
+          snprintf(hud, sizeof(hud), "- / %d", cp.nlaps);
         else if (cp.nlaps > 0) snprintf(hud, sizeof(hud), "%d / %d", mad[0].nlaps + 1, cp.nlaps);
         else snprintf(hud, sizeof(hud), "-");
         font_draw(&g, hud, 51, 18);

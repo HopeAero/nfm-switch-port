@@ -206,6 +206,15 @@ typedef struct {
   int32_t cam_orbit;    // 0/1: the view button cycles through the orbit camera...
   int32_t cam_watch;    // 0/1: ...the roadside tripod...
   int32_t cam_far;      // 0/1: ...and Extended's far camera (the chase camera always)
+  // Free Play's Race Setup (game.c), the page after its stage list
+  int32_t fp_opponents;   // how many rivals, less one: 0..18 (1..19 rivals)
+  int32_t fp_pick;        // 0 at random, 1 by hand (fp_rival)
+  int32_t fp_tier;        // at random from: 0 any car, 1 NFM 2's own draw, 2 Extended's, 3 R&R's, 4 the player's own
+  int32_t fp_win;         // 0 racing or wasting, 1 wasting only, 2 racing only
+  int32_t fp_laps;        // 0 the stage's, else 1..10
+  int32_t fp_arrow;       // 0/1: the guidance arrow
+  int32_t fp_specials;    // 0/1: Extended's specials
+  int32_t fp_rival[19];   // by hand: each rival's car (this port's car numbers)
   // Controls (the Switch only)
   int32_t steer_dpad;          // 0 steer and stunt with the left stick, 1 with the D-pad
   int32_t bind[BIND_COUNT];    // per BindAction, an index into game.c's kPadNames
