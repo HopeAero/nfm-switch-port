@@ -248,6 +248,11 @@ float medium_random(Medium *m) {
 }
 
 void medium_follow(Medium *m, int32_t car_x, int32_t car_y, int32_t car_z, int32_t n, int32_t n2) {
+  medium_follow_boost(m, car_x, car_y, car_z, n, n2, 0);
+}
+
+void medium_follow_boost(Medium *m, int32_t car_x, int32_t car_y, int32_t car_z, int32_t n, int32_t n2,
+                         int32_t boost) {
   m->zy = 10;
   int32_t n3 = 2 + (int32_t)labs(m->bcxz) / 4;
   if (n3 > 20) n3 = 20;
@@ -272,10 +277,10 @@ void medium_follow(Medium *m, int32_t car_x, int32_t car_y, int32_t car_z, int32
   float cos_n = medium_cos(m, (float)n);
   // JS: `contO.z - 800 - contO.z` -- an identity (= -800), kept literal
   // per web/TRANSPILE_SPEC.md §0 rather than "simplified".
-  int32_t dz = car_z - 800 - car_z;
+  int32_t dz = car_z - 800 - boost - car_z;
   m->x = car_x - m->cx + jtrunc((float)(-dz) * sin_n); // fr(single multiply)
   m->z = car_z - m->cz + jtrunc((float)dz * cos_n);    // fr(single multiply)
-  m->y = car_y - 250 - m->cy;
+  m->y = car_y - 250 - m->cy - boost;
 }
 
 // Single-multiply fr() sites (17000.0f * cos/sin of a whole-number angle) --

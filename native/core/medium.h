@@ -248,6 +248,11 @@ float medium_random(Medium *m);
 // isn't ported yet (M2), and this is the only thing follow() reads from it,
 // so this stays reusable once ContO exists instead of blocking on it.
 void medium_follow(Medium *m, int32_t car_x, int32_t car_y, int32_t car_z, int32_t n, int32_t n2);
+/** Extended's follow(contO, cxz, lookback, boost): `boost` lifts the chase
+ * camera and pulls it back for its biggest cars (GameSparker.java 2566-2584:
+ * Titan 65, Agent Waster 130, Tesco Lorry 300); 0 is medium_follow. */
+void medium_follow_boost(Medium *m, int32_t car_x, int32_t car_y, int32_t car_z, int32_t n, int32_t n2,
+                         int32_t boost);
 
 // Dive-and-orbit camera for the stage-select 3D preview -- Medium.java:
 // 304-380's aroundtrack(). Two phases, switched on m->hit (armed to 45000

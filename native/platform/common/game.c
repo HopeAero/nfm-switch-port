@@ -8354,6 +8354,15 @@ int game_run(void) {
         // `enter` the same way race_holdit's advance-check above does,
         // since control.enter is never populated by input_poll) skips
         // straight to the starcnt==38 transition below.
+        // Extended's viewboost (GameSparker.java 2566-2584): the chase and far
+        // cameras sit higher and further back for its biggest cars -- Titan,
+        // Agent Waster and Tesco Lorry (its 18, 20 and 22; a new car built on
+        // one of them gets it too).
+        int32_t viewboost = 0;
+        if (xt.extended) {
+          const int32_t ve = ext_car_of(car_identity(mad[0].cn));
+          viewboost = ve == 18 ? 65 : ve == 20 ? 130 : ve == 22 ? 300 : 0;
+        }
         if (starcnt >= 38) {
           medium_around(&m, &co[0], true);
           mvect = 80; // :976
@@ -8371,7 +8380,7 @@ int game_run(void) {
             m.adv = 900;
             m.vxz = 180;
             check_points_checkstat(&cp, mad_ptrs, co_ptrs, &rpd, nplayers, 0, 0);
-            medium_follow(&m, co[0].x, co[0].y, co[0].z, mad[0].cxz, 0);
+            medium_follow_boost(&m, co[0].x, co[0].y, co[0].z, mad[0].cxz, 0, viewboost);
           }
         } else if (race_view == 1) {
           // :987-991 -- orbit camera. Fixed mvect, no shaka and no lmxz
@@ -8381,7 +8390,7 @@ int game_run(void) {
         } else if (race_view == 3) {
           // Extended's far camera (its view 1, GameSparker.java:2595): high
           // and far behind, turning a fifteenth as much as the car.
-          medium_watch_far(&m, &co[0], (double)mad[0].cxz / 15.0, 0);
+          medium_watch_far(&m, &co[0], (double)mad[0].cxz / 15.0, viewboost);
           mvect = 80;
         } else if (race_view == 2) {
           // :992-999 -- the fixed "watch" tripod, aimed with the car's raw
@@ -8404,7 +8413,7 @@ int game_run(void) {
           // -- always dead-center behind it. `control.lookback` is the
           // "look back over your shoulder" hold, now actually driven by the
           // Z/X keys (shoulder triggers on Vita) -- see input.c.
-          medium_follow(&m, co[0].x, co[0].y, co[0].z, mad[0].cxz, control[0].lookback);
+          medium_follow_boost(&m, co[0].x, co[0].y, co[0].z, mad[0].cxz, control[0].lookback, viewboost);
 
           // GameSparker.java:973-983 -- runs in the exact same spot as
           // medium.follow() above (both are inside the real Java's `view==0`
