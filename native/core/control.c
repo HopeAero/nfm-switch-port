@@ -337,6 +337,10 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
       if (st == 9 && cp->clear[0] >= 20) flag2 = true;
       if (st == 11 || st == 13 || st == 15 || st == 16) flag2 = true;
     }
+    // Free Play's Wasting Only (this port's): every car hunts every other,
+    // as the tourney's wasting matches do and more -- any power, any side,
+    // the player ahead or not.
+    const bool hunt = mad->xt->wasteonly;
     int32_t j2 = 60;
     if (st == 3 || st == 11 || st == 17 || st == 10 || st == 8) j2 = 30;
     if ((st == 2 || st == 13) && (cn == 13 || cn == 36)) j2 = 50;
@@ -354,6 +358,7 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
       if (cn == 11) j2 = 40;
       if (cp->pos[0] > cp->pos[im]) j2 = 80;
     }
+    if (hunt) j2 = 0;
 
     for (int32_t i4 = 0; i4 < EXT_NPLAYERS; i4++) {
       if (i4 == im || cp->clear[i4] == -1) continue;
@@ -394,7 +399,7 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
         if (c->bulistc) { l6 = 4000 * (dcl + 1); k8 = 10; }
       }
       if (st == 10) l6 = 16000;
-      if (ptm == 1 || ptm == 4) l6 = 80000;   // :1476-1485, the tourney's wasting matches
+      if (ptm == 1 || ptm == 4 || hunt) l6 = 80000;   // :1476-1485, the tourney's wasting matches
       if (classic && st == 16) {
         if (cn == 13 && c->bulistc) {
           if (c->oupnt == 33) l6 = 17000;
@@ -408,6 +413,7 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
       int32_t i6 = 85 + 15 * (dcl + 1);
       if (classic && st == 13) i6 = 45;
       if (classic && st == 16 && (cn == 15 || cn == 9 || cn == 11 || cn == 14)) i6 = 50 + 70 * dcl;
+      if (hunt) i6 = 181;   // whatever way it faces
 
       if (k8 < i6 && control_py(contO->x / 100, cp->opx[i4] / 100, contO->z / 100, cp->opz[i4] / 100) < l6 &&
           mad->power > (float)j2) {
@@ -450,6 +456,7 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
         if (pt_race) f3 = 0.0f;
         if (i4 != 0 && cp->pos[0] < cp->pos[im]) f3 = 0.0f;
         if (i4 != 0 && flag2) f3 = 0.0f;
+        if (hunt) f3 = 900.0f;
         if (classic && st == 7 && im == EXT_NPLAYERS - 1 && i4 == 0) f3 = (float)((double)f3 * 1.5);
 
         if (medium_random(m) < f3) {
@@ -488,6 +495,7 @@ static void decide_ext(Control *c, Mad *mad, ContO *contO, CheckPoints *cp) {
               c->attack = 150;
             }
           }
+          if (hunt && c->attack < 300) c->attack = 300;   // and keeps at it
           if (cp->dested[i4] == 0) c->acr = i4;
           c->turntyp = jtrunc(1.0f + medium_random(m) * 2.0f);
         }

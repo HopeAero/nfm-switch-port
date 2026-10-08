@@ -7166,6 +7166,7 @@ int game_run(void) {
       // headless NFM_EXT_STAGE other than classictracks) are not.
       xt.classicmode = !ext_spec[0] || strncmp(ext_spec, "classictracks", 13) == 0;
       xt.ptmatch = PT_ACTIVE ? ptmatch : 0;
+      xt.wasteonly = false;   // set below for Free Play's Wasting Only
       xt.career.careermode = false;   // set again below when the career races
       xt.im = 0;
 
@@ -7180,6 +7181,7 @@ int game_run(void) {
       fp_race = gmode == GMODE_FREE_PLAY && !ext_normal && !bench.active && race_nplayers == 0;
       if (fp_race) nplayers = settings.fp_opponents + 2;
       if (fp_race && settings.fp_laps > 0) cp.nlaps = settings.fp_laps;   // Race Setup's laps (the stage is loaded)
+      xt.wasteonly = fp_race && settings.fp_win == 1;
       race_specials = gmode != GMODE_NFM1 && gmode != GMODE_NFM2 && !(fp_race && !settings.fp_specials);
       if (ext_career) {
         // randomno (XT 18144): the career's field size for the stage.
