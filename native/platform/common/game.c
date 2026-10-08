@@ -125,6 +125,52 @@ static int32_t car_last_index(bool ext_normal) {
   return ext_normal ? CAR_COUNT - 1 : CUSTOM_CAR_INDEX;
 }
 
+// Car select's filters (Up / Down): Free Play's by origin, the career's by
+// how the car is won.
+enum { CF_ALL, CF_CLASSIC, CF_EXTENDED, CF_RR, CF_CUSTOM, CF_CAREER, CF_BONUS };
+static const char *const kCarFilterName[] = {"All Cars",    "Classic Cars", "Extended Cars", "R&R Cars",
+                                             "Custom Cars", "Career Cars",  "Bonus Cars"};
+
+static bool car_in_filter(int32_t cn, int32_t filter) {
+  const bool new_car = cn >= NEW_CAR_FIRST && cn < NEW_CAR_FIRST + g_new_car_count;
+  switch (filter) {
+    case CF_CLASSIC: return cn < 16;
+    case CF_EXTENDED: return cn >= 16 && cn < CAR_COUNT;
+    case CF_RR: return new_car && !g_new_cars[cn - NEW_CAR_FIRST].from_sd;
+    case CF_CUSTOM: return cn == CUSTOM_CAR_INDEX || (new_car && g_new_cars[cn - NEW_CAR_FIRST].from_sd);
+    case CF_CAREER: return cn < CAR_COUNT && ext_car_of(cn) <= 30;   // Extended's 31-38 are the bonus stages' prizes
+    case CF_BONUS: return cn < CAR_COUNT && ext_car_of(cn) >= 31;
+    default: return true;
+  }
+}
+
+/** The filters car select cycles through in this mode; returns how many. */
+static int32_t car_filters(bool career, int32_t gmode, int32_t *out) {
+  int32_t n = 0;
+  out[n++] = CF_ALL;
+  if (career) {
+    out[n++] = CF_CAREER;
+    out[n++] = CF_BONUS;
+  } else if (gmode == GMODE_FREE_PLAY) {
+    out[n++] = CF_CLASSIC;
+    out[n++] = CF_EXTENDED;
+    for (int32_t i = 0; i < g_new_car_count; i++)
+      if (!g_new_cars[i].from_sd) {
+        out[n++] = CF_RR;
+        break;
+      }
+    out[n++] = CF_CUSTOM;
+  }
+  return n;
+}
+
+/** The next car from `cn` toward `dir` (+1 / -1) car select can land on, -1 at the end. */
+static int32_t car_step(int32_t cn, int32_t dir, int32_t maxsl, int32_t filter, bool ext_normal) {
+  for (int32_t c = cn + dir; c >= 0 && c <= maxsl; c += dir)
+    if (car_in_filter(c, filter) && !(ext_normal && c == CUSTOM_CAR_INDEX)) return c;
+  return -1;
+}
+
 /** Who made a car, as Extended's car select credits it (XT 15341-15398,
  * "Created by ..."): Extended's own cars by its table, a new car by its
  * .rad's carmaker(name) line (the web Car Maker's Author field); NULL for
@@ -5295,7 +5341,8 @@ int game_run(void) {
   static CarDefine live_cd[NFM_MAX_CARS]; // each racing car's own stats (see mad_init below)
   static CarDefine race_base[NFM_MAX_CARS]; // what specials rebuild each live_cd from (the career's points in)
   static Specials specials;                    // Extended's specials (specials.c)
-  bool ext_listbars = false;                   // Extended's control.swap: list bars show specials
+  bool ext_listbars = false;
+  int32_t car_filter = CF_ALL;                 // car select's filter (car_filters)                   // Extended's control.swap: list bars show specials
   // Which car (0-15) each slot drives -- ports xtGraphics.java's own
   // persistent `sc[]` field (xtGraphics.java:94,460 -- `new int[]{0,0,...}`,
   // never reset between races). sc[0] (the player's own car) is refreshed
@@ -5764,6 +5811,7 @@ int game_run(void) {
         ext_normal = gamemode_opselect == 3;
         ext_career = gamemode_opselect == 3;
         g_ext_career = ext_career;
+        car_filter = CF_ALL;
         // :4646-4659 -- Java resets its cursor to 0 when confirming NFM2
         // or Free Play (its own opselect 1 and 3); the NFM1 branch does
         // not, but it is already 0 there so all three paths leave the
@@ -5914,8 +5962,19 @@ int game_run(void) {
       }
       if (car_flipo == 0) {
         int32_t car_maxsl = (gmode == GMODE_FREE_PLAY) ? (ext_career ? CAR_COUNT - 1 : car_last_index(ext_normal)) : 15;
-        if (KEY_EDGE(BTN_RIGHT) && car_index != car_maxsl) { car_nextc = 1; car_flipo = 20; }
-        if (KEY_EDGE(BTN_LEFT) && car_index != 0) { car_nextc = -1; car_flipo = 20; }
+        if (KEY_EDGE(BTN_RIGHT) && car_step(car_index, 1, car_maxsl, car_filter, ext_normal) >= 0) { car_nextc = 1; car_flipo = 20; }
+        if (KEY_EDGE(BTN_LEFT) && car_step(car_index, -1, car_maxsl, car_filter, ext_normal) >= 0) { car_nextc = -1; car_flipo = 20; }
+        int32_t filters[8];
+        const int32_t nf = car_filters(ext_career, gmode, filters);
+        if (nf > 1 && (KEY_EDGE(BTN_DOWN) || KEY_EDGE(BTN_UP))) {
+          int32_t k = 0;
+          while (k < nf - 1 && filters[k] != car_filter) k++;
+          car_filter = filters[(k + (KEY_EDGE(BTN_DOWN) ? 1 : nf - 1)) % nf];
+          if (!car_in_filter(car_index, car_filter)) {
+            const int32_t first = car_step(-1, 1, car_maxsl, car_filter, ext_normal);
+            if (first >= 0) car_index = first;
+          }
+        }
       }
       if (KEY_EDGE(BTN_CANCEL)) {
         if (career_transfer_from >= 0) career_transfer_from = -1;   // the transfer called off
@@ -9530,8 +9589,8 @@ int game_run(void) {
             // recomputed here rather than shared because the two sites run
             // in different phases of the frame.
             int32_t car_maxsl = (car_gm == GMODE_FREE_PLAY) ? (ext_career ? CAR_COUNT - 1 : car_last_index(ext_normal)) : 15;
-            car_index += (car_nextc > 0) ? 1 : -1;
-            if (ext_normal && car_index == CUSTOM_CAR_INDEX) car_index += (car_nextc > 0) ? 1 : -1;
+            const int32_t next = car_step(car_index, car_nextc > 0 ? 1 : -1, car_maxsl, car_filter, ext_normal);
+            if (next >= 0) car_index = next;
             if (car_index < 0) car_index = 0;
             if (car_index > car_maxsl) car_index = car_maxsl;
             car_transition_y = -1100;
@@ -9687,6 +9746,11 @@ int game_run(void) {
         }
       }
 
+      // A locked car keeps its stats to itself.
+      const bool car_locked =
+          car_index != CUSTOM_CAR_INDEX &&
+          (ext_career ? career_car_lock(&csave, ext_car_of(car_index))
+                      : game_progress_car_unlock_stage(&progress, (GameMode)gmode, car_index)) != 0;
       // 6. Six stat bars (Top Speed / Acceleration / Handling / Stunts
       // / Strength / Endurance) in 2 columns of 3 rows. Java line
       // 6094-6139. Each bar is 156px wide, drawn statb (coloured bg) ->
@@ -9734,7 +9798,7 @@ int game_run(void) {
           { "Strength:",    483, 358, n23 },  // right col, row 1 (bar bg at 536,352)
           { "Endurance:",   473, 373, n24 },  // right col, row 2 (bar bg at 536,367)
         };
-        for (int32_t i = 0; i < 6; i++) {
+        for (int32_t i = 0; i < 6 && !car_locked; i++) {
           const struct StatBar *sb = &bars[i];
           int32_t bar_x = (i < 3) ? 162 : 536;
           int32_t bar_y = sb->y - 6; // Java's label baseline is 6px below the bar's top
@@ -9822,11 +9886,20 @@ int game_run(void) {
       // (then-wrapping) list would make in the wrong direction.
       {
         int32_t car_maxsl = (gmode == GMODE_FREE_PLAY) ? (ext_career ? CAR_COUNT - 1 : car_last_index(ext_normal)) : 15;
-        if (menu_back.tex >= 0 && car_index != 0) {
+        if (menu_back.tex >= 0 && car_step(car_index, -1, car_maxsl, car_filter, ext_normal) >= 0) {
           gfx_draw_image(&g, menu_back.tex, 95, 275, menu_back.w, menu_back.h);
         }
-        if (menu_next.tex >= 0 && car_index != car_maxsl) {
+        if (menu_next.tex >= 0 && car_step(car_index, 1, car_maxsl, car_filter, ext_normal) >= 0) {
           gfx_draw_image(&g, menu_next.tex, 645, 275, menu_next.w, menu_next.h);
+        }
+        int32_t filters[8];
+        if (car_filters(ext_career, gmode, filters) > 1) {
+          // The filter, under the car's name.
+          char line[64];
+          snprintf(line, sizeof(line), "< %s >", kCarFilterName[car_filter]);
+          font_set(FONT_BOLD, 12);
+          gfx_set_color(&g, 255, 196, 0);
+          draw_centered(&g, line, 400, 114);
         }
       }
       // continue.gif (Java's `contin[0]`) at (355, 385). Java line 6316.
