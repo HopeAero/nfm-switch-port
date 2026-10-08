@@ -5555,6 +5555,10 @@ int game_run(void) {
   // experience and stat points per car (career.c). Saved to career.txt.
   bool ext_career = false;
   static CareerSave csave;
+  // The save as the race started: quitting or restarting before the race
+  // ends puts it back, so an unfinished race pays nothing (this port's
+  // own -- the original kept the experience, levels and bonus points).
+  static CareerSave csave_race;
   static CareerRace crace;
   static CareerRun crun;          // this race's experience (career.c)
   int32_t career_seen_clear = 0;  // the player's checkpoints already paid for
@@ -6867,6 +6871,7 @@ int game_run(void) {
         } else if (pause_opselect == 5) {
           // Restart Race: the same car and stage from the loading card, as
           // if picked again in the stage list.
+          if (ext_career && !career_settled) csave = csave_race;   // an unfinished race pays nothing
           audio_stop_music(&audio);
           stage_music_loaded_for = -1;
           restart_race = true;
@@ -6884,6 +6889,7 @@ int game_run(void) {
           // for the campaign just abandoned. Same opselect mapping the
           // post-race screen above already explains (Multiplayer is hidden
           // here, so Java's "3" for Free Play is our 2).
+          if (ext_career && !career_settled) csave = csave_race;   // an unfinished race pays nothing
           audio_stop_music(&audio);
           stage_music_loaded_for = -1;
           if (gmode == 1) gamemode_opselect = 0;
@@ -6935,6 +6941,7 @@ int game_run(void) {
       } else if (act == SETTINGS_CAREER_RESET) {
         // Settings > Reset RPG Mode: the career from scratch, saved.
         career_reset(&csave);
+        csave_race = csave;   // a reset from the pause menu stays reset on quitting
         if (career_path[0]) career_save(career_path, &csave);
       } else if (act == SETTINGS_BENCH || act == SETTINGS_STRESS) {
         if (progress_path_ok) game_settings_save(progress_path, &settings);
@@ -7426,6 +7433,7 @@ int game_run(void) {
         }
         career_seen_clear = 0;
         career_settled = false;
+        csave_race = csave;
         // The stage's recorded bots (GameSparker.java 1749-1790).
         career_bots_free(&cbots);
         int32_t bot_slots[NFM_MAX_CARS];
