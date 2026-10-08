@@ -159,19 +159,28 @@ Map of the original: docs/extended-career.md.
 - [x] Beasts (B model, x3 powerloss, x2 collision radius), shadows
       (see-through at shadowtrans 80, no outlines), undead (wrecked once,
       then immortal at full power, no special, out of the ranking).
-- [ ] The Titan boss on 23; the undead's per-stage scripts (17's late
-      entry and targeting, 11's wrecks turning undead); the name prefixes
-      ("Beast ", "Shadow ", "Undead ") in the car list; the start ghosting.
-- [ ] Stage effects and gimmicks per stage (Medium.effect, water, snow,
-      floors and teleports on 13, lives on 20, crumbling 21, gravity 15).
-- [ ] Career AI (Control's per-stage branches) and recorded bots.
-      Control side done (2026-10-07): in career, control_preform runs
-      Extended's whole preform, translated mechanically from Control.java
-      (tools/control_career_j2c.py -> native/core/control_career.inc), plus
-      control_reset_career and contva_sortvariables; control_career_test
-      matches web/ext/Control.js digest for digest on every stage. Left:
-      game.c filling xt.career (XtCareerAI, xt_graphics.h) and calling
-      reset/sortvariables in the original's order; recorded bots.
-- [ ] Bonus stages 1-4 and their prizes, scouting, perks (car points),
-      bonus stat point rolls (winchance/killchance), stat changers / sell,
-      hard / scale / no levels, opponent levels on the HUD, start grids.
+- [x] Car list prefixes ("Beast ", "Shadow ", "Undead "), cars unlocked on
+      the finish screen.
+- [x] Career AI: Extended's whole preform (control_career.inc, translated
+      from Control.java, 11,550 cases bit for bit against the JS), reset and
+      Contva, filled from the race each race and tick (game.c, xt.career).
+- [x] Recorded bots (career_bots.c) with Madness.isabot's physics and the
+      break-off rules; this port's own guard: 600 ticks without a checkpoint
+      hands a drifted recording to the AI.
+- [x] The career's start grid (career_grid), normal mode's 11th car centred.
+- [x] Bonus stages 1-4 (the Special button on 5, 11, 15, 18), their music
+      and prizes; hard / scale levels / no levels on beaten stages (Up/Down).
+- [x] Stage scripts and physics (career_stage.c, careermode$m, 24,500 ticks
+      against the JS): 13's floors and portals, 6's ghost, 11's undead vans,
+      17's hunt, 20's lives, 21's crumbling arena, 19's glitches, 22's night
+      teleports, the Titan on 23, bonus 4; fire and drain stats; gravity,
+      ice, water, off-track dive, floors, wall damage, nofix in mad.c through
+      career_phys_* (NULL outside the career). The beaten Titan no longer
+      blocks the race's end (past v2.8's END OF BETA, it never ran).
+- [ ] Visuals left (rendering untouched on purpose so far): 22's night dim
+      (dn_dim), 7's green outline pulse (polyoutline), 23's greystage, the
+      undead's green flames (newflame), the portal fade, stars/snow/water.
+- [ ] Undead out of the car list's ranking; opponent levels on the HUD.
+- [ ] Scouting, perks (car points, 24 applied ones), bonus stat point rolls
+      (winchance/killchance, extpoints), stat changers / selling cars.
+- [ ] Play it through on the Switch: the Titan fight end to end, bots.
