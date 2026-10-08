@@ -115,6 +115,10 @@ typedef struct ContO {
   bool glowlines;
   int32_t glowc[3];
   int32_t flameheight;
+  // Extended's career (career_stage.c): this car's flames in flame_rgb (the
+  // undead's green, a stage 13 guardian's health colour). Drawing only.
+  bool flame_on;
+  int32_t flame_rgb[3];
   bool wallpiece;
   int32_t telechk;
   bool decor;

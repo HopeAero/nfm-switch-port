@@ -118,6 +118,12 @@ void plane_set_outline(bool on, int32_t r, int32_t g, int32_t b);
  * puts back (255, false, NULL, 1.0), NFM 2's look. */
 void plane_set_piece(int32_t alpha, bool glow, const int32_t *glowc, double flame);
 
+/** Extended's flame colour (its Plane.d's flamecolours: greenflame, a floor
+ * guardian's dmgcolours): while `on`, both flames of the faces drawn next
+ * start from (r, g, b) instead of NFM 2's yellow and orange. cont_o sets it
+ * around one car's faces. */
+void plane_set_flame(bool on, int32_t r, int32_t g, int32_t b);
+
 void plane_d(Plane *p, struct Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t cxz,
              int32_t n4, int32_t n5, int32_t n6, int32_t n7, bool b, int32_t n8);
 

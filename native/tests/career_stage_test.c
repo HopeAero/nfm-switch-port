@@ -510,6 +510,10 @@ static void test_stage23(void) {
   // The beaten Titan stays undead and does not count (this port's fix, career_stage_undeadextra).
   CHECK(career_stage_wasted_end_allowed(cs) && career_stage_undeadextra(cs) == 1, "stage 23: the end may come");
   CHECK(!career_stage_win_is_boss(cs), "stage 23: no second fight");
+  // With the field wrecked, "all wasted" (the Titan left out) ends the race.
+  for (int32_t a = 2; a < np; a++) F->mads[a].dest = true;
+  CHECK(career_stage_wasted(cs, F->mads, np) == np - 1 - career_stage_undeadextra(cs), "stage 23: all wasted after the Titan (%d)",
+        career_stage_wasted(cs, F->mads, np));
   career_stage_free(cs);
 }
 

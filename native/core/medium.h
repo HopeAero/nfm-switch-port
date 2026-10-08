@@ -168,6 +168,11 @@ typedef struct Medium {
   int32_t *twn;          // [nst]
   int32_t resdown;
   int32_t rescnt;
+  // Extended's career, stage 7 (Medium.js 470-487, effect[5]): while on, the
+  // ground patches are outlined in polyoutline (careermode$m pulses its
+  // green). Off everywhere else; medium_init leaves it off.
+  bool polyoutline_on;
+  int32_t polyoutline[3];
 } Medium;
 
 // Zeroes *m, then runs the JS constructor's field initialisers in order.

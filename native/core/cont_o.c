@@ -1443,6 +1443,7 @@ static void cont_o_d_inner(ContO *co, struct Graphics2D *g) {
         if (src != sort_order) memcpy(sort_order, src, sizeof(int32_t) * (size_t)co->npl);
       }
       if (co->spec_on) plane_set_outline(true, co->spec[0], co->spec[1], co->spec[2]);
+      if (co->flame_on) plane_set_flame(true, co->flame_rgb[0], co->flame_rgb[1], co->flame_rgb[2]);
       // Extended stage pieces: see-through (setfade, nosee walls), glowing
       // outlines (setcol), scaled flames (setfire). NFM 2's objects leave all
       // of it at its defaults, so they draw exactly as before.
@@ -1464,6 +1465,7 @@ static void cont_o_d_inner(ContO *co, struct Graphics2D *g) {
         plane_set_piece(255, false, NULL, 1.0);
       }
       if (co->spec_on) plane_set_outline(false, 0, 0, 0);
+      if (co->flame_on) plane_set_flame(false, 0, 0, 0);
 
       if (co->shadow) {
         const GfxMark dust_mark = gfx_mark(g);

@@ -230,6 +230,16 @@ static int32_t flame_scaled(int32_t n) {
   return g_piece_flame == 1.0 ? n : (int32_t)((double)n * g_piece_flame);
 }
 
+static bool g_flame_on;
+static int32_t g_flame[3];
+
+void plane_set_flame(bool on, int32_t r, int32_t g, int32_t b) {
+  g_flame_on = on;
+  g_flame[0] = r;
+  g_flame[1] = g;
+  g_flame[2] = b;
+}
+
 void plane_set_outline(bool on, int32_t r, int32_t g, int32_t b) {
   g_outline_on = on;
   g_outline[0] = r;
@@ -371,16 +381,19 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
       }
       // trunc(fr(255.0 + fr(255.0 * fr(snap[0]/400.0)))) -- three nested
       // single-op fr()s, native float chaining matches.
+      const float fl0 = g_flame_on ? (float)g_flame[0] : 255.0f;
+      const float fl1 = g_flame_on ? (float)g_flame[1] : 169.0f;
+      const float fl2 = g_flame_on ? (float)g_flame[2] : 89.0f;
       float snap0 = (float)p->m->snap[0] / 400.0f;
-      int32_t r = jtrunc(255.0f + (255.0f * snap0));
+      int32_t r = jtrunc(fl0 + (fl0 * snap0));
       if (r > 255) r = 255;
       if (r < 0) r = 0;
       float snap1 = (float)p->m->snap[1] / 300.0f;
-      int32_t gval = jtrunc(169.0f + (169.0f * snap1));
+      int32_t gval = jtrunc(fl1 + (fl1 * snap1));
       if (gval > 255) gval = 255;
       if (gval < 0) gval = 0;
       float snap2 = (float)p->m->snap[2] / 200.0f;
-      int32_t bval = jtrunc(89.0f + (89.0f * snap2));
+      int32_t bval = jtrunc(fl2 + (fl2 * snap2));
       if (bval > 255) bval = 255;
       if (bval < 0) bval = 0;
       gfx_set_color(g, r, gval, bval);
@@ -411,15 +424,17 @@ void plane_d(Plane *p, Graphics2D *g, int32_t n, int32_t n2, int32_t n3, int32_t
         array7[i] = plane_ys(p, array3[i], array2[i]);
       }
       float snap0b = (float)p->m->snap[0] / 400.0f;
-      int32_t r2 = jtrunc(255.0f + (255.0f * snap0b));
+      int32_t r2 = jtrunc(fl0 + (fl0 * snap0b));
       if (r2 > 255) r2 = 255;
       if (r2 < 0) r2 = 0;
       float snap1b = (float)p->m->snap[1] / 300.0f;
-      int32_t g2v = jtrunc(207.0f + (207.0f * snap1b));
+      const float fl1b = g_flame_on ? fl1 : 207.0f;
+      int32_t g2v = jtrunc(fl1b + (fl1b * snap1b));
       if (g2v > 255) g2v = 255;
       if (g2v < 0) g2v = 0;
       float snap2b = (float)p->m->snap[2] / 200.0f;
-      int32_t b2v = jtrunc(136.0f + (136.0f * snap2b));
+      const float fl2b = g_flame_on ? fl2 : 136.0f;
+      int32_t b2v = jtrunc(fl2b + (fl2b * snap2b));
       if (b2v > 255) b2v = 255;
       if (b2v < 0) b2v = 0;
       gfx_set_color(g, r2, g2v, b2v);

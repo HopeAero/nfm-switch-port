@@ -1333,6 +1333,8 @@ static void hud_say_draw(Graphics2D *g, Medium *m, int32_t y, const char *str,
 // The career's arrow skips the cars careermode$m takes out of it (noarrow,
 // norender: the undead, stage 13's other floors). NULL outside the career.
 static const bool *g_arrow_skip = NULL;
+// ...and the standings the undead (stat$m 4274, noarrow). NULL outside the career.
+static const bool *g_board_skip = NULL;
 
 /**
  * Ports the !arrace branch of XtGraphics.js's arrow(n, n2, checkPoints, b)
@@ -1778,6 +1780,66 @@ static void hud_stunt_detect(Mad *mad, XtGraphicsStub *xt, Medium *m, Audio *aud
   }
 }
 
+// Medium's two career colour effects, which careermode$m only steers:
+// stage 22's night (Medium.js 1615-1665: the colours drawn as if snap were
+// lowered by CareerStage.dn_dim) and stage 23's greying ground (Medium.js
+// 1450-1483: the ground drained towards grey by CareerStage.greystage). The
+// stage's own colours are kept here; the fog's and the patches' are taken
+// back off their snapped values (the Medium keeps no copy of those).
+typedef struct {
+  bool on;
+  int32_t stage;
+  int32_t snap[3];
+  int32_t sky[3], fog[3], grnd[3], poly[3];   // unsnapped
+  int32_t dim;
+} CareerMedium;
+
+static int32_t unsnap(int32_t c, int32_t snap) {
+  const double f = 1.0 + snap / 100.0;
+  return f > 0.0 ? (int32_t)floor(c / f + 0.5) : c;
+}
+
+static void career_medium_init(CareerMedium *cm, const Medium *m) {
+  memset(cm, 0, sizeof(*cm));
+  for (int32_t a = 0; a < 3; a++) {
+    cm->snap[a] = m->snap[a];
+    cm->sky[a] = m->osky[a];
+    cm->grnd[a] = m->ogrnd[a];
+    cm->fog[a] = unsnap(m->cfade[a], m->snap[a]);
+    cm->poly[a] = unsnap(m->cpol[a], m->snap[a]);
+  }
+  cm->on = true;
+}
+
+static void career_medium_tick(CareerMedium *cm, Medium *m, const CareerStage *cs) {
+  if (!cm->on) return;
+  if (cs->stage == 22 && cs->dn_dim != cm->dim) {
+    cm->dim = cs->dn_dim;
+    for (int32_t a = 0; a < 3; a++) {
+      m->snap[a] = cm->snap[a] - cm->dim;
+      m->csky[a] = medium_snapped(cm->sky[a], m->snap[a]);
+      m->cfade[a] = medium_snapped(cm->fog[a], m->snap[a]);
+      m->cgrnd[a] = medium_snapped(cm->grnd[a], m->snap[a]);
+      m->cpol[a] = medium_snapped(cm->poly[a], m->snap[a]);
+      m->crgrnd[a] = jtrunc_d(((double)m->cpol[a] * 0.99 + (double)m->cgrnd[a]) / 2.0);
+    }
+  }
+  if (cs->stage == 23 && cs->greystage >= 2 && cs->greystage <= 5) {
+    const int32_t a = cs->greystage - 2;
+    bool changed = false;
+    if (cm->grnd[0] > 99 - a * 7) { cm->grnd[0]--; cm->poly[0]--; changed = true; }
+    if (cm->grnd[1] > 186 - a * 36) { cm->grnd[1] -= 3; cm->poly[1] -= 3; changed = true; }
+    if (cm->grnd[2] > 102 - a * 8) { cm->grnd[2]--; cm->poly[2]--; changed = true; }
+    if (changed) {
+      for (int32_t q = 0; q < 3; q++) {
+        m->cgrnd[q] = medium_snapped(cm->grnd[q], m->snap[q]);
+        m->cpol[q] = medium_snapped(cm->poly[q], m->snap[q]);
+        m->crgrnd[q] = jtrunc_d(((double)m->cpol[q] * 0.99 + (double)m->cgrnd[q]) / 2.0);
+      }
+    }
+  }
+}
+
 // Extended's own sounds (ext/data/Files/sounds) are 16-bit stereo, which
 // wav_decode leaves out: the two channels are averaged into one, in place,
 // and the fmt/data chunks rewritten to say so, then decoded as usual.
@@ -2204,6 +2266,7 @@ static void draw_arrace_board(Graphics2D *g, Medium *m, CheckPoints *cp, int32_t
     int32_t found = 0;
     for (int32_t j = 0; j < nplayers && found == 0; j++) {
       if (cp->pos[j] != place || cp->dested[j] != 0) continue;
+      if (g_board_skip && g_board_skip[j]) continue;
       // :3730-3749 -- ordinal. "1st" sits one pixel right of the rest.
       gfx_set_color(g, 0, 0, label_b);
       // 16, not 8: `place` is a race position and never exceeds the 7-car
@@ -4621,6 +4684,8 @@ int game_run(void) {
   static CareerStageWorld cworld;
   static bool cstage_ghost[NFM_MAX_CARS][NFM_MAX_CARS];
   static bool cstage_arrow_skip[NFM_MAX_CARS];
+  static bool cstage_board_skip[NFM_MAX_CARS];
+  static CareerMedium cstage_medium;   // stages 22 and 23's colours
   int32_t career_walls[4] = {0, 0, 0, 0};
   bool cstage_boss_music = false;   // the fight's music is loaded in g_career_ogg
   WavClip snd_redflash = {0}, snd_caught = {0};
@@ -6332,7 +6397,11 @@ int game_run(void) {
         }
       }
       g_arrow_skip = ext_career ? cstage_arrow_skip : NULL;
-      for (int32_t k = 0; k < NFM_MAX_CARS; k++) cstage_arrow_skip[k] = false;
+      g_board_skip = ext_career ? cstage_board_skip : NULL;
+      for (int32_t k = 0; k < NFM_MAX_CARS; k++) cstage_arrow_skip[k] = cstage_board_skip[k] = false;
+      m.polyoutline_on = false;
+      for (int32_t k = 0; k < nplayers; k++) co[k].flame_on = false;
+      if (ext_career) career_medium_init(&cstage_medium, &m);
       // NFM_HOOK_SPECIALS=1: every bar starts full, to see specials headless.
       if (getenv("NFM_HOOK_SPECIALS")) for (int32_t i = 0; i < nplayers; i++) mad[i].spatk = mad[i].speclast = mad[i].speclast2 = 120.0f;
       // NFM_HOOK_VIEW=n and NFM_HOOK_LISTBARS=1: a camera and the list bars, headless.
@@ -6553,9 +6622,8 @@ int game_run(void) {
             }
             mad_drive(&mad[i], &control[i], &co[i], &t, &cp);
             if (ext_career) {
-              // Madness.drive 3252-3361: stage 13's portals and guardians.
-              career_stage_portal_move(&cstage, &cworld, i);
-              career_stage_portal_detect(&cstage, &cworld, i);
+              // Stage 13's portals ran inside mad_drive (Madness.drive
+              // 3252-3361); the recorded bot's side of an arrival.
               if (cstage.portal_unbreak[i]) cbots.brk[i] = false;
               if (cstage.portal_arrived[i]) {
                 const int32_t ws = cstage.portal_whichset[i];
@@ -6574,6 +6642,8 @@ int game_run(void) {
             record_rec(&rpd, &co[i], i, mad[i].squash, mad[i].lastcolido, mad[i].cntdest, 0);
           }
           check_points_checkstat(&cp, mad_ptrs, co_ptrs, &rpd, nplayers, 0, 0);
+          // The career's count (CheckPoints 149-155): stage 11's undead wrecks count as wasted.
+          if (ext_career) cp.wasted = career_stage_wasted(&cstage, mad, nplayers);
           for (int32_t i = 0; i < nplayers; i++) cont_o_step_fix(&co[i]);
           // XtGraphics.js's own per-tick missedcp advance, under the same
           // guard xtGraphics.java:7917 puts it behind -- see the helper's
@@ -7086,8 +7156,11 @@ int game_run(void) {
           cworld.mutes = control[0].mutes;
           career_stage_tick(&cstage, &crace, &csave, &crun, &cworld);
           career_stage_export_ai(&cstage, &cworld, &xt.career);
-          for (int32_t k = 0; k < NFM_MAX_CARS; k++)
+          for (int32_t k = 0; k < NFM_MAX_CARS; k++) {
             cstage_arrow_skip[k] = k < nplayers && (cstage.noarrow[k] || cstage.norender[k]);
+            cstage_board_skip[k] = k < nplayers && cstage.noarrow[k];
+          }
+          career_medium_tick(&cstage_medium, &m, &cstage);
           if (cstage.release_hold) {
             // cstimer 2: the hold card goes, the field is let go, the fight is on.
             race_holdit = false;
@@ -7452,6 +7525,12 @@ int game_run(void) {
         const double t = accumulator_ms / TICK_MS;
         smooth_apply(&smooth_prev, &smooth_curr, (float)(t < 1.0 ? t : 1.0), co, nplayers, &m);
       }
+      if (ext_career && cstage.started) {
+        // careermode$m's pulse of the ground's green outlines (stage 7).
+        m.polyoutline_on = stage_num == 7 && cstage.polyoutline > 20;
+        m.polyoutline[0] = m.polyoutline[2] = 0;
+        m.polyoutline[1] = cstage.polyoutline > 255 ? 255 : (cstage.polyoutline < 0 ? 0 : cstage.polyoutline);
+      }
       nfm_set_draw_phase(true);
       DIAG_PHASE("race draw: scene");
       medium_d(&m, &g); // ground/sky backdrop -- must run before any cont_o_d,
@@ -7474,7 +7553,14 @@ int game_run(void) {
       if (ext_career && cstage.started) {
         for (int32_t k = 0; k < nplayers; k++) {
           cstage_saved_fade[k] = co[k].fade;
-          if (cstage.norender[k]) co[k].fade = 255;
+          if (cstage.norender[k]) {
+            co[k].fade = 255;
+          } else if (cstage.tele_fading[k] && 255 - cstage.telefade[k] > co[k].fade) {
+            // Plane.d's teleported: fading out into a stage 13 portal.
+            co[k].fade = 255 - cstage.telefade[k];
+          }
+          co[k].flame_on = cstage.flame_custom[k];
+          for (int32_t q = 0; q < 3; q++) co[k].flame_rgb[q] = cstage.flame_rgb[k][q];
         }
         if (cstage.piece_norender && cstage.npieces == stage_count) {
           cstage_piece_fade = malloc(sizeof(int32_t) * (size_t)(stage_count > 0 ? stage_count : 1));

@@ -112,6 +112,7 @@ typedef struct CareerStage {
   bool telechk[NFM_MAX_CARS];         // Madness.telechk: cleared a checkpoint while braking into a portal
   int32_t telefade[NFM_MAX_CARS];     // ContO.telefade (copies start at 255)
   bool tele_fading[NFM_MAX_CARS];     // ContO.teleported: the car is fading out into a portal (draw)
+  int32_t dmgcolour[NFM_MAX_CARS][3]; // ContO.dmgcolours: a guardian's flames by its damage
   bool floorguardian[NFM_MAX_CARS];   // ContO.floorguardian
   bool guardswitch[NFM_MAX_CARS];     // ContO.guardswitch
   // one-shot portal events for the bots (game.c applies them): the car
@@ -180,6 +181,10 @@ typedef struct CareerStage {
   bool invulnerable;
 
   // -- outputs for game.c (read after each career_stage_tick) -------------------
+  // The cars' flame colour (Plane.d 481-490), for ContO.flame_on/flame_rgb:
+  // the undead's green, a stage 13 guardian's health colour.
+  bool flame_custom[NFM_MAX_CARS];
+  int32_t flame_rgb[NFM_MAX_CARS][3];
   int32_t music_event;                // CAREER_MUSIC_*, this tick
   bool sound_redflash;                // teleport warning (redflash.wav), this tick
   bool sound_scare;                   // stage 6's scare (fuucked.wav), this tick
@@ -261,6 +266,11 @@ void career_stage_tick(CareerStage *cs, const CareerRace *r, const CareerSave *s
 
 /** stat$m 3992-4002: the undead that do not count towards "all wasted". */
 int32_t career_stage_undeadextra(const CareerStage *cs);
+/** CheckPoints.checkstat's wasted count in the career: wasted, or stage
+ * 11's undead fakedest (CheckPoints 149-155). game.c sets cp.wasted from it
+ * right after checkstat, so stat$m's end rules see it the same tick. (The
+ * beaten Titan is left out by career_stage_undeadextra instead.) */
+int32_t career_stage_wasted(const CareerStage *cs, const Mad *mads, int32_t nplayers);
 /** stat$m 4004: "all wasted" may end the race (cstimer < 2 or 10000). */
 bool career_stage_wasted_end_allowed(const CareerStage *cs);
 /** stat$m 4127: the finish line may end the race (cstimer < 2). */
@@ -377,13 +387,23 @@ static inline void career_phys_ground_speed(CareerStage *cs, int32_t im, float s
 static inline float career_phys_brake(CareerStage *cs, int32_t im, float handb, bool handb_held, bool *apply);
 
 /** Stage 13's portals, end of Madness.drive (3252-3349): the fade and the
- * move to the next floor, the guardians. game.c calls it right after the
- * car's mad_drive (or mad.c at its end, before the checkpoint loop). */
+ * move to the next floor, the guardians. mad.c runs it inside drive()
+ * (career_phys_portal_move); this is the same for one slot of a race. */
 void career_stage_portal_move(CareerStage *cs, const CareerStageWorld *w, int32_t im);
-/** Madness 3353-3361 inside the checkpoint loop: driving into a portal
- * checkpoint starts the brake. game.c calls it after the car's mad_drive,
- * after career_stage_portal_move. */
+/** Madness 3353-3361: driving into a portal checkpoint starts the brake.
+ * mad.c checks each checkpoint inside its loop (career_phys_portal_check);
+ * this runs the whole loop for one slot after the fact. */
 void career_stage_portal_detect(CareerStage *cs, const CareerStageWorld *w, int32_t im);
+
+/** The portal parts of Madness.drive, inline for mad.c: Madness.teleport
+ * (3691), the move at the end of drive (3252-3349), one checkpoint's
+ * portal test (3353-3361), and a checkpoint cleared while braking in
+ * (3379, 3401: the bot gets its recording back on arrival). */
+static inline void career_phys_madness_teleport(const CareerStage *cs, ContO *co, int32_t user);
+static inline void career_phys_portal_move(CareerStage *cs, Mad *mad, ContO *co, Control *c, const CheckPoints *cp);
+static inline void career_phys_portal_check(CareerStage *cs, const Mad *mad, const ContO *co, const CheckPoints *cp,
+                                            int32_t j);
+static inline void career_phys_portal_cleared(CareerStage *cs, int32_t im);
 
 /** Madness.respawn (3659-3689): back to the last checkpoint, fixed; the car
  * resets instead of driving next tick (career_stage_respawn_reset). */
@@ -594,6 +614,101 @@ static inline float career_phys_brake(CareerStage *cs, int32_t im, float handb, 
   }
   *apply = handb_held || force;
   return changeby;
+}
+
+static inline void career_phys_madness_teleport(const CareerStage *cs, ContO *co, int32_t user) {
+  co->xz = 0 + 180 * (cs->specialflag[user] ? 1 : 0);
+}
+
+static inline void career_phys_portal_move(CareerStage *cs, Mad *mad, ContO *co, Control *c, const CheckPoints *cp) {
+  const int32_t im = mad->im;
+  if (!career_slot_ok(cs, im)) return;
+  const int32_t car = cs->car[im];
+  if (cs->forcehandb[im]) {
+    cs->tele_fading[im] = true;
+    if (cs->telefade[im] >= 15) cs->telefade[im] -= 15;
+    if (cs->teletimer[im] >= 20) {
+      if (!mad->capsized && mad->mtouch) {
+        mad->speed = 0.0f;
+        mad->pxy = 0;
+        mad->pzy = 0;
+        career_phys_madness_teleport(cs, co, im);
+        if (cs->slowstable[im] >= 4 && cs->telefade[im] < 15) {
+          if ((!mad->specialact || car == 13 || car == 36) && cs->telechk[im]) {
+            cs->portal_unbreak[im] = true;
+            cs->telechk[im] = false;
+          }
+          const int32_t f = cs->sendtofloor[im];
+          cs->floor[im] = f;
+          cs->speedhack[im] = 10;
+          cs->teleinvul[im] = im == 0 ? 30 : 10;
+          if (f > 0) c->setfixfloor = true;
+          mad->xtpower = 100;
+          co->x = f == 1 ? -5000 : 0;
+          co->z = 0;
+          co->y = f == 0 ? 250 - co->grat : -(f * 10000) - co->grat;
+          int32_t whichset = (3 - f) * 2 + 1;
+          if (mad->spatk == 120.0f && !mad->specialact) whichset = (3 - f) * 2 + 2;
+          if (car == 13 || car == 36) whichset = (3 - f) + 1;
+          cs->portal_arrived[im] = true;
+          cs->portal_whichset[im] = whichset;
+          cs->telefade[im] = 255;
+          cs->tele_fading[im] = false;
+          c->down = false;
+          c->left = false;
+          c->right = false;
+          c->handb = false;
+          cs->forcehandb[im] = false;
+        }
+      }
+      if (mad->speed == 0.0f && mad->pxy == 0 && mad->pzy == 0) cs->slowstable[im]++;
+    }
+  } else {
+    cs->teleinvul[im]--;
+    cs->slowstable[im] = 0;
+  }
+  if (cs->stage == 13) {
+    // m.effect[9] (MD 3320-3333)
+    cs->floorguardian[im] = !(im % 3 == 1 || im == 0 || im > 9);
+    if (cs->speedhack[im] > 0) {
+      co->x = cs->sendtofloor[im] == 1 ? -5000 : 0;
+      career_phys_madness_teleport(cs, co, im);
+    }
+  }
+  if (cs->floorguardian[im]) {
+    bool nomercy = true;
+    for (int32_t a7 = 1; a7 < cs->nplayers; a7++) {
+      if ((a7 == 1 || a7 == 4 || a7 == 7 || a7 >= 10) && cp->dested[a7] == 0) {
+        nomercy = false;
+        break;
+      }
+    }
+    cs->guardswitch[im] = true;
+    if ((cp->clear[0] >= 13 && cs->hard) || nomercy) cs->guardswitch[im] = false;
+  }
+}
+
+
+static inline void career_phys_portal_check(CareerStage *cs, const Mad *mad, const ContO *co, const CheckPoints *cp,
+                                            int32_t j) {
+  const int32_t im = mad->im;
+  if (!career_slot_ok(cs, im) || cp->telefloor[j] <= -1 || cs->floorguardian[im] || cs->forcehandb[im]) return;
+  const float scz = fabsf(((mad->scz[0] + mad->scz[1]) + mad->scz[2]) + mad->scz[3]) / 4.0f + 60.0f;
+  const float scx = fabsf(((mad->scx[0] + mad->scx[1]) + mad->scx[2]) + mad->scx[3]) / 4.0f + 60.0f;
+  if (cp->rotation[j] % 180 == 0 && (double)abs(co->z - cp->z[j]) < (double)scz && abs(co->x - cp->x[j]) < 700 &&
+      abs(co->y - cp->y[j]) < 800) {
+    cs->sendtofloor[im] = cp->telefloor[j];
+    cs->forcehandb[im] = true;
+  }
+  if (cp->rotation[j] % 90 == 0 && (double)abs(co->x - cp->x[j]) < (double)scx && abs(co->z - cp->z[j]) < 700 &&
+      abs(co->y - cp->y[j]) < 800) {
+    cs->sendtofloor[im] = cp->telefloor[j];
+    cs->forcehandb[im] = true;
+  }
+}
+
+static inline void career_phys_portal_cleared(CareerStage *cs, int32_t im) {
+  if (career_slot_ok(cs, im) && cs->forcehandb[im]) cs->telechk[im] = true;
 }
 
 #ifdef __cplusplus

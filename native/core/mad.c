@@ -1838,11 +1838,15 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
     }
   }
 
+  // Stage 13's portals (Madness.js 3252-3349): the fade, the drop onto the
+  // next floor, the guardians -- before the checkpoints are looked at.
+  career_phys_portal_move(cs, mad, contO, control, checkPoints);
   int32_t focus = 0;
   int32_t n110 = 0;
   int32_t n111 = 0;
   int32_t n112 = mad->nofocus ? 1 : 7;
   for (int32_t n113 = 0; n113 < checkPoints->n; n113++) {
+    career_phys_portal_check(cs, mad, contO, checkPoints, n113);   // Madness.js 3353-3361
     if (checkPoints->typ[n113] > 0) {
       n111++;
       if (checkPoints->typ[n113] == 1) {
@@ -1857,6 +1861,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
             abs(contO->x - checkPoints->x[n113]) < 700 &&
             abs(contO->y - checkPoints->y[n113] + 350) < 450 &&
             mad->clear == n111 + mad->nlaps * checkPoints->nsp - 1) {
+          career_phys_portal_cleared(cs, mad->im);   // Madness.js 3379 / 3401
           mad->clear = n111 + mad->nlaps * checkPoints->nsp;
           mad->pcleared = n113;
           mad->focus = -1;
@@ -1871,6 +1876,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
             abs(contO->z - checkPoints->z[n113]) < 700 &&
             abs(contO->y - checkPoints->y[n113] + 350) < 450 &&
             mad->clear == n111 + mad->nlaps * checkPoints->nsp - 1) {
+          career_phys_portal_cleared(cs, mad->im);   // Madness.js 3379 / 3401
           mad->clear = n111 + mad->nlaps * checkPoints->nsp;
           mad->pcleared = n113;
           mad->focus = -1;

@@ -181,9 +181,6 @@ static void randtele(CareerStage *cs, const CareerStageWorld *w, int32_t a, bool
 }
 
 /** Madness.teleport (MD 3691-3697): faces the car along the floor. */
-static void madness_teleport(const CareerStage *cs, ContO *co, int32_t user) {
-  co->xz = 0 + 180 * (cs->specialflag[user] ? 1 : 0);
-}
 
 /** Madness.ghostcolide (MD 714-721): the ghost's hit. */
 static void ghostcolide(CareerStage *cs, Mad *mad, ContO *co, float strength) {
@@ -437,11 +434,26 @@ static void stage13(CareerStage *cs, const CareerStageWorld *w) {
     if (a3 < np) {
       Mad *mad = &w->mads[a3];
       if (cs->floorguardian[a3]) {
-        // (ContO.dmgcolours, the guardian's health colour, is drawing only.)
+        // ContO.dmgcolours: the guardian's flames go from yellow to red with its damage.
+        int32_t i66 = jtrunc(60.0f * ((float)mad->hitmag / (float)maxmag_of(mad)));
+        int32_t i67 = 244, i68 = 244, i69 = 11;
+        if (i66 > 20) i68 = jtrunc(244.0f - 233.0f * ((float)(i66 - 20) / 40.0f));
+        i67 = clamp255(jtrunc((float)i67 + (float)i67 * ((float)w->m->snap[0] / 100.0f)));
+        i68 = clamp255(jtrunc((float)i68 + (float)i68 * ((float)w->m->snap[1] / 100.0f)));
+        i69 = clamp255(jtrunc((float)i69 + (float)i69 * ((float)w->m->snap[2] / 100.0f)));
+        cs->dmgcolour[a3][0] = i67;
+        cs->dmgcolour[a3][1] = i68;
+        cs->dmgcolour[a3][2] = i69;
         mad->power = 98.0f;
         mad->clear = -2;
         w->cp->clear[a3] = -2;
-        if (!(mad->hitmag > maxmag_of(mad))) setfire(o);
+        if (mad->hitmag > maxmag_of(mad)) {
+          cs->dmgcolour[a3][0] = 255;
+          cs->dmgcolour[a3][1] = 169;
+          cs->dmgcolour[a3][2] = 89;
+        } else {
+          setfire(o);
+        }
       }
       cs->groundlevel[a3] = (float)cs->floor[a3] * -10000.0f;
       if (cs->groundlevel[a3] == 0.0f) cs->groundlevel[a3] = 250.0f;
@@ -1418,10 +1430,29 @@ void career_stage_tick(CareerStage *cs, const CareerRace *r, const CareerSave *s
   start_protection(cs, r, w);
   // (XT 9075-9389, experience and the HUD's level bar: career.c.)
   for (int32_t k = 0; k < w->nplayers; k++) cs->last_clear[k] = md[k].clear;
+  // Plane.d 481-490: the undead burn green, the stage 13 guardians in their health colour.
+  for (int32_t k = 0; k < NFM_MAX_CARS; k++) {
+    const bool on = k < w->nplayers;
+    cs->flame_custom[k] = on && (cs->floorguardian[k] || cs->newflame[k]);
+    if (on && cs->floorguardian[k]) {
+      for (int32_t q = 0; q < 3; q++) cs->flame_rgb[k][q] = cs->dmgcolour[k][q];
+    } else if (on && cs->newflame[k]) {
+      cs->flame_rgb[k][0] = 50;
+      cs->flame_rgb[k][1] = 180;
+      cs->flame_rgb[k][2] = 255;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
 // stat$m
+
+int32_t career_stage_wasted(const CareerStage *cs, const Mad *mads, int32_t nplayers) {
+  int32_t wasted = 0;
+  for (int32_t k = 1; k < nplayers && k < NFM_MAX_CARS; k++)
+    if (mads[k].dest || cs->fakedest[k]) wasted++;
+  return wasted;
+}
 
 int32_t career_stage_undeadextra(const CareerStage *cs) {
   int32_t undeadextra = 0;
@@ -1610,72 +1641,7 @@ void career_stage_ghostmode(const CareerStage *cs, const CareerRace *r, const Ca
 
 void career_stage_portal_move(CareerStage *cs, const CareerStageWorld *w, int32_t im) {
   if (im < 0 || im >= w->nplayers || im >= NFM_MAX_CARS) return;
-  Mad *mad = &w->mads[im];
-  ContO *co = &w->cars[im];
-  Control *c = &w->controls[im];
-  const int32_t car = cs->car[im];
-  if (cs->forcehandb[im]) {
-    cs->tele_fading[im] = true;
-    if (cs->telefade[im] >= 15) cs->telefade[im] -= 15;
-    if (cs->teletimer[im] >= 20) {
-      if (!mad->capsized && mad->mtouch) {
-        mad->speed = 0.0f;
-        mad->pxy = 0;
-        mad->pzy = 0;
-        madness_teleport(cs, co, im);
-        if (cs->slowstable[im] >= 4 && cs->telefade[im] < 15) {
-          if ((!mad->specialact || car == 13 || car == 36) && cs->telechk[im]) {
-            cs->portal_unbreak[im] = true;
-            cs->telechk[im] = false;
-          }
-          const int32_t f = cs->sendtofloor[im];
-          cs->floor[im] = f;
-          cs->speedhack[im] = 10;
-          cs->teleinvul[im] = im == 0 ? 30 : 10;
-          if (f > 0) c->setfixfloor = true;
-          mad->xtpower = 100;
-          co->x = f == 1 ? -5000 : 0;
-          co->z = 0;
-          co->y = f == 0 ? 250 - co->grat : -(f * 10000) - co->grat;
-          int32_t whichset = (3 - f) * 2 + 1;
-          if (mad->spatk == 120.0f && !mad->specialact) whichset = (3 - f) * 2 + 2;
-          if (car == 13 || car == 36) whichset = (3 - f) + 1;
-          cs->portal_arrived[im] = true;
-          cs->portal_whichset[im] = whichset;
-          cs->telefade[im] = 255;
-          cs->tele_fading[im] = false;
-          c->down = false;
-          c->left = false;
-          c->right = false;
-          c->handb = false;
-          cs->forcehandb[im] = false;
-        }
-      }
-      if (mad->speed == 0.0f && mad->pxy == 0 && mad->pzy == 0) cs->slowstable[im]++;
-    }
-  } else {
-    cs->teleinvul[im]--;
-    cs->slowstable[im] = 0;
-  }
-  if (cs->stage == 13) {
-    // m.effect[9] (MD 3320-3333)
-    cs->floorguardian[im] = !(im % 3 == 1 || im == 0 || im > 9);
-    if (cs->speedhack[im] > 0) {
-      co->x = cs->sendtofloor[im] == 1 ? -5000 : 0;
-      madness_teleport(cs, co, im);
-    }
-  }
-  if (cs->floorguardian[im]) {
-    bool nomercy = true;
-    for (int32_t a7 = 1; a7 < w->nplayers; a7++) {
-      if ((a7 == 1 || a7 == 4 || a7 == 7 || a7 >= 10) && w->cp->dested[a7] == 0) {
-        nomercy = false;
-        break;
-      }
-    }
-    cs->guardswitch[im] = true;
-    if ((w->cp->clear[0] >= 13 && cs->hard) || nomercy) cs->guardswitch[im] = false;
-  }
+  career_phys_portal_move(cs, &w->mads[im], &w->cars[im], &w->controls[im], w->cp);
 }
 
 void career_stage_portal_detect(CareerStage *cs, const CareerStageWorld *w, int32_t im) {
@@ -1683,22 +1649,7 @@ void career_stage_portal_detect(CareerStage *cs, const CareerStageWorld *w, int3
   const Mad *mad = &w->mads[im];
   const ContO *co = &w->cars[im];
   const CheckPoints *cp = w->cp;
-  const float scz = fabsf(((mad->scz[0] + mad->scz[1]) + mad->scz[2]) + mad->scz[3]) / 4.0f + 60.0f;
-  const float scx = fabsf(((mad->scx[0] + mad->scx[1]) + mad->scx[2]) + mad->scx[3]) / 4.0f + 60.0f;
-  for (int32_t j = 0; j < cp->n; j++) {
-    if (cp->telefloor[j] > -1 && !cs->floorguardian[im] && !cs->forcehandb[im]) {
-      if (cp->rotation[j] % 180 == 0 && (double)abs(co->z - cp->z[j]) < (double)scz && abs(co->x - cp->x[j]) < 700 &&
-          abs(co->y - cp->y[j]) < 800) {
-        cs->sendtofloor[im] = cp->telefloor[j];
-        cs->forcehandb[im] = true;
-      }
-      if (cp->rotation[j] % 90 == 0 && (double)abs(co->x - cp->x[j]) < (double)scx && abs(co->z - cp->z[j]) < 700 &&
-          abs(co->y - cp->y[j]) < 800) {
-        cs->sendtofloor[im] = cp->telefloor[j];
-        cs->forcehandb[im] = true;
-      }
-    }
-  }
+  for (int32_t j = 0; j < cp->n; j++) career_phys_portal_check(cs, mad, co, cp, j);
   // MD 3379-3381 / 3401-3403: a checkpoint cleared while braking into the
   // portal gives a broken-off bot its recording back on arrival.
   if (cs->forcehandb[im] && mad->clear != cs->last_clear[im]) cs->telechk[im] = true;

@@ -576,6 +576,10 @@ void medium_groundpolys(Medium *m, Graphics2D *g) {
             }
             gfx_set_color(g, r, gg, bb);
             gfx_fill_polygon(g, a5, a6, 8);
+            if (m->polyoutline_on) {
+              gfx_set_color(g, m->polyoutline[0], m->polyoutline[1], m->polyoutline[2]);
+              gfx_draw_polygon(g, a5, a6, 8);
+            }
           }
         }
       }
