@@ -465,8 +465,9 @@ typedef enum {
 // clicknow()'s prompt; the original asks for a mouse click.
 #define KEY_START_PROMPT "Press Cross to Start"
 #define KEY_ARRACE_HINT  "Press Up on the D-pad"
-#define KEY_SPECIAL "L"
+#define KEY_SPECIAL "R"
 #define KEY_VIEW "Triangle"
+#define KEY_LISTBARS "L"
 #elif defined(NFM_TARGET_SWITCH)
 // The Switch's buttons as platform/switch/{platform,input}.c bind them: the
 // same names and places on the Joy-Cons (handheld or paired) and on the Pro
@@ -483,6 +484,7 @@ typedef enum {
 #define KEY_ARRACE_HINT  key_arrace("Press")
 #define KEY_SPECIAL  kPadIcons[key_settings()->bind[BIND_SPECIAL]]
 #define KEY_VIEW     kPadIcons[key_settings()->bind[BIND_VIEW]]
+#define KEY_LISTBARS kPadIcons[key_settings()->bind[BIND_LISTBARS]]
 #else
 #define KEY_STEER    "Arrow Keys"
 #define KEY_STUNT    "Arrow Keys"
@@ -493,8 +495,9 @@ typedef enum {
 #define KEY_START_PROMPT "Click here to Start"
 // The stage cards' hint (stages 3 and 14), in their own sentence case.
 #define KEY_ARRACE_HINT  "Press [ A ]"
-#define KEY_SPECIAL "S"
+#define KEY_SPECIAL "Q"
 #define KEY_VIEW "V"
+#define KEY_LISTBARS "D"
 #endif
 
 // The original's wide SPACEBAR key carries its label across its own face.
@@ -3311,6 +3314,203 @@ static void draw_instructions(Graphics2D *g, const InstAssets *ia,
   }
 }
 
+// ---- This port's extra credits and Extended guide -----------------------------
+
+// Credits after the original's page: Need for Madness 2 Extended's own
+// (its carselect credits, XT 15286-15340, word for word), then this port's.
+#define CREDITS_PAGES 5
+
+static void draw_extra_credits(Graphics2D *g, int32_t page, HudImg next, HudImg back, HudImg contin) {
+  typedef struct { int32_t kind; const char *text; } CreditLine;   // kind 0 heading, 1 line, 2 gap
+  static const CreditLine kPages[CREDITS_PAGES - 1][16] = {
+      {{0, "Need for Madness 2 Extended"},
+       {1, "This game was modded by Ten Graves, with"},
+       {1, "guidance from DragShot, rafa1231518, and Kaffeinated."},
+       {2, NULL},
+       {0, "Car creators"},
+       {1, "Tails, DJ Miker, Mezzelo, Phyrexian, Trelivision, Chaotic,"},
+       {1, "Afterburn, Excalibur, Vitalogy, Ultimato, Rulue, Tunari,"},
+       {1, "Toazuka, GX, projectDUB, RAD1 and KingOfSpeed."},
+       {1, "All Classic mode cars by Omar Waly."},
+       {2, NULL},
+       {0, "Stage creators"},
+       {1, "All Classic mode stages by Omar Waly."},
+       {1, "All other stages by Ten Graves."}},
+      {{0, "Need for Madness 2 Extended - Music"},
+       {1, "RPG mode stages 18 and 23 have been produced by SEGA."},
+       {1, "Some other music tracks are remixes of music by SEGA."},
+       {2, NULL},
+       {1, "RPG mode stages 16, 17, 19, 20, 21, 22 and 23b are remixes"},
+       {1, "by NicoCW, teckworks, bridgecapper227, Kamex and"},
+       {1, "DJ FACT.50 of Vernian Process"},
+       {1, "(check out their youtube accounts!)."},
+       {2, NULL},
+       {1, "All other music is from modarchive.org."},
+       {2, NULL},
+       {1, "The original game and concept of Need for Madness"},
+       {1, "is by Omar Waly of radicalplay.com."}},
+      {{0, "New Cars"},
+       {1, "Ten cars from Need for Madness: Revised & Recharged,"},
+       {1, "by Ryan Albano."},
+       {1, "Your own cars from the web Car Maker, by their authors"},
+       {1, "(\"Created by\" in Car Select)."},
+       {2, NULL},
+       {0, "Libraries"},
+       {1, "stb_vorbis (Ogg music) by Sean Barrett."},
+       {1, "devkitPro and libnx, the Nintendo Switch homebrew toolchain."}},
+      {{2, NULL},
+       {2, NULL},
+       {0, "Nintendo Switch Port"},
+       {2, NULL},
+       {1, "Need for Madness and Need for Madness 2 Extended,"},
+       {1, "ported to the Nintendo Switch by"},
+       {2, NULL},
+       {3, "HopeAero"},
+       {2, NULL},
+       {1, "The original game rebuilt in C: its 3D engine, physics,"},
+       {1, "AI and menus, with Extended's specials, cars, stages"},
+       {1, "and RPG mode, made to play on the console."},
+       {2, NULL},
+       {1, "Thanks for playing!"}},
+  };
+  if (page < 1 || page >= CREDITS_PAGES) return;
+  int32_t y = 108;
+  for (int32_t i = 0; i < 16; i++) {
+    const CreditLine *l = &kPages[page - 1][i];
+    if (l->kind == 0 && !l->text) break;
+    if (l->kind == 2) {
+      y += 10;
+      continue;
+    }
+    if (l->kind == 0) {
+      font_set(FONT_BOLD, 15);
+      gfx_set_color(g, 0, 0, 0);
+      draw_centered(g, l->text, 400, y);
+      y += 22;
+    } else if (l->kind == 3) {
+      font_set(FONT_BOLD, 22);
+      gfx_set_color(g, 40, 60, 0);
+      draw_centered(g, l->text, 400, y + 8);
+      y += 30;
+    } else {
+      font_set(FONT_BOLD, 13);
+      gfx_set_color(g, 33, 49, 0);
+      draw_centered(g, l->text, 400, y);
+      y += 18;
+    }
+  }
+  if (back.tex >= 0) gfx_draw_image(g, back.tex, 75, 395, back.w, back.h);
+  if (page < CREDITS_PAGES - 1) {
+    if (next.tex >= 0) gfx_draw_image(g, next.tex, 665, 395, next.w, next.h);
+  } else if (contin.tex >= 0) {
+    gfx_draw_image(g, contin.tex, 565, 395, contin.w, contin.h);
+  }
+}
+
+// The Extended guide: pages after the original's instructions (its last
+// page's Continue leads here), in their look -- Coach Insano and his speech
+// box, blue text -- explaining what this build adds.
+#define GUIDE_PAGES 6
+#define GUIDE_FLIPO 99   // inst_flipo while the guide shows: draw_instructions draws only the backdrop
+
+static void draw_ext_guide(Graphics2D *g, const InstAssets *ia, int32_t page) {
+  char l[12][96];
+  int32_t n = 0;
+  const char *title = "";
+#define GL(...) snprintf(l[n++], sizeof(l[0]), __VA_ARGS__)
+  switch (page) {
+    case 0:
+      title = "Extended:  special attacks";
+      GL("Every car now has its own special attack!");
+      GL("The SPECIAL bar (top right) charges as you do stunts.");
+      GL("When it is full, press  %s  to fire it.", KEY_SPECIAL);
+      GL("A special boosts your car for a while, and many also");
+      GL("weaken a random rival: lower speed, swapped strength,");
+      GL("drained health or reduced defence.");
+      GL("Car Select shows each car's special at the top left.");
+      GL("In a race,  %s  switches the car list on the right", KEY_LISTBARS);
+      GL("between damage and special bars.");
+      GL("NFM 1 and NFM 2 race the original way, without specials.");
+      break;
+    case 1:
+      title = "Extended:  cameras, cars and stages";
+      GL("%s  cycles the cameras, Extended's far camera included.", KEY_VIEW);
+      GL("Turn off the ones you don't use in Settings > Gameplay.");
+      GL("%s  points the arrow at the cars instead of the", KEY_ARRACE_HINT);
+      GL("track, and names the car it is after.");
+      GL("Free Play: NFM's 27 stages, then 25 of Extended's own.");
+      GL("Up to 20 cars can race at once.");
+      GL("Car Select:  Up / Down  filters the cars (Classic,");
+      GL("Extended, R&R, Custom).");
+      GL("Settings > Stress Test races 20 cars on the biggest stage.");
+      break;
+    case 2:
+      title = "RPG Mode";
+      GL("Extended's career: 31 stages, and your cars level up.");
+      GL("Cars gain experience from checkpoints, wasting cars,");
+      GL("stunts and winning (the bar at the bottom left).");
+      GL("Every level up gives 4 stat points. In Car Select press");
+      GL("%s  to open the upgrade panel:  %s  adds a point,", KEY_SPECIAL, KEY_CONTINUE);
+      GL("%s  takes back one you added before closing it.", KEY_VIEW);
+      GL("Clearing a checkpoint or wasting a car can give bonus");
+      GL("stat points. Cars unlocked later level up more slowly.");
+      break;
+    case 3:
+      title = "RPG Mode:  your rivals";
+      GL("From stage 4 you meet beasts: bigger, stronger cars.");
+      GL("From stage 15, shadow cars: faster, agile and tough.");
+      GL("Some stages bring undead cars that won't stay wasted,");
+      GL("and a boss waits at the end...");
+      GL("Before a race, scouting shows each rival's car and level.");
+      GL("The arrow tells a rival's level: red when it is more");
+      GL("than 5 levels above yours.");
+      GL("Beaten stages can be raced hard, with scaled levels or");
+      GL("with no levels (Up / Down in Stage Select).");
+      break;
+    case 4:
+      title = "RPG Mode:  bonus stages and perks";
+      GL("Stages 5, 11, 15 and 18 hide a bonus stage: press  %s", KEY_SPECIAL);
+      GL("in Stage Select. Win it for a prize car.");
+      GL("Winning bonus stage 4 gives car points. Spend them on");
+      GL("your car's six perks (the PERKS page of the panel).");
+      GL("Each perk takes up to 20 points, and the panel says");
+      GL("what it does: less power drain, more experience,");
+      GL("more strength when badly damaged, and much more.");
+      break;
+    default:
+      title = "RPG Mode:  your cars";
+      GL("The CAR page of the upgrade panel can:");
+      GL("- reshuffle a car's stat points (free once per new stage),");
+      GL("- transfer its level and points to another car,");
+      GL("- sell it for car points (it goes back to level 1).");
+      GL("Your career saves itself after every race.");
+      GL("That's all!  Have fun playing!");
+      break;
+  }
+#undef GL
+  // The speech box (oflaot, white x 248-710) runs on down under the longer pages.
+  const int32_t bottom = 100 + 22 * (n - 1) + 16;
+  if (bottom > 150) {
+    gfx_set_color(g, 255, 255, 255);
+    gfx_fill_rect(g, 248, 140, 463, bottom - 140);
+    gfx_set_color(g, 160, 160, 160);
+    gfx_draw_line(g, 247, 150, 247, bottom);
+    gfx_draw_line(g, 711, 150, 711, bottom);
+    gfx_draw_line(g, 247, bottom, 711, bottom);
+  }
+  gfx_set_color(g, 0, 64, 128);
+  font_set(FONT_BOLD, 15);
+  font_draw(g, title, 262, 67);
+  font_set(FONT_BOLD, 13);
+  for (int32_t i = 0; i < n; i++) font_draw(g, l[i], 262, 100 + 22 * i);
+  if (ia->back.tex >= 0) gfx_draw_image(g, ia->back.tex, 75, 395, ia->back.w, ia->back.h);
+  if (page < GUIDE_PAGES - 1) {
+    if (ia->next.tex >= 0) gfx_draw_image(g, ia->next.tex, 665, 395, ia->next.w, ia->next.h);
+  } else if (ia->contin.tex >= 0) {
+    gfx_draw_image(g, ia->contin.tex, 565, 395, ia->contin.w, ia->contin.h);
+  }
+}
+
 // Settings > Graphics' default: the Switch's screen is far past 800x450, so
 // it starts in HD; the Vita (960x544) and desktop keep the original look.
 #ifdef NFM_TARGET_SWITCH
@@ -5215,6 +5415,12 @@ int game_run(void) {
   // `inst_bgf` is mainbg(2)'s colour-fade accumulator, separate from the
   // shared bgmy scroll offsets it rides alongside.
   int32_t inst_flipo = 0;
+  int32_t guide_page = 0;    // the Extended guide's page, while inst_flipo == GUIDE_FLIPO
+  int32_t credits_page = 0;  // 0 the original's credits, then draw_extra_credits'
+  // Headless: NFM_GUIDE_PAGE=n opens the instructions on the guide's page n,
+  // NFM_CREDITS_PAGE=n the credits on page n.
+  if (getenv("NFM_GUIDE_PAGE")) inst_flipo = GUIDE_FLIPO, guide_page = atoi(getenv("NFM_GUIDE_PAGE"));
+  if (getenv("NFM_CREDITS_PAGE")) credits_page = atoi(getenv("NFM_CREDITS_PAGE"));
   int32_t inst_dudo = 0;
   int32_t inst_duds = 0;
   float inst_bgf = 0.2f;
@@ -5670,8 +5876,15 @@ int game_run(void) {
           if (inst_flipo >= 1 && inst_flipo <= 15 && OVER(menu_next, 665, 395)) HIT(NULL, 0, BTN_RIGHT);
           if (inst_flipo >= 3 && inst_flipo <= 16 && OVER(menu_back, 75, 395)) HIT(NULL, 0, BTN_LEFT);
           if (inst_flipo == 16 && OVER(menu_contin, 565, 395)) HIT(NULL, 0, BTN_CONFIRM);
+          if (inst_flipo == GUIDE_FLIPO) {
+            if (guide_page < GUIDE_PAGES - 1 && OVER(menu_next, 665, 395)) HIT(NULL, 0, BTN_RIGHT);
+            if (OVER(menu_back, 75, 395)) HIT(NULL, 0, BTN_LEFT);
+            if (guide_page == GUIDE_PAGES - 1 && OVER(menu_contin, 565, 395)) HIT(NULL, 0, BTN_CONFIRM);
+          }
         } else if (state == STATE_CREDITS) {
-          if (OVER(menu_next, 665, 395)) HIT(NULL, 0, BTN_CONFIRM);
+          if (credits_page < CREDITS_PAGES - 1 && OVER(menu_next, 665, 395)) HIT(NULL, 0, BTN_CONFIRM);
+          if (credits_page > 0 && OVER(menu_back, 75, 395)) HIT(NULL, 0, BTN_LEFT);
+          if (credits_page == CREDITS_PAGES - 1 && OVER(menu_contin, 565, 395)) HIT(NULL, 0, BTN_CONFIRM);
         } else if (state == STATE_CAR_SELECT) {
           if (OVER(menu_next, 645, 275)) HIT(NULL, 1, BTN_RIGHT);
           if (OVER(menu_back, 95, 275)) HIT(NULL, 2, BTN_LEFT);
@@ -5888,10 +6101,35 @@ int game_run(void) {
       // leaving this port's earlier CANCEL shortcut in place: the screen
       // is fully navigable in both directions, so the original's flow is
       // not a trap, and honouring it is the point of this review.
-      if (KEY_EDGE(BTN_CONFIRM) || KEY_EDGE(BTN_RIGHT)) {
-        if (KEY_EDGE(BTN_CONFIRM) && inst_flipo == 16) {
+      if (inst_flipo == GUIDE_FLIPO) {
+        // The Extended guide (draw_ext_guide): Left back (off its first page,
+        // to the original's last), Right / confirm on, Cancel out.
+        if (KEY_EDGE(BTN_CONFIRM) || KEY_EDGE(BTN_RIGHT)) {
+          if (guide_page < GUIDE_PAGES - 1) {
+            guide_page++;
+            inst_dudo = 200;
+          } else if (KEY_EDGE(BTN_CONFIRM)) {
+            inst_flipo = 0;
+            state = instructions_return_to;
+          }
+        } else if (KEY_EDGE(BTN_LEFT)) {
+          if (guide_page > 0) {
+            guide_page--;
+            inst_dudo = 200;
+          } else {
+            inst_flipo = 16;
+          }
+        } else if (KEY_EDGE(BTN_CANCEL)) {
           inst_flipo = 0;
           state = instructions_return_to;
+        }
+      } else {
+      if (KEY_EDGE(BTN_CONFIRM) || KEY_EDGE(BTN_RIGHT)) {
+        if (KEY_EDGE(BTN_CONFIRM) && inst_flipo == 16) {
+          // The original's last page leads on to the Extended guide.
+          inst_flipo = GUIDE_FLIPO;
+          guide_page = 0;
+          inst_dudo = 200;
         }
         if (inst_flipo >= 1 && inst_flipo <= 15) inst_flipo++;
       }
@@ -5904,11 +6142,18 @@ int game_run(void) {
         if (inst_flipo >= 3 && inst_flipo <= 15) inst_flipo -= 3;
         if (inst_flipo == 16) inst_flipo--;
       }
+      }   // !guide
     } else if (state == STATE_CREDITS) {
       // :4684 -- credits' own exit is always back to the main menu
       // (fase 10), with no oldfase indirection.
-      if (KEY_EDGE(BTN_CONFIRM) || KEY_EDGE(BTN_CANCEL)) {
+      // This port pages on through Extended's credits and its own.
+      if (KEY_EDGE(BTN_CANCEL) || (KEY_EDGE(BTN_CONFIRM) && credits_page == CREDITS_PAGES - 1)) {
         state = STATE_MAIN_MENU;
+        credits_page = 0;
+      } else if (KEY_EDGE(BTN_CONFIRM) || KEY_EDGE(BTN_RIGHT)) {
+        if (credits_page < CREDITS_PAGES - 1) credits_page++;
+      } else if (KEY_EDGE(BTN_LEFT) && credits_page > 0) {
+        credits_page--;
       }
     } else if (state == STATE_CAR_SELECT) {
       // Java carselect :6445-6461 -- LEFT/RIGHT only start a new
@@ -9260,6 +9505,7 @@ int game_run(void) {
 
       draw_instructions(&g, &inst_assets, inst_flipo, mainmenu_aflk,
                          inst_duds, inst_dudo, mainbg_bgmy, &inst_bgf);
+      if (inst_flipo == GUIDE_FLIPO) draw_ext_guide(&g, &inst_assets, guide_page);
     } else if (state == STATE_CREDITS) {
       // CREDITS (Java fase 8 -- credits() at xtGraphics.java:1626).
       // Java has 3 sub-pages via flipo (1-100 rad splash, 101 credits
@@ -9277,6 +9523,9 @@ int game_run(void) {
         gfx_draw_image(&g, menu_madness.tex, 283, 32, menu_madness.w, menu_madness.h);
       }
 
+      if (credits_page > 0) {
+        draw_extra_credits(&g, credits_page, menu_next, menu_back, menu_contin);
+      } else {
       // Credits text -- Java :1641-1664, every line through drawcs(y,
       // text, r,g,b, 3). Mode 3 specifically SKIPS drawcs's snap[] tint
       // (:1627-1630 only tints modes other than 3/4/5), so these are the
@@ -9323,6 +9572,7 @@ int game_run(void) {
       if (menu_next.tex >= 0) {
         gfx_draw_image(&g, menu_next.tex, 665, 395, menu_next.w, menu_next.h);
       }
+      }   // credits_page 0
     } else if (state == STATE_POST_RACE) {
       // POST-RACE (Java fase -5 -- finish() at xtGraphics.java:6645).
       // Java's finish() would draw over the still-visible race scene at
