@@ -1,5 +1,6 @@
 // ports web/Mad.js -- see mad.h for scope.
 #include "mad.h"
+#include "career_stage.h"
 #include "new_cars.h"
 #include "java_compat.h"
 #include <math.h>
@@ -716,12 +717,18 @@ static float acel_step(float power, float acelf) {
   return acelf / 2.0f + power * acelf / 196.0f;
 }
 
+// The same with the career's stage 24 water factor (Madness.js 1665, 1688):
+// fr(fr(acelf * accelmod) / 2) + fr(fr(fr(power * acelf) * accelmod) / 196).
+static float acel_step_mod(float power, float acelf, float accelmod) {
+  return (acelf * accelmod) / 2.0f + ((power * acelf) * accelmod) / 196.0f;
+}
+
 // Extended's special bar, each tick (Madness.java:3074-3151, outside career):
 // it creeps up from the last landed stunt, a full one (120) can be fired,
 // and a running special drains speclast at 343000 / 2500000 a tick (about
 // 875 ticks); when it is spent the bar empties.
 static void mad_special_tick(Mad *mad, Control *control) {
-  if (mad->im > 0 && mad->powerup <= 100.0f && !mad->isabot) mad->spatk += mad->powerup / 500.0f;
+  if (mad->im > 0 && mad->powerup <= career_phys_splimit(mad->career) && !mad->isabot) mad->spatk += mad->powerup / 500.0f;
   else mad->spatk += mad->powerup / 3500.0f;
   if (control->spatk && mad->spatk < 120.0f) control->spatk = false;
   if (mad->spatk > 120.0f) mad->spatk = 120.0f;
@@ -748,6 +755,16 @@ static void mad_special_tick(Mad *mad, Control *control) {
 void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, CheckPoints *checkPoints) {
   CarDefine *cd = mad->cd;
   Medium *m = mad->m;
+  // The career's stage physics (career_stage.h; NULL elsewhere, where every
+  // helper is neutral and each factor below is exactly 1). Stage 24's water
+  // scales bounce, stunt and air control, acceleration and steering by the
+  // car's grip (Madness.js 1332-1344, 1449-1462, 1594-1605, 1788-1799).
+  CareerStage *cs = mad->career;
+  const CareerWater wv = career_phys_water(cs, cs ? cs->car[mad->im] : -1, cd->grip[mad->cn]);
+  const float bounce = cd->bounce[mad->cn] * wv.bouncemod;
+  const float airs = cd->airs[mad->cn] * wv.waterdrag;
+  const int32_t airc = cs ? jtrunc_d(cd->airc[mad->cn] * wv.aircres) : cd->airc[mad->cn];
+  const float wdm = career_phys_wall_damage(cs, mad->im, cd->grip[mad->cn]);
   // The car's pitch and roll as this tick starts, 0..360 (Extended,
   // Madness.java:1322-1325), for the in-air righting below.
   int32_t zyangle, xyangle;
@@ -821,41 +838,46 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
           mad->ucomp = 10.0f + (mad->scy[0] + 50.0f) / 20.0f;
           if (mad->ucomp < 5.0f) mad->ucomp = 5.0f;
           if (mad->ucomp > 10.0f) mad->ucomp = 10.0f;
-          mad->ucomp = mad->ucomp * cd->airs[mad->cn];
+          mad->ucomp = mad->ucomp * airs;
         }
-        if (mad->ucomp < 20.0f) mad->ucomp = mad->ucomp + 0.5f * cd->airs[mad->cn];
-        n4 = (-cd->airc[mad->cn] * medium_sin(m, (float)contO->xz)) * (float)n2;
-        n5 = (cd->airc[mad->cn] * medium_cos(m, (float)contO->xz)) * (float)n2;
+        if (mad->ucomp < 20.0f) mad->ucomp = mad->ucomp + 0.5f * airs;
+        n4 = (-airc * medium_sin(m, (float)contO->xz)) * (float)n2;
+        n5 = (airc * medium_cos(m, (float)contO->xz)) * (float)n2;
       } else if (mad->ucomp != 0.0f && mad->ucomp > -2.0f) {
-        mad->ucomp = mad->ucomp - 0.5f * cd->airs[mad->cn];
+        mad->ucomp = mad->ucomp - 0.5f * airs;
       }
       if (control->down) {
         if (mad->dcomp == 0.0f) {
           mad->dcomp = 10.0f + (mad->scy[0] + 50.0f) / 20.0f;
           if (mad->dcomp < 5.0f) mad->dcomp = 5.0f;
           if (mad->dcomp > 10.0f) mad->dcomp = 10.0f;
-          mad->dcomp = mad->dcomp * cd->airs[mad->cn];
+          mad->dcomp = mad->dcomp * airs;
         }
-        if (mad->dcomp < 20.0f) mad->dcomp = mad->dcomp + 0.5f * cd->airs[mad->cn];
-        n6 = -(float)cd->airc[mad->cn];
+        if (mad->dcomp < 20.0f) mad->dcomp = mad->dcomp + 0.5f * airs;
+        if (career_phys_outoftrack(cs, mad->im)) {
+          n4 = (-airc * medium_sin(m, (float)contO->xz)) * (float)n2;
+          n5 = (airc * medium_cos(m, (float)contO->xz)) * (float)n2;
+        } else {
+          n6 = -(float)airc;
+        }
       } else if (mad->dcomp != 0.0f && mad->ucomp > -2.0f) {
-        mad->dcomp = mad->dcomp - 0.5f * cd->airs[mad->cn];
+        mad->dcomp = mad->dcomp - 0.5f * airs;
       }
       if (control->left) {
         if (mad->lcomp == 0.0f) mad->lcomp = 5.0f;
-        if (mad->lcomp < 20.0f) mad->lcomp = mad->lcomp + 2.0f * cd->airs[mad->cn];
-        n4 = (-cd->airc[mad->cn] * medium_cos(m, (float)contO->xz)) * (float)n;
-        n5 = (-cd->airc[mad->cn] * medium_sin(m, (float)contO->xz)) * (float)n;
+        if (mad->lcomp < 20.0f) mad->lcomp = mad->lcomp + 2.0f * airs;
+        n4 = (-airc * medium_cos(m, (float)contO->xz)) * (float)n;
+        n5 = (-airc * medium_sin(m, (float)contO->xz)) * (float)n;
       } else if (mad->lcomp > 0.0f) {
-        mad->lcomp = mad->lcomp - 2.0f * cd->airs[mad->cn];
+        mad->lcomp = mad->lcomp - 2.0f * airs;
       }
       if (control->right) {
         if (mad->rcomp == 0.0f) mad->rcomp = 5.0f;
-        if (mad->rcomp < 20.0f) mad->rcomp = mad->rcomp + 2.0f * cd->airs[mad->cn];
-        n4 = (cd->airc[mad->cn] * medium_cos(m, (float)contO->xz)) * (float)n;
-        n5 = (cd->airc[mad->cn] * medium_sin(m, (float)contO->xz)) * (float)n;
+        if (mad->rcomp < 20.0f) mad->rcomp = mad->rcomp + 2.0f * airs;
+        n4 = (airc * medium_cos(m, (float)contO->xz)) * (float)n;
+        n5 = (airc * medium_sin(m, (float)contO->xz)) * (float)n;
       } else if (mad->rcomp > 0.0f) {
-        mad->rcomp = mad->rcomp - 2.0f * cd->airs[mad->cn];
+        mad->rcomp = mad->rcomp - 2.0f * airs;
       }
       mad->pzy = jtrunc((float)mad->pzy + (mad->dcomp - mad->ucomp) * medium_cos(m, (float)mad->pxy));
       if (zyinv) {
@@ -865,15 +887,18 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
       }
       mad->pxy = jtrunc((float)mad->pxy + (mad->rcomp - mad->lcomp));
     } else {
-      float power = mad->power;
-      if (power < 40.0f) power = 40.0f;
+      // Madness.js 1563-1565: the stage's speed factor (16, 18, 24).
+      const float sm = career_phys_speedmulti(cs, mad->im);
+      float power = mad->power * sm;
+      if (power < 40.0f * sm) power = 40.0f * sm;
+      career_phys_ground_speed(cs, mad->im, mad->speed);   // Madness.js 1606-1609
       // Extended (Madness.java:1587-1608, carried from the older NFM 2): the
       // player's power counts for 0.76 of itself until it is full, 98. The
       // AI's does not. Career acceleration points scale it back up
       // (powfactor, career_power_factor).
       const bool ext = mad->xt->extended;
-      if (ext && mad->im == 0 && mad->power != 98.0f) power = (float)((double)power * mad->powfactor);
-      if (control->down) {
+      if (ext && mad->im == 0 && mad->power != 98.0f && !career_phys_noslow(cs, mad->im)) power = (float)((double)power * mad->powfactor);
+      if (control->down && !career_phys_forcehandb(cs, mad->im)) {
         if (mad->speed > 0.0f) {
           // Java: `speed -= handb / 2` -- int division, 7/2 is 3; Extended's
           // float handb makes it 3.5.
@@ -884,13 +909,14 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
             if (mad->speed <= -swit_speed(ext, power, cd->swits[mad->cn][l])) n8++;
           }
           if (n8 != 2) {
-            mad->speed = mad->speed - acel_step(power, cd->acelf[mad->cn][n8]);
+            mad->speed = mad->speed - (wv.accelmod != 1.0f ? acel_step_mod(power, cd->acelf[mad->cn][n8], wv.accelmod)
+                                                            : acel_step(power, cd->acelf[mad->cn][n8]));
           } else {
             mad->speed = -swit_speed(ext, power, cd->swits[mad->cn][1]);
           }
         }
       }
-      if (control->up) {
+      if (control->up && !career_phys_forcehandb(cs, mad->im)) {
         if (mad->speed < 0.0f) {
           mad->speed = mad->speed + (float)cd->handb[mad->cn];
         } else {
@@ -899,51 +925,61 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
             if (mad->speed >= swit_speed(ext, power, cd->swits[mad->cn][n10])) n9++;
           }
           if (n9 != 3) {
-            mad->speed = mad->speed + acel_step(power, cd->acelf[mad->cn][n9]);
+            mad->speed = mad->speed + (wv.accelmod != 1.0f ? acel_step_mod(power, cd->acelf[mad->cn][n9], wv.accelmod)
+                                                            : acel_step(power, cd->acelf[mad->cn][n9]));
           } else {
             mad->speed = swit_speed(ext, power, cd->swits[mad->cn][2]);
           }
         }
       }
-      if (control->handb && fabsf(mad->speed) > (float)cd->handb[mad->cn]) {
+      if (cs) {
+        // Madness.js 1694-1705: braking into a portal sheds a twentieth of
+        // the speed it came in with a tick.
+        bool brake;
+        const float changeby = career_phys_brake(cs, mad->im, (float)cd->handb[mad->cn], control->handb, &brake);
+        if (brake && fabsf(mad->speed) > changeby) {
+          if (mad->speed < 0.0f) mad->speed = mad->speed + changeby;
+          else mad->speed = mad->speed - changeby;
+        }
+      } else if (control->handb && fabsf(mad->speed) > (float)cd->handb[mad->cn]) {
         if (mad->speed < 0.0f) mad->speed = mad->speed + (float)cd->handb[mad->cn];
         else mad->speed = mad->speed - (float)cd->handb[mad->cn];
       }
       if (mad->loop == -1 && contO->y < 100) {
         if (control->left) {
           if (!mad->pl) {
-            if (mad->lcomp == 0.0f) mad->lcomp = 5.0f * cd->airs[mad->cn];
-            if (mad->lcomp < 20.0f) mad->lcomp = mad->lcomp + 2.0f * cd->airs[mad->cn];
+            if (mad->lcomp == 0.0f) mad->lcomp = 5.0f * airs;
+            if (mad->lcomp < 20.0f) mad->lcomp = mad->lcomp + 2.0f * airs;
           }
         } else {
-          if (mad->lcomp > 0.0f) mad->lcomp = mad->lcomp - 2.0f * cd->airs[mad->cn];
+          if (mad->lcomp > 0.0f) mad->lcomp = mad->lcomp - 2.0f * airs;
           mad->pl = false;
         }
         if (control->right) {
           if (!mad->pr) {
-            if (mad->rcomp == 0.0f) mad->rcomp = 5.0f * cd->airs[mad->cn];
-            if (mad->rcomp < 20.0f) mad->rcomp = mad->rcomp + 2.0f * cd->airs[mad->cn];
+            if (mad->rcomp == 0.0f) mad->rcomp = 5.0f * airs;
+            if (mad->rcomp < 20.0f) mad->rcomp = mad->rcomp + 2.0f * airs;
           }
         } else {
-          if (mad->rcomp > 0.0f) mad->rcomp = mad->rcomp - 2.0f * cd->airs[mad->cn];
+          if (mad->rcomp > 0.0f) mad->rcomp = mad->rcomp - 2.0f * airs;
           mad->pr = false;
         }
         if (control->up) {
           if (!mad->pu) {
-            if (mad->ucomp == 0.0f) mad->ucomp = 5.0f * cd->airs[mad->cn];
-            if (mad->ucomp < 20.0f) mad->ucomp = mad->ucomp + 2.0f * cd->airs[mad->cn];
+            if (mad->ucomp == 0.0f) mad->ucomp = 5.0f * airs;
+            if (mad->ucomp < 20.0f) mad->ucomp = mad->ucomp + 2.0f * airs;
           }
         } else {
-          if (mad->ucomp > 0.0f) mad->ucomp = mad->ucomp - 2.0f * cd->airs[mad->cn];
+          if (mad->ucomp > 0.0f) mad->ucomp = mad->ucomp - 2.0f * airs;
           mad->pu = false;
         }
         if (control->down) {
           if (!mad->pd) {
-            if (mad->dcomp == 0.0f) mad->dcomp = 5.0f * cd->airs[mad->cn];
-            if (mad->dcomp < 20.0f) mad->dcomp = mad->dcomp + 2.0f * cd->airs[mad->cn];
+            if (mad->dcomp == 0.0f) mad->dcomp = 5.0f * airs;
+            if (mad->dcomp < 20.0f) mad->dcomp = mad->dcomp + 2.0f * airs;
           }
         } else {
-          if (mad->dcomp > 0.0f) mad->dcomp = mad->dcomp - 2.0f * cd->airs[mad->cn];
+          if (mad->dcomp > 0.0f) mad->dcomp = mad->dcomp - 2.0f * airs;
           mad->pd = false;
         }
         mad->pzy = jtrunc((float)mad->pzy + (mad->dcomp - mad->ucomp) * medium_cos(m, (float)mad->pxy));
@@ -1021,7 +1057,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
     contO->wxz = jtrunc(-36.0f * control->steer);
     mad->wxzd = contO->wxz;
   } else if (ext_steer) {
-    const double tp = cd->turn[mad->cn];
+    const double tp = cd->turn[mad->cn] * wv.turnmod;
     double w = mad->wxzd;
     if (control->right) {
       w -= tp;
@@ -1113,6 +1149,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
     }
   }
 
+  const float gravity = career_phys_gravity(cs, mad->im);
   float array[4], array2[4], array3[4];
   for (int32_t n13 = 0; n13 < 4; n13++) {
     int32_t sumKX = contO->keyx[n13] + contO->x;
@@ -1121,7 +1158,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
     array3[n13] = (float)sumGY;
     int32_t sumZK = contO->z + contO->keyz[n13];
     array2[n13] = (float)sumZK;
-    mad->scy[n13] = mad->scy[n13] + 7.0f;
+    mad->scy[n13] = mad->scy[n13] + gravity;
   }
   mad_rot(mad, array, array3, (float)contO->x, (float)contO->y, mad->pxy, 4);
   mad_rot(mad, array3, array2, (float)contO->y, (float)contO->z, mad->pzy, 4);
@@ -1190,6 +1227,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
     }
     if (n22 == 1) n25 = n25 * 0.75f;
     if (n22 == 2) n25 = n25 * 0.55f;
+    if (cs) career_phys_grip(cs, mad->im, cs->car[mad->im], cd->grip[mad->cn], n22, &n25);
     int32_t n26 = jtrunc(-mad->speed * (medium_sin(m, (float)contO->xz) * medium_cos(m, (float)mad->pzy)));
     int32_t n27 = jtrunc(mad->speed * (medium_cos(m, (float)contO->xz) * medium_cos(m, (float)mad->pzy)));
     int32_t n28 = jtrunc(-mad->speed * medium_sin(m, (float)mad->pzy));
@@ -1270,7 +1308,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
         // Java: (float)(-100.0f * random() * (speed / swits) * (bounce - 0.3))
         const float base = (n22 == 3) ? -100.0f : -150.0f;
         const float a1 = (base * medium_random(m)) * (mad->speed / (float)cd->swits[mad->cn][2]);
-        mad->scy[idx] = (float)((double)a1 * ((double)cd->bounce[mad->cn] - 0.3));
+        mad->scy[idx] = (float)((double)a1 * ((double)bounce - 0.3));
       } else if (n22 == 3 || n22 == 4) {
         // Bumpy road. Extended (Madness.java:2148-2167, 1354-1356) kicks a
         // wheel only while the tyres grip (NFM 2: every wheel, every tick),
@@ -1281,7 +1319,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
           float r = medium_random(m);
           if (mad->isabot) r = 0.5f;   // a recorded bot meets the same bumps every run (Madness.js:2119)
           const int32_t idx = (int32_t)(r * 4.0f);
-          float bounciness = cd->bounce[mad->cn];
+          float bounciness = bounce;
           if (bounciness > 1.35f) bounciness = 1.35f;
           const float base = (n22 == 3) ? -100.0f : -150.0f;
           const float a1 = (base * r) * (mad->speed / (float)cd->swits[mad->cn][2]);
@@ -1300,6 +1338,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
     // through float first made it 180.
     const float sumSq = n29 * n29 + n30 * n30;
     mad->mxz = jtrunc_d(acos((double)n30 / sqrt((double)sumSq)) / 0.017453292519943295 * (double)n39);
+    if (career_phys_speedhack(cs, mad->im)) mad->skid = 0;
     if (mad->skid == 2) {
       if (!mad->capsized) {
         n29 = n29 / 4.0f;
@@ -1318,13 +1357,14 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
     mad->skid = 2;
   }
 
+  const float gl = career_phys_groundlevel(cs, mad->im);   // 250 but on stage 13's floors
   int32_t n40 = 0;
   bool array7[4], array8[4], array9[4];
   float n41 = 0.0f;
   for (int32_t n42 = 0; n42 < 4; n42++) {
     array9[n42] = false;
     array8[n42] = false;
-    if (array3[n42] > 245.0f) {
+    if (array3[n42] > gl - 5.0f) {
       n40++;
       mad->wtouch = true;
       mad->gtouch = true;
@@ -1337,12 +1377,12 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
         cont_o_dust(contO, n42, array[n42], array3[n42], array2[n42], jtrunc(mad->scx[n42]), jtrunc(mad->scz[n42]),
                     n44 * cd->simag[mad->cn], 0, mad->capsized && mad->mtouch);
       }
-      array3[n42] = 250.0f;
+      array3[n42] = gl;
       array9[n42] = true;
-      n41 = n41 + (array3[n42] - 250.0f);
+      n41 = n41 + (array3[n42] - gl);
       float n45 = (fabsf(medium_sin(m, (float)mad->pxy)) + fabsf(medium_sin(m, (float)mad->pzy))) / 3.0f;
       if (n45 > 0.4f) n45 = 0.4f;
-      float n46 = n45 + cd->bounce[mad->cn];
+      float n46 = n45 + bounce;
       if (n46 < 1.1f) n46 = 1.1f;
       mad_regy(mad, n42, fabsf(mad->scy[n42] * n46), contO);
       if (mad->scy[n42] > 0.0f) mad->scy[n42] = mad->scy[n42] - fabsf(mad->scy[n42] * n46);
@@ -1358,7 +1398,8 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
   }
 
   int32_t n51 = 0;
-  for (int32_t n52 = 0; n52 < trackers->sect_len[ncx][ncz]; n52++) {
+  const int32_t ntrk = career_phys_no_trackers(cs, mad->im) ? 0 : trackers->sect_len[ncx][ncz];
+  for (int32_t n52 = 0; n52 < ntrk; n52++) {
     int32_t n53 = trackers->sect[ncx][ncz][n52];
     int32_t n54 = 0;
     int32_t n55 = 0;
@@ -1376,7 +1417,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
           array2[n56] > trackers->z[n53] - trackers->radz[n53] && array2[n56] < trackers->z[n53] + trackers->radz[n53] &&
           array3[n56] > trackers->y[n53] - trackers->rady[n53] && array3[n56] < trackers->y[n53] + trackers->rady[n53] &&
           (!trackers->decor[n53] || m->resdown != 2 || mad->xt->multion != 0)) {
-        if (trackers->xy[n53] == 0 && trackers->zy[n53] == 0 && trackers->y[n53] != 250 && array3[n56] > trackers->y[n53] - 5) {
+        if (trackers->xy[n53] == 0 && trackers->zy[n53] == 0 && (cs ? trackers->y[n53] < jtrunc(gl) : trackers->y[n53] != 250) && array3[n56] > trackers->y[n53] - 5) {
           n55++;
           mad->wtouch = true;
           mad->gtouch = true;
@@ -1398,7 +1439,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
           }
           float n59 = (fabsf(medium_sin(m, (float)mad->pxy)) + fabsf(medium_sin(m, (float)mad->pzy))) / 3.0f;
           if (n59 > 0.4f) n59 = 0.4f;
-          float n60 = n59 + cd->bounce[mad->cn];
+          float n60 = n59 + bounce;
           if (n60 < 1.1f) n60 = 1.1f;
           mad_regy(mad, n56, fabsf(mad->scy[n56] * n60), contO);
           if (mad->scy[n56] > 0.0f) mad->scy[n56] = mad->scy[n56] - fabsf(mad->scy[n56] * n60);
@@ -1421,9 +1462,9 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
           float n66 = (fabsf(medium_cos(m, (float)mad->pxy)) + fabsf(medium_cos(m, (float)mad->pzy))) / 4.0f;
           if (n66 > 0.3f) n66 = 0.3f;
           if (b3) n66 = 0.0f;
-          float n67 = n66 + (cd->bounce[mad->cn] - 0.2f);
+          float n67 = n66 + (bounce - 0.2f);
           if (n67 < 1.1f) n67 = 1.1f;
-          mad_regz(mad, n56, fabsf((mad->scz[n56] * n67) * (float)trackers->dam[n53]), contO);
+          mad_regz(mad, n56, fabsf(((mad->scz[n56] * n67) * (float)trackers->dam[n53]) * wdm), contO);
           mad->scz[n56] = mad->scz[n56] + fabsf(mad->scz[n56] * n67);
           mad->skid = 2;
           b2 = true;
@@ -1447,9 +1488,9 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
           float n73 = (fabsf(medium_cos(m, (float)mad->pxy)) + fabsf(medium_cos(m, (float)mad->pzy))) / 4.0f;
           if (n73 > 0.3f) n73 = 0.3f;
           if (b3) n73 = 0.0f;
-          float n74 = n73 + (cd->bounce[mad->cn] - 0.2f);
+          float n74 = n73 + (bounce - 0.2f);
           if (n74 < 1.1f) n74 = 1.1f;
-          mad_regz(mad, n56, -fabsf((mad->scz[n56] * n74) * (float)trackers->dam[n53]), contO);
+          mad_regz(mad, n56, -fabsf(((mad->scz[n56] * n74) * (float)trackers->dam[n53]) * wdm), contO);
           mad->scz[n56] = mad->scz[n56] - fabsf(mad->scz[n56] * n74);
           mad->skid = 2;
           b2 = true;
@@ -1473,9 +1514,9 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
           float n80 = (fabsf(medium_cos(m, (float)mad->pxy)) + fabsf(medium_cos(m, (float)mad->pzy))) / 4.0f;
           if (n80 > 0.3f) n80 = 0.3f;
           if (b3) n80 = 0.0f;
-          float n81 = n80 + (cd->bounce[mad->cn] - 0.2f);
+          float n81 = n80 + (bounce - 0.2f);
           if (n81 < 1.1f) n81 = 1.1f;
-          mad_regx(mad, n56, fabsf((mad->scx[n56] * n81) * (float)trackers->dam[n53]), contO);
+          mad_regx(mad, n56, fabsf(((mad->scx[n56] * n81) * (float)trackers->dam[n53]) * wdm), contO);
           mad->scx[n56] = mad->scx[n56] + fabsf(mad->scx[n56] * n81);
           mad->skid = 2;
           b2 = true;
@@ -1499,9 +1540,9 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
           float n87 = (fabsf(medium_cos(m, (float)mad->pxy)) + fabsf(medium_cos(m, (float)mad->pzy))) / 4.0f;
           if (n87 > 0.3f) n87 = 0.3f;
           if (b3) n87 = 0.0f;
-          float n88 = n87 + (cd->bounce[mad->cn] - 0.2f);
+          float n88 = n87 + (bounce - 0.2f);
           if (n88 < 1.1f) n88 = 1.1f;
-          mad_regx(mad, n56, -fabsf((mad->scx[n56] * n88) * (float)trackers->dam[n53]), contO);
+          mad_regx(mad, n56, -fabsf(((mad->scx[n56] * n88) * (float)trackers->dam[n53]) * wdm), contO);
           mad->scx[n56] = mad->scx[n56] - fabsf(mad->scx[n56] * n88);
           mad->skid = 2;
           b2 = true;
@@ -1752,14 +1793,14 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
   if (mad->wtouch && !mad->capsized) {
     // The 0.4 and 0.3 below are doubles in Java (as is the 1.5).
     const float n108 = (float)((double)((mad->speed / (float)cd->swits[mad->cn][2]) * 14.0f) *
-                               ((double)cd->bounce[mad->cn] - 0.4));
+                               ((double)bounce - 0.4));
     if (control->left && mad->tilt < n108 && mad->tilt >= 0.0f) {
       mad->tilt = mad->tilt + 0.4f;
     } else if (control->right && mad->tilt > -n108 && mad->tilt <= 0.0f) {
       mad->tilt = mad->tilt - 0.4f;
-    } else if (fabs((double)mad->tilt) > 3.0 * ((double)cd->bounce[mad->cn] - 0.4)) {
-      if (mad->tilt > 0.0f) mad->tilt = (float)((double)mad->tilt - 3.0 * ((double)cd->bounce[mad->cn] - 0.3));
-      else mad->tilt = (float)((double)mad->tilt + 3.0 * ((double)cd->bounce[mad->cn] - 0.3));
+    } else if (fabs((double)mad->tilt) > 3.0 * ((double)bounce - 0.4)) {
+      if (mad->tilt > 0.0f) mad->tilt = (float)((double)mad->tilt - 3.0 * ((double)bounce - 0.3));
+      else mad->tilt = (float)((double)mad->tilt + 3.0 * ((double)bounce - 0.3));
     } else {
       mad->tilt = 0.0f;
     }
@@ -1778,10 +1819,16 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
     contO->xy += mad_wobble_delta(mad, 4.0f, 2.0f);
   }
 
-  if (mad->hitmag >= cd->maxmag[mad->cn] && !mad->dest) {
+  const bool fakedest = career_phys_fakedest_stage(cs, mad->im);
+  const bool whichdest = fakedest ? cs->fakedest[mad->im] : mad->dest;
+  if (mad->hitmag >= cd->maxmag[mad->cn] && !whichdest && !career_phys_undead(cs, mad->im)) {
     mad_distruct(mad, contO);
-    if (mad->cntdest == 7) mad->dest = true;
-    else mad->cntdest++;
+    if (mad->cntdest == 7) {
+      if (fakedest) career_phys_wreck_done(cs, mad);
+      else mad->dest = true;
+    } else {
+      mad->cntdest++;
+    }
     if (mad->cntdest == 1) mad->rpd->dest[mad->im] = 300;
   }
   if (contO->dist == 0) {
@@ -1832,7 +1879,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
     }
     int32_t pyVal = mad_py(contO->x / 100, checkPoints->x[n113] / 100, contO->z / 100, checkPoints->z[n113] / 100);
     int32_t weighted = pyVal * n112;
-    if (weighted < n110 || n110 == 0) {
+    if ((weighted < n110 || n110 == 0) && career_phys_rightfloor(cs, mad->im, checkPoints->floor[n113])) {
       focus = n113;
       n110 = weighted;
     }
@@ -1859,7 +1906,8 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
       while (checkPoints->typ[n114] <= 0) {
         if (++n114 >= checkPoints->n) n114 = 0;
       }
-      if (focus > n114 && (mad->clear != mad->nlaps * checkPoints->nsp || focus < mad->pcleared)) {
+      if (focus > n114 && (mad->clear != mad->nlaps * checkPoints->nsp || focus < mad->pcleared) &&
+          career_phys_rightfloor(cs, mad->im, checkPoints->floor[n114])) {
         focus = n114;
         mad->focus = focus;
       }
@@ -1872,7 +1920,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
       mad->missedcp = 0;
     }
   } else {
-    focus = mad->focus;
+    if (career_phys_rightfloor(cs, mad->im, checkPoints->floor[mad->focus])) focus = mad->focus;
     if (xt_graphics_stub_human(mad->xt, mad->im)) {
       // this.py()/Math.sqrt() are pure (no PRNG draw), so hoisting one
       // shared computation across the three comparisons below -- unlike
@@ -1892,7 +1940,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
   mad->point = focus;
 
   if (mad->fixes != 0) {
-    if (m->noelec == 0) {
+    if (m->noelec == 0 && !career_phys_nofix(cs, mad)) {
       for (int32_t n115 = 0; n115 < checkPoints->fn; n115++) {
         if (!checkPoints->roted[n115]) {
           if (abs(contO->z - checkPoints->fz[n115]) < 200 &&
@@ -1929,7 +1977,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
   }
 
   if (!mad->mtouch) {
-    if (mad->trcnt != 1) { mad->trcnt = 1; mad->lxz = contO->xz; }
+    if (mad->trcnt != 1) { mad->trcnt = 1; mad->lxz = career_phys_xz(cs, mad->im, contO->xz); }
     if (mad->loop == 2 || mad->loop == -1) {
       mad->travxy = jtrunc((float)mad->travxy + (mad->rcomp - mad->lcomp));
       if (abs(mad->travxy) > 135) mad->rtab = true;
@@ -1937,7 +1985,8 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
       if (mad->travzy > 135) mad->ftab = true;
       if (mad->travzy < -135) mad->btab = true;
     }
-    if (mad->lxz != contO->xz) { mad->travxz += mad->lxz - contO->xz; mad->lxz = contO->xz; }
+    const int32_t madxz = career_phys_xz(cs, mad->im, contO->xz);
+    if (mad->lxz != madxz) { mad->travxz += mad->lxz - madxz; mad->lxz = madxz; }
     if (mad->srfcnt < 10) {
       if (control->wall != -1) mad->surfer = true;
       mad->srfcnt++;
@@ -1956,14 +2005,15 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
             if (mad->btab) mad->powerup = mad->powerup + 40.0f;
           }
           if (abs(mad->travxz) > 90) mad->powerup = mad->powerup + (float)abs(mad->travxz) / 18.0f;
-          if (mad->surfer) mad->powerup = mad->powerup + (mad->xt->extended ? 15.0f : 30.0f);   // Extended halves it (Madness.java:2869)
+          if (mad->surfer && !career_phys_entered(cs, mad->im)) mad->powerup = mad->powerup + (mad->xt->extended ? 15.0f : 30.0f);   // Extended halves it (Madness.java:2869)
           mad->power = mad->power + mad->powerup;
+          career_phys_stunt_landed(cs, mad->im);
           mad->stunt_gain += mad->powerup;   // the career's stunt experience (game.c consumes it)
           // Extended (Madness.java:2900-2916): a landed stunt charges the
           // special bar too -- a third of it for the AI's ordinary stunts, a
           // fifth for the player's and for big ones -- unless one is running.
-          if (mad->xt->extended && !control->spatk) {
-            if (mad->im > 0 && mad->powerup <= 100.0f && !mad->isabot) mad->spatk += mad->powerup / 3.0f;
+          if (mad->xt->extended && !control->spatk && !career_phys_no_special_gain(cs, mad->im)) {
+            if (mad->im > 0 && mad->powerup <= career_phys_splimit(cs) && !mad->isabot) mad->spatk += mad->powerup / 3.0f;
             else mad->spatk += mad->powerup / 5.0f;
           }
           if (mad->im == mad->xt->im && jtrunc(mad->powerup) > mad->rpd->powered && mad->rpd->wasted == 0 &&
@@ -1975,9 +2025,15 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
           if (mad->power > 98.0f) {
             mad->power = 98.0f;
             if (mad->powerup > 150.0f) mad->xtpower = 200; else mad->xtpower = 100;
+            if (cs) {
+              // Madness.js 2921-2926: a heavier power drain (stages 9, 18) also shortens the boost.
+              mad->xtpower = jtrunc((float)mad->xtpower * (1.0f / career_phys_powermulti(cs, mad->im)));
+              if (mad->xtpower < 40) mad->xtpower = 40;
+            }
           }
         }
         if (mad->trcnt == 10) {
+          career_phys_trick_reset(cs, mad->im);   // Madness.js 2942
           mad->travxy = 0; mad->travzy = 0; mad->travxz = 0;
           mad->ftab = false; mad->rtab = false; mad->btab = false;
           mad->trcnt = 0; mad->srfcnt = 0; mad->surfer = false;
@@ -2013,7 +2069,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
         if (mad->power > 0.0f) {
           float p2 = mad->power * mad->power;
           float p3 = p2 * mad->power;
-          mad->power = mad->power - p3 / (float)cd->powerloss[mad->cn];
+          mad->power = mad->power - (p3 * career_phys_powermulti(cs, mad->im)) / (float)cd->powerloss[mad->cn];
         } else {
           mad->power = 0.0f;
         }

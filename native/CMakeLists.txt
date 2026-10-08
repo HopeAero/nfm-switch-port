@@ -101,6 +101,7 @@ add_library(nfm_core STATIC
   core/career_lineup.c
   core/career_stats.c
   core/career_bots.c
+  core/career_stage.c
   core/car_identity.c
   core/progress.c
   core/wav_decode.c

@@ -91,6 +91,7 @@
 #include "new_cars.h"
 #include "career.h"
 #include "career_bots.h"
+#include "career_stage.h"
 #include "diag.h"
 
 // GameSparker.js's own ContO[610] held NFM 2's stages; Extended's reach 1106
@@ -1329,6 +1330,10 @@ static int32_t hud_tint(double base, int32_t snap_pct) {
 static void hud_say_draw(Graphics2D *g, Medium *m, int32_t y, const char *str,
                           int32_t r, int32_t gg, int32_t b, int32_t mode);
 
+// The career's arrow skips the cars careermode$m takes out of it (noarrow,
+// norender: the undead, stage 13's other floors). NULL outside the career.
+static const bool *g_arrow_skip = NULL;
+
 /**
  * Ports the !arrace branch of XtGraphics.js's arrow(n, n2, checkPoints, b)
  * (lines 1967-2159) -- a 7-vertex world-space polygon (an arrowhead lying
@@ -1388,6 +1393,7 @@ static void draw_checkpoint_arrow(Graphics2D *g, Medium *m, XtGraphicsStub *xt,
     int32_t seen_on = 0;
     for (int32_t j = 0; j < nplayers; j++) {
       if (j == 0) continue;
+      if (g_arrow_skip && g_arrow_skip[j]) continue;
       int32_t dx = cp->opx[0] / 100 - cp->opx[j] / 100;
       int32_t dz = cp->opz[0] / 100 - cp->opz[j] / 100;
       int32_t d2 = dx * dx + dz * dz;
@@ -1770,6 +1776,40 @@ static void hud_stunt_detect(Mad *mad, XtGraphicsStub *xt, Medium *m, Audio *aud
       xt->skidup = !xt->skidup;
     }
   }
+}
+
+// Extended's own sounds (ext/data/Files/sounds) are 16-bit stereo, which
+// wav_decode leaves out: the two channels are averaged into one, in place,
+// and the fmt/data chunks rewritten to say so, then decoded as usual.
+static bool wav_decode_downmix(uint8_t *b, size_t len, WavClip *out) {
+  if (wav_decode(b, len, out)) return true;
+  if (len < 12 || memcmp(b, "RIFF", 4) != 0 || memcmp(b + 8, "WAVE", 4) != 0) return false;
+  uint8_t *fmt = NULL, *data = NULL;
+  uint32_t data_size = 0;
+  for (size_t off = 12; off + 8 <= len;) {
+    const uint32_t sz = (uint32_t)b[off + 4] | (uint32_t)b[off + 5] << 8 | (uint32_t)b[off + 6] << 16 | (uint32_t)b[off + 7] << 24;
+    if (off + 8 + sz > len) break;
+    if (memcmp(b + off, "fmt ", 4) == 0 && sz >= 16) fmt = b + off + 8;
+    if (memcmp(b + off, "data", 4) == 0) { data = b + off + 8; data_size = sz; }
+    off += 8 + sz + (sz & 1);
+  }
+  if (!fmt || !data || fmt[0] != 1 || fmt[1] != 0 || fmt[2] != 2 || fmt[14] != 16) return false;
+  const uint32_t frames = data_size / 4;
+  for (uint32_t i = 0; i < frames; i++) {
+    const int16_t l = (int16_t)(data[i * 4] | data[i * 4 + 1] << 8), r = (int16_t)(data[i * 4 + 2] | data[i * 4 + 3] << 8);
+    const int16_t mono = (int16_t)(((int32_t)l + (int32_t)r) / 2);
+    data[i * 2] = (uint8_t)(mono & 0xff);
+    data[i * 2 + 1] = (uint8_t)((uint16_t)mono >> 8);
+  }
+  fmt[2] = 1;      // channels
+  fmt[12] = 2;     // block align
+  fmt[13] = 0;
+  const uint32_t nsz = frames * 2;
+  data[-4] = (uint8_t)nsz;
+  data[-3] = (uint8_t)(nsz >> 8);
+  data[-2] = (uint8_t)(nsz >> 16);
+  data[-1] = (uint8_t)(nsz >> 24);
+  return wav_decode(b, len, out);
 }
 
 static void play_wav_oneshot(Audio *audio, const WavClip *clip) {
@@ -4574,8 +4614,17 @@ int game_run(void) {
   static CareerRun crun;          // this race's experience (career.c)
   int32_t career_seen_clear = 0;  // the player's checkpoints already paid for
   int32_t career_seen_dested[NFM_MAX_CARS] = {0};
-  bool career_undead_wrecked[NFM_MAX_CARS] = {false};
   static CareerBots cbots;        // this race's recorded bots (career_bots.c)
+  // The stage's own scripts (career_stage.c, careermode$m): the undead, the
+  // ghost, the tower's floors, the Titan... and the race they act on.
+  static CareerStage cstage;
+  static CareerStageWorld cworld;
+  static bool cstage_ghost[NFM_MAX_CARS][NFM_MAX_CARS];
+  static bool cstage_arrow_skip[NFM_MAX_CARS];
+  int32_t career_walls[4] = {0, 0, 0, 0};
+  bool cstage_boss_music = false;   // the fight's music is loaded in g_career_ogg
+  WavClip snd_redflash = {0}, snd_caught = {0};
+  bool cstage_snd_loaded = false;
   // The car list's names in the career: "Beast ", "Shadow ", "Undead "
   // before the car's (stat$m's namestouse, XT 5200-5213).
   static char career_names_buf[NFM_MAX_CARS][48];
@@ -5839,6 +5888,11 @@ int game_run(void) {
                                    ext_car_of(car_index), &ext_info)
           : load_stage_objects(&stage_objects, &stage_count, stage_count,
                                base_models, &m, &t, &cp, stage_num, NULL, NULL);
+      // xtGraphics.wallcode's walls (careermode$m, realwalls).
+      career_walls[0] = ext_info.wallr;
+      career_walls[1] = ext_info.walll;
+      career_walls[2] = ext_info.wallt;
+      career_walls[3] = ext_info.wallb;
       // ----
       if (!stage_ok) {
         // Java's stage == -3: no race on a stage that failed its checks
@@ -6169,7 +6223,7 @@ int game_run(void) {
         mad_reseto(&mad[i], sc[i], &co[i], &cp);
         if (ext_career && i == 0) mad[i].powfactor = career_power_factor(crace.sc[0], crace.sp[0], crace.level[0]);
         career_seen_dested[i] = 0;
-        career_undead_wrecked[i] = false;
+        mad[i].career = NULL;   // career_stage_start below, in the career
       }
       specials_reset(&specials);
       if (ext_career) {
@@ -6240,7 +6294,45 @@ int game_run(void) {
           cbots_since[i] = 0;
           mad[i].bot_hit = false;
         }
+        // The stage's scripts (careermode$m), on the race just set up.
+        memset(&cworld, 0, sizeof(cworld));
+        cworld.mads = mad;
+        cworld.cars = co;
+        cworld.pieces = stage_objects;
+        cworld.npieces = stage_count;
+        cworld.cp = &cp;
+        cworld.controls = control;
+        cworld.m = &m;
+        cworld.t = &t;
+        cworld.contva = &xt.career.contva;
+        cworld.orig = &cd;
+        cworld.botbreak = cbots.brk;
+        cworld.names = career_names;
+        cworld.nplayers = nplayers;
+        for (int32_t k = 0; k < 4; k++) cworld.walls[k] = career_walls[k];
+        cworld.starcnt = 130;
+        career_stage_start(&cstage, &crace, &csave, &cworld);
+        for (int32_t i = 0; i < nplayers; i++) mad[i].career = &cstage;
+        if (cstage_boss_music) {
+          career_ogg_free();
+          cstage_boss_music = false;
+        }
+        if (!cstage_snd_loaded) {
+          // careermode$m's two sounds (XT 14945-14947): the Titan's and the
+          // Desert Night shadow's teleport warning, Ghost Planet's scare.
+          static const char *const kSnd[2] = {"ext/data/Files/sounds/redflash.wav", "ext/data/Files/sounds/caught.wav"};
+          WavClip *const dst[2] = {&snd_redflash, &snd_caught};
+          for (int32_t q = 0; q < 2; q++) {
+            int32_t len = 0;
+            uint8_t *bytes = vfs_read_bytes(kSnd[q], &len);
+            if (bytes && !wav_decode_downmix(bytes, (size_t)len, dst[q])) fprintf(stderr, "%s failed to decode (wav)\n", kSnd[q]);
+            free(bytes);
+          }
+          cstage_snd_loaded = true;
+        }
       }
+      g_arrow_skip = ext_career ? cstage_arrow_skip : NULL;
+      for (int32_t k = 0; k < NFM_MAX_CARS; k++) cstage_arrow_skip[k] = false;
       // NFM_HOOK_SPECIALS=1: every bar starts full, to see specials headless.
       if (getenv("NFM_HOOK_SPECIALS")) for (int32_t i = 0; i < nplayers; i++) mad[i].spatk = mad[i].speclast = mad[i].speclast2 = 120.0f;
       // NFM_HOOK_VIEW=n and NFM_HOOK_LISTBARS=1: a camera and the list bars, headless.
@@ -6398,6 +6490,7 @@ int game_run(void) {
         // Countdown tick -- Java xtGraphics.java:8010-8031. Decrement
         // starcnt every tick and update gocnt at the same thresholds.
         // Once starcnt hits 0 the countdown is done and never runs again.
+        if (ext_career) career_stage_frame(&cstage);
         if (starcnt > 0) {
           starcnt--;
           // Sound triggers at the exact same ticks Java's own gocnt
@@ -6430,9 +6523,18 @@ int game_run(void) {
           xt.pending_gscrape = false;
           g_diag.ticks++;
           DIAG_PHASE("race tick: collisions");
+          if (ext_career) {
+            // GameSparker.js 2134-2227: which cars may touch this tick, and
+            // what Madness.drive reads off the car before it moves.
+            cworld.starcnt = starcnt;
+            career_stage_before_drive(&cstage, &cworld);
+            career_stage_ghostmode(&cstage, &crace, &cworld, cstage_ghost);
+          }
           for (int32_t i = 0; i < nplayers; i++) {
             for (int32_t j = 0; j < nplayers; j++) {
-              if (i != j) mad_colide(&mad[i], &co[i], &mad[j], &co[j]);
+              if (i == j) continue;
+              if (ext_career && (cstage_ghost[i][j] || cstage_ghost[j][i])) continue;
+              mad_colide(&mad[i], &co[i], &mad[j], &co[j]);
             }
           }
           // A stunt armed in the air (loop 2, or the handbrake going down
@@ -6444,7 +6546,22 @@ int game_run(void) {
           DIAG_PHASE("race tick: driving");
           for (int32_t i = 0; i < nplayers; i++) {
             g_diag.aux[0] = i;
+            if (ext_career && cstage.respawning[i]) {
+              // GameSparker.js 2368-2373: a respawned car resets, keeping its laps.
+              career_stage_respawn_reset(&cstage, &mad[i], sc[i], &co[i], &cp);
+              continue;
+            }
             mad_drive(&mad[i], &control[i], &co[i], &t, &cp);
+            if (ext_career) {
+              // Madness.drive 3252-3361: stage 13's portals and guardians.
+              career_stage_portal_move(&cstage, &cworld, i);
+              career_stage_portal_detect(&cstage, &cworld, i);
+              if (cstage.portal_unbreak[i]) cbots.brk[i] = false;
+              if (cstage.portal_arrived[i]) {
+                const int32_t ws = cstage.portal_whichset[i];
+                if (ws >= 0 && ws < 10) cbots.specialtimer[i] = cbots.botoffset[ws][i];
+              }
+            }
           }
           DIAG_PHASE("race tick: checkpoints and repairs");
           // GameSparker.java:950-952 -- one record.rec() per car, BETWEEN
@@ -6590,12 +6707,24 @@ int game_run(void) {
             for (int32_t k = 0; k < nplayers; k++) {
               xt.career.endsp[k] = crace.sp[k][CS_END];   // xtGraphics 9018
               xt.career.botbreak[k] = cbots.brk[k];
-              xt.career.undead[k] = crace.undead[k];
+              xt.career.undead[k] = cstage.undead[k];
               xt.career.beast[k] = xt.career.beastopponent[k] = crace.beast[k];
+            }
+          }
+          // GameSparker.js 2396-2401: on stage 13 a car braking into a portal
+          // or just out of one takes no input and no AI.
+          bool cstage_noai[NFM_MAX_CARS] = {false};
+          if (ext_career && stage_num == 13) {
+            for (int32_t k = 0; k < nplayers; k++) {
+              if (!cstage.forcehandb[k] && cstage.speedhack[k] <= 0) continue;
+              cstage_noai[k] = true;
+              if (k == 0) continue;
+              control[k].down = control[k].left = control[k].right = control[k].handb = false;
             }
           }
           for (int32_t i = bench.active ? 0 : 1; i < nplayers; i++) {
             if (ext_career && mad[i].isabot) continue;   // a recorded bot drives it
+            if (cstage_noai[i]) continue;
             g_diag.aux[0] = i;
             g_diag.aux[1] = mad[i].point;
             g_diag.aux[2] = mad[i].clear;
@@ -6607,7 +6736,7 @@ int game_run(void) {
           if (ext_career) {
             // Contva.sortvariables after the AI (GameSparker.js 2390-2417).
             for (int32_t k = 0; k < nplayers; k++) {
-              if (mad[k].isabot) continue;
+              if (mad[k].isabot || cstage_noai[k]) continue;
               contva_sortvariables(&xt.career.contva, &mad[k], &cp, control, true, nplayers, &xt.career);
             }
           }
@@ -6677,6 +6806,11 @@ int game_run(void) {
           // Extended's specials: charged bars fire, boosts and attacks
           // rewrite each car's live stats (xtGraphics.nitroandspecials).
           if (xt.extended) {
+            if (ext_career && career_stage_has_stat_effects(&cstage)) {
+              // XT 6925-7051: stage 9's fire, 11's drain, 20's and bonus 4's speed cut.
+              for (int32_t i = 0; i < nplayers; i++)
+                career_stage_stats(&cstage, &crace, i, &race_base[i], &cd, sc[i], live_cd[i].grip[sc[i]], &cp);
+            }
             specials_tick(&specials, mad, control, nplayers, &cp, &cd, race_base);
             if (ext_career) {
               // Experience (career.c): checkpoints, wastes, stunts, full
@@ -6698,25 +6832,12 @@ int game_run(void) {
               const bool full = mad[0].power == 98.0f && starcnt == 0 && !mad[0].dest && !race_holdit &&
                                 fabsf(mad[0].speed) > 0.0f;
               career_tick(&crun, &crace, &csave, starcnt == 0, full);
-              // The undead (careermode$m, XT 7777-7800 / 9007-9015): wrecked
-              // once, then immortal at full power, no special, out of the
-              // ranking.
-              for (int32_t a = 1; a < nplayers; a++) {
-                if (!crace.undead[a]) continue;
-                if (!career_undead_wrecked[a]) {
-                  mad_distruct(&mad[a], &co[a]);
-                  career_undead_wrecked[a] = true;
-                }
-                mad[a].hitmag = 0;
-                mad[a].dest = false;
-                mad[a].spatk = 0.0f;
-                mad[a].power = 98.0f;
-                mad[a].clear = -2;
-                cp.clear[a] = -2;
-              }
+              // (The undead, careermode$m's, are career_stage_tick's below.)
               crace.level[0] = csave.level[crace.sc[0]];
             }
-            for (int32_t k = 0; k < nplayers; k++) mad[k].stunt_gain = 0.0f;
+            // The career reads the stunts once more (the Titan's damage,
+            // career_stage_tick below) and clears them there.
+            if (!ext_career) for (int32_t k = 0; k < nplayers; k++) mad[k].stunt_gain = 0.0f;
             if (PT_ACTIVE) {
               // tourney() (ext_pt.c): wasting matches revive cars and score
               // kills, the racing ones hold damage at 0, eliminated cars go.
@@ -6783,7 +6904,12 @@ int game_run(void) {
           // same convention every other menu-nav key in this file
           // already uses.
           race_holdcnt++;
-          if (race_confirm_latch || race_holdcnt > 250) {
+          if ((race_confirm_latch || race_holdcnt > 250) && ext_career && cstage.bossbattle) {
+            // stat$m 3935-3947: the card gives way to the fight
+            // (career_stage_tick releases the hold this same tick).
+            career_stage_hold_advance(&cstage, &cworld);
+            race_confirm_latch = false;
+          } else if (race_confirm_latch || race_holdcnt > 250) {
             stop_all_sfx_loops(&audio, engine_channel, &last_engine_bank, &air_channel, &wasted_channel);
             game_progress_finish_stage(&progress, (GameMode)gmode, stage_num, race_winner);
             if (progress_path_ok) game_progress_save_to_disk(&progress, progress_path);
@@ -6891,7 +7017,12 @@ int game_run(void) {
               snprintf(race_lost_car_name, sizeof(race_lost_car_name), "%s", kExtPTOpponents[pt.winner]);
           }
         } else if (!race_holdit && state == STATE_RACING) {
-          if (cp.wasted == nplayers - 1 && nplayers != 1) {
+          // stat$m 3992-4004: the career's undead are not there to waste,
+          // and during the Titan's fight nothing ends the race.
+          const int32_t undeadextra = ext_career ? career_stage_undeadextra(&cstage) : 0;
+          const bool wasted_end = !ext_career || career_stage_wasted_end_allowed(&cstage);
+          const bool finish_end = !ext_career || career_stage_finish_end_allowed(&cstage);
+          if (cp.wasted == nplayers - 1 - undeadextra && nplayers != 1 && wasted_end) {
             // :7683 -- every other car destroyed. Single-player-only
             // port, so this.multion<2 and !b2 (clan mode) always hold --
             // matches the "You Won, all cars have been wasted!" branch.
@@ -6900,6 +7031,7 @@ int game_run(void) {
             race_holdit = true;
             race_holdcnt = 0;
             cp.haltall = true; // :1077 -- freezes all cars (mad.c:1098), matching the finish-line ending
+            if (ext_career) career_stage_win_is_boss(&cstage);   // stat$m 4020: the Titan wakes
           } else if (mad[0].dest && xt.cntwis == 8) {
             // :7708 -- the local player's own car destroyed and its
             // "about to be wasted" ramp (xt.cntwis, Part 16) has fully
@@ -6914,7 +7046,8 @@ int game_run(void) {
             race_end_kind = RACE_END_PLAYER_WASTED;
             race_holdit = true;
             race_holdcnt = 0;
-          } else {
+            if (ext_career) career_stage_player_wasted(&cstage);   // stat$m 4123
+          } else if (finish_end) {
             // :7737 -- normal finish-line scan: whoever JUST finished
             // (cleared every checkpoint of every required lap AND
             // currently in 1st). Player (index 0) -> youwon.gif; a bot
@@ -6926,6 +7059,7 @@ int game_run(void) {
                 race_holdit = true;
                 race_holdcnt = 0;
                 cp.haltall = true; // :1189 -- freezes all cars' throttle to a coast-down (mad.c:1098)
+                if (ext_career && race_winner) career_stage_win_is_boss(&cstage);   // stat$m 4142-4146
                 if (!race_winner) {
                   snprintf(race_lost_car_name, sizeof(race_lost_car_name), "%s", car_name(sc[i]));
                 }
@@ -6934,7 +7068,7 @@ int game_run(void) {
             }
           }
         }
-        if (ext_career && race_holdit && !career_settled && state == STATE_RACING) {
+        if (ext_career && race_holdit && !career_settled && !cstage.bossbattle && state == STATE_RACING) {
           // stat$m: a win pays (by racing or by wasting), a loss on the
           // newest stage takes the race's experience back. Saved now.
           if (race_winner) career_xp_win(&crun, &crace, &csave, cp.nsp, cp.nlaps, race_end_kind == RACE_END_FINISH);
@@ -6942,6 +7076,45 @@ int game_run(void) {
           career_settled = true;
           if (career_path[0]) career_save(career_path, &csave);
         }
+        if (ext_career && state == STATE_RACING && starcnt < 38) {
+          // careermode$m (GameSparker.js 2485): every frame from the
+          // countdown's last 37 ticks on, after the physics, the specials
+          // and stat$m (career_stage.c).
+          cworld.starcnt = starcnt;
+          cworld.holdcnt = race_holdcnt;
+          cworld.winner = race_holdit && race_winner;
+          cworld.mutes = control[0].mutes;
+          career_stage_tick(&cstage, &crace, &csave, &crun, &cworld);
+          career_stage_export_ai(&cstage, &cworld, &xt.career);
+          for (int32_t k = 0; k < NFM_MAX_CARS; k++)
+            cstage_arrow_skip[k] = k < nplayers && (cstage.noarrow[k] || cstage.norender[k]);
+          if (cstage.release_hold) {
+            // cstimer 2: the hold card goes, the field is let go, the fight is on.
+            race_holdit = false;
+            race_holdcnt = 0;
+            race_winner = false;
+            cp.haltall = false;
+          }
+          // (hold_by_boss -- the player wasted at the fix stage -- is left to
+          // the player-wasted ending above, which ends the fight.)
+          if (cstage.unlimitedlaps) mad[0].nlaps = 0;
+          if (cstage.music_event == CAREER_MUSIC_STOP) audio_stop_music(&audio);
+          if (cstage.music_event == CAREER_MUSIC_BOSS) {
+            // The fight's music (XT 2680-2716): bossbattlea.ogg, then b looping.
+            career_ogg_free();
+            for (int32_t q = 0; q < 2; q++) {
+              char path[64];
+              snprintf(path, sizeof(path), "ext/data/Files/careermusic/bossbattle%c.ogg", q ? 'b' : 'a');
+              g_career_ogg[q] = vfs_read_bytes(path, &g_career_ogg_len[q]);
+            }
+            cstage_boss_music = true;
+            if (g_career_ogg[1])
+              audio_start_ogg(&audio, g_career_ogg[0], g_career_ogg_len[0], g_career_ogg[1], g_career_ogg_len[1]);
+          }
+          if (cstage.sound_redflash) play_wav_oneshot(&audio, &snd_redflash);
+          if (cstage.sound_scare) play_wav_oneshot(&audio, &snd_caught);
+        }
+        if (ext_career) for (int32_t k = 0; k < nplayers; k++) mad[k].stunt_gain = 0.0f;
         // The camera -- once per tick, after the cars move, as in the Java's
         // loop. (It ran once per display frame, which ran the fly-by orbit,
         // the orbit view and the camera's eases ~3x fast at 60Hz.)
@@ -7294,6 +7467,25 @@ int game_run(void) {
       // first -- cont_o_d recomputes each object's dist for the NEXT frame
       // as a side effect of drawing it now, so this is deliberately one
       // frame stale, not a bug to "fix" into a fresh two-pass sort.
+      // careermode$m's norender (stage 13's other floors, the wasted taken
+      // off): not drawn this frame (fade 255), put back after.
+      static int32_t cstage_saved_fade[NFM_MAX_CARS];
+      int32_t *cstage_piece_fade = NULL;
+      if (ext_career && cstage.started) {
+        for (int32_t k = 0; k < nplayers; k++) {
+          cstage_saved_fade[k] = co[k].fade;
+          if (cstage.norender[k]) co[k].fade = 255;
+        }
+        if (cstage.piece_norender && cstage.npieces == stage_count) {
+          cstage_piece_fade = malloc(sizeof(int32_t) * (size_t)(stage_count > 0 ? stage_count : 1));
+          if (cstage_piece_fade) {
+            for (int32_t k = 0; k < stage_count; k++) {
+              cstage_piece_fade[k] = stage_objects[k].fade;
+              if (cstage.piece_norender[k]) stage_objects[k].fade = 255;
+            }
+          }
+        }
+      }
       int32_t nvis = 0;
       for (int32_t i = 0; i < total_objs; i++) {
         if (all_objs[i]->dist != 0) {
@@ -7314,6 +7506,13 @@ int game_run(void) {
         cont_o_d(all_objs[visible_idx[order[i]]], &g);
       }
       nfm_set_draw_phase(false);
+      if (ext_career && cstage.started) {
+        for (int32_t k = 0; k < nplayers; k++) co[k].fade = cstage_saved_fade[k];
+        if (cstage_piece_fade) {
+          for (int32_t k = 0; k < stage_count; k++) stage_objects[k].fade = cstage_piece_fade[k];
+          free(cstage_piece_fade);
+        }
+      }
       if (smooth_on) {
         // The tick's own values back. A frame between ticks also puts back
         // the dist its tick's draw left (the simulation reads it); a tick
@@ -7526,6 +7725,36 @@ int game_run(void) {
           gfx_fill_rect(&g, 12, y0 + 14, fill, 4);
           gfx_set_color(&g, 70, 70, 70);
           gfx_draw_rect(&g, 12, y0 + 14, 200, 4);
+          // careermode$m's own HUD: the Titan's bar (XT 8472-8535), bonus
+          // 4's last car (8308-8350), 250 wide, top centre; and its flashing
+          // red line (drawcs(450, ...)), over the level bar.
+          if (cstage.boss_bar || cstage.health_bar) {
+            const int32_t bx = 400 - 125, by = 5;
+            if (cstage.boss_bar) {
+              gfx_set_color(&g, 0, hud_tint(225.0, m.snap[1]), 0);
+              gfx_fill_rect(&g, bx, by, 250, 20);
+              gfx_set_color(&g, hud_tint(225.0, m.snap[0]), 0, 0);
+              gfx_fill_rect(&g, bx, by, (int32_t)(cstage.boss_fill * 250.0), 20);
+            } else {
+              gfx_set_color(&g, cstage.health_rgb[0], cstage.health_rgb[1], cstage.health_rgb[2]);
+              gfx_fill_rect(&g, bx, by, cstage.health_fill, 20);
+            }
+            gfx_set_color(&g, 0, 0, 0);
+            gfx_draw_rect(&g, bx, by, 250, 20);
+            font_set(FONT_BOLD, 15);
+            if (cstage.boss_bar) {
+              draw_centered(&g, cstage.boss_pct, 400, by + 15);
+              gfx_set_color(&g, cstage.boss_info_rgb[0], cstage.boss_info_rgb[1], cstage.boss_info_rgb[2]);
+              draw_centered(&g, cstage.boss_info, 400, by + 40);
+            } else if (cstage.health_slot >= 0 && cstage.health_slot < nplayers) {
+              draw_centered(&g, career_names[cstage.health_slot], 400, by + 15);
+            }
+          }
+          if (cstage.msg[0]) {
+            font_set(FONT_BOLD, 15);
+            gfx_set_color(&g, cstage.msg_r, 0, 0);
+            draw_centered(&g, cstage.msg, 400, y0 - 8);
+          }
           font_set(FONT_BOLD, 12);
         }
         if (PT_ACTIVE && (pt.match == 1 || pt.match == 4 || pt.match == 5)) {
@@ -7556,7 +7785,8 @@ int game_run(void) {
         }
         draw_hud_img(&g, hud_images.was, 92, 7);
         hud_set_ink(&g, 0, 0, 100);
-        snprintf(hud, sizeof(hud), "%d / %d", cp.wasted, nplayers - 1); // Java: checkPoints.wasted / (nplayers-1)
+        // Java: checkPoints.wasted / (nplayers-1), less the career's undead (XT 4602)
+        snprintf(hud, sizeof(hud), "%d / %d", cp.wasted, nplayers - 1 - (ext_career ? career_stage_undeadextra(&cstage) : 0));
         font_draw(&g, hud, 150, 18);
         draw_hud_img(&g, hud_images.pos, 42, 27);
         if (cp.pos[0] >= 0 && cp.pos[0] < 8) {
@@ -9829,6 +10059,8 @@ int game_run(void) {
   wav_free(&snd_tires);
   wav_free(&snd_wasted);
   wav_free(&snd_firewasted);
+  wav_free(&snd_redflash);
+  wav_free(&snd_caught);
   audio_stop_music(&audio); // stop referencing the tracks before freeing them
   radical_track_free(&stage_music);
   radical_track_free(&interface_music);

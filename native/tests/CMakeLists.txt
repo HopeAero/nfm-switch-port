@@ -308,6 +308,31 @@ add_executable(career_lineup_test
 )
 target_link_libraries(career_lineup_test m)
 
+# The career's per-stage scripts (career_stage.c, xtGraphics.careermode$m).
+add_executable(career_stage_test
+  career_stage_test.c
+  ../core/career_stage.c
+  ../core/career.c
+  ../core/career_stats.c
+  ../core/mad.c
+  ../core/car_identity.c
+  ../core/cont_o.c
+  ../core/wheels.c
+  ../core/plane.c
+  ../core/medium.c
+  ../core/trackers.c
+  ../core/java_compat.c
+  ../core/trig.c
+  ../core/gfx.c
+  ../core/vfs.c
+  ../core/car_define.c
+  ../core/record.c
+  ../core/xt_graphics.c
+  ../core/control.c
+  ../core/check_points.c
+)
+target_link_libraries(career_stage_test m ZLIB::ZLIB)
+
 add_executable(ogg_music_test
   ogg_music_test.c
   ../core/ogg_music.c
@@ -372,6 +397,7 @@ add_test(NAME bots_test COMMAND bots_test)
 add_test(NAME career_test COMMAND career_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_test(NAME career_stats_test COMMAND career_stats_test)
 add_test(NAME career_lineup_test COMMAND career_lineup_test)
+add_test(NAME career_stage_test COMMAND career_stage_test)
 add_test(NAME ogg_music_test COMMAND ogg_music_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 # vfs_test reads the real stages/1.txt with a path relative to this build
 # dir (native/tests/build/) -- WORKING_DIRECTORY pins that regardless of

@@ -40,7 +40,14 @@ bool career_bots_parse(CareerBots *b, int32_t slot, const char *text) {
   while (*p) {
     while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
     const char *eol = strchr(p, '\n');
-    if (strncmp(p, "offset(", 7) == 0) offset = first_int(p, 7);
+    if (strncmp(p, "offset(", 7) == 0) {
+      // GameSparker.js 3745-3748: offset(t, set)
+      char *q;
+      offset = (int32_t)strtol(p + 7, &q, 10);
+      while (*q == ' ' || *q == ',') q++;
+      const int32_t set = (int32_t)strtol(q, NULL, 10);
+      if (set >= 0 && set < 10) b->botoffset[set][slot] = offset;
+    }
     for (size_t k = 0; k < sizeof(kKeys) / sizeof(kKeys[0]); k++) {
       const size_t len = strlen(kKeys[k].name);
       if (strncmp(p, kKeys[k].name, len) != 0) continue;

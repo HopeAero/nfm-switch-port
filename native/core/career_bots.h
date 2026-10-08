@@ -26,6 +26,10 @@ typedef struct {
   bool brk[NFM_MAX_CARS];        // botbreak
   int32_t timer;
   int32_t specialtimer[NFM_MAX_CARS];
+  // Bots.botoffset[set][slot]: offset(t, set) lines -- where each recorded
+  // set starts; stage 13 restarts a car's timer there when a portal drops it
+  // on a floor (Madness.js 3291: specialtimer = botoffset[whichset]).
+  int32_t botoffset[10][NFM_MAX_CARS];
 } CareerBots;
 
 void career_bots_free(CareerBots *b);
