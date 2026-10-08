@@ -466,6 +466,7 @@ typedef enum {
 #define KEY_START_PROMPT "Press Cross to Start"
 #define KEY_ARRACE_HINT  "Press Up on the D-pad"
 #define KEY_SPECIAL "L"
+#define KEY_VIEW "Triangle"
 #elif defined(NFM_TARGET_SWITCH)
 // The Switch's buttons as platform/switch/{platform,input}.c bind them: the
 // same names and places on the Joy-Cons (handheld or paired) and on the Pro
@@ -481,6 +482,7 @@ typedef enum {
 #define KEY_START_PROMPT "Press " PAD_ICON(a) " to Start"
 #define KEY_ARRACE_HINT  key_arrace("Press")
 #define KEY_SPECIAL  kPadIcons[key_settings()->bind[BIND_SPECIAL]]
+#define KEY_VIEW     kPadIcons[key_settings()->bind[BIND_VIEW]]
 #else
 #define KEY_STEER    "Arrow Keys"
 #define KEY_STUNT    "Arrow Keys"
@@ -492,6 +494,7 @@ typedef enum {
 // The stage cards' hint (stages 3 and 14), in their own sentence case.
 #define KEY_ARRACE_HINT  "Press [ A ]"
 #define KEY_SPECIAL "S"
+#define KEY_VIEW "V"
 #endif
 
 // The original's wide SPACEBAR key carries its label across its own face.
@@ -3983,7 +3986,8 @@ enum { CC_RESHUFFLE = 1, CC_TRANSFER = 2, CC_SELL = 3, CC_TRANSFER_TO = 4 };
  * sell) -- switched with Left / Right, rows with Up / Down. The original's
  * mouse screen (carselect's +-buttons, "extra stats", "change stats",
  * "sell car") laid out for a pad. */
-static void draw_career_panel(Graphics2D *g, const CareerSave *s, int32_t ec, int32_t page, int32_t row) {
+static void draw_career_panel(Graphics2D *g, const CareerSave *s, int32_t ec, int32_t page, int32_t row,
+                              const int32_t *pend) {
   static const char *const kStatNames[CS_N] = {"Top Speed", "Acceleration", "Handling", "Stunts", "Strength", "Endurance"};
   static const char *const kPages[3] = {"STATS", "PERKS", "CAR"};
   const int32_t x0 = 200, y0 = 100, w = 400, h = 244;   // clear of the special's box and the stat bars
@@ -4028,6 +4032,11 @@ static void draw_career_panel(Graphics2D *g, const CareerSave *s, int32_t ec, in
       font_draw(g, kStatNames[k], x0 + 30, ry + k * 20);
       snprintf(line, sizeof(line), "%s%d", sel ? "> " : "", (int)s->sp[ec][k]);
       font_draw(g, line, x0 + 300, ry + k * 20);
+      if (pend && pend[k] > 0) {
+        snprintf(line, sizeof(line), "+%d", (int)pend[k]);
+        gfx_set_color(g, 90, 220, 90);
+        font_draw(g, line, x0 + 345, ry + k * 20);
+      }
     }
   } else if (page == 1) {
     if (s->boncomp[3] > 0) {
@@ -4056,6 +4065,11 @@ static void draw_career_panel(Graphics2D *g, const CareerSave *s, int32_t ec, in
       gfx_set_color(g, 210, 210, 210);
       snprintf(line, sizeof(line), "%d / %d", (int)v, CAREER_PERK_MAX);
       font_draw(g, line, x0 + 330, yy);
+      if (pend && pend[k] > 0) {
+        snprintf(line, sizeof(line), "+%d", (int)pend[k]);
+        gfx_set_color(g, 90, 220, 90);
+        font_draw(g, line, x0 + 372, yy);
+      }
     }
     // writeboosts' text for the chosen one.
     const int32_t p = career_statsalc[ec][row < CAREER_PERK_SLOTS ? row : 0];
@@ -4116,8 +4130,11 @@ static void draw_career_panel(Graphics2D *g, const CareerSave *s, int32_t ec, in
     if (kInfo[r3][1]) draw_centered(g, kInfo[r3][1], 400, ry + 117);
   }
   char foot[128];
-  snprintf(foot, sizeof(foot), "Left / Right page    %s %s    %s done", KEY_CONTINUE,
-           page == 0 ? "add a point" : page == 1 ? "add a car point" : "choose", KEY_BACK);
+  if (page < 2)
+    snprintf(foot, sizeof(foot), "Left / Right page   %s add   %s take back   %s done", KEY_CONTINUE, KEY_VIEW,
+             KEY_BACK);
+  else
+    snprintf(foot, sizeof(foot), "Left / Right page    %s choose    %s done", KEY_CONTINUE, KEY_BACK);
   gfx_set_color(g, 170, 170, 170);
   font_set(FONT_BOLD, 11);
   draw_centered(g, foot, 400, y0 + h - 10);
@@ -5138,6 +5155,9 @@ int game_run(void) {
   // (XT carselect 15705-15760, statincrease), one row at a time.
   bool career_panel = false;
   int32_t career_panel_row = 0;
+  // Points put in since the panel opened: the view button takes them back
+  // (this port's own; the original's points stick the moment they go in).
+  int32_t career_pend[2][CS_N > CAREER_PERK_SLOTS ? CS_N : CAREER_PERK_SLOTS] = {{0}};
   // The panel's pages: the stat points, the perks (car points), and the
   // car's options -- carselect's reshuffle, level transfer and sell
   // (shufflefase 1-11, savefase 1), each behind a YES / NO question.
@@ -5948,14 +5968,26 @@ int game_run(void) {
           if (career_panel_page == 0 && csave.statpoints[ec] > 0) {
             csave.sp[ec][career_panel_row]++;
             csave.statpoints[ec]--;
+            career_pend[0][career_panel_row]++;
           }
           // Car points work once bonus stage 4 is won (its "extra stats" button).
-          if (career_panel_page == 1 && csave.boncomp[3] > 0) career_spend_perk(&csave, ec, career_panel_row);
+          if (career_panel_page == 1 && csave.boncomp[3] > 0 && career_spend_perk(&csave, ec, career_panel_row))
+            career_pend[1][career_panel_row]++;
           if (career_panel_page == 2) {
             if (career_panel_row == 0) career_confirm = CC_RESHUFFLE;
             if (career_panel_row == 1 && csave.statchangers[1] > 0) career_confirm = CC_TRANSFER;
             if (career_panel_row == 2) career_confirm = CC_SELL;
             career_confirm_yes = false;
+          }
+        }
+        if (KEY_EDGE(BTN_VIEW) && career_panel_page < 2 && career_pend[career_panel_page][career_panel_row] > 0) {
+          career_pend[career_panel_page][career_panel_row]--;
+          if (career_panel_page == 0) {
+            csave.sp[ec][career_panel_row]--;
+            csave.statpoints[ec]++;
+          } else {
+            csave.perk[ec][career_panel_row]--;
+            csave.carpoints++;
           }
         }
         if (KEY_EDGE(BTN_CANCEL) || KEY_EDGE(BTN_SPECIAL)) {
@@ -5966,6 +5998,7 @@ int game_run(void) {
       if (ext_career && career_car_open && car_flipo == 0 && career_transfer_from < 0 && KEY_EDGE(BTN_SPECIAL)) {
         career_panel = true;
         career_panel_row = 0;
+        memset(career_pend, 0, sizeof(career_pend));
       }
       if (car_flipo == 0) {
         int32_t car_maxsl = (gmode == GMODE_FREE_PLAY) ? (ext_career ? CAR_COUNT - 1 : car_last_index(ext_normal)) : 15;
@@ -9712,7 +9745,8 @@ int game_run(void) {
           font_set(FONT_BOLD, 11);
           draw_centered(&g, hint, 575, 147);
         } else if (career_panel) {
-          draw_career_panel(&g, &csave, ec, career_panel_page, career_panel_row);
+          draw_career_panel(&g, &csave, ec, career_panel_page, career_panel_row,
+                            career_panel_page < 2 ? career_pend[career_panel_page] : NULL);
         }
       }
       if (ext_career && career_transfer_from >= 0 && career_confirm == 0) {
@@ -9934,7 +9968,7 @@ int game_run(void) {
           gfx_draw_image(&g, menu_next.tex, 645, 275, menu_next.w, menu_next.h);
         }
         int32_t filters[8];
-        if (car_filters(ext_career, gmode, filters) > 1) {
+        if (!career_panel && car_filters(ext_career, gmode, filters) > 1) {
           // The filter, under the car's name.
           char line[64];
           snprintf(line, sizeof(line), "< %s >", kCarFilterName[car_filter]);
