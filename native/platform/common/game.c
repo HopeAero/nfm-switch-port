@@ -6070,6 +6070,7 @@ int game_run(void) {
           if (OVER(menu_next, 625, 135)) HIT(NULL, 1, BTN_RIGHT);
           if (OVER(menu_back, 115, 135)) HIT(NULL, 2, BTN_LEFT);
           if (OVER(menu_contin, 355, 385)) HIT(NULL, 3, BTN_CONFIRM);
+          if (gmode == GMODE_FREE_PLAY && !ext_normal && OVERON(180, 326, 440, 40)) HIT(NULL, 4, BTN_VIEW);
         } else if (state == STATE_STAGE_LOCKED) {
           if (OVER(menu_back, 370, 345)) HIT(NULL, 0, BTN_CONFIRM);
         } else if (state == STATE_STAGE_INTRO) {
@@ -6546,6 +6547,13 @@ int game_run(void) {
         state = STATE_CAR_SELECT;
         car_select_needs_intro = true;
       }
+      if (gm == GMODE_FREE_PLAY && !ext_normal && KEY_EDGE(BTN_VIEW)) {
+        // Free Play's Race Setup, from the stage list (its Start Race or
+        // Back come back here or race).
+        settings_ui = (SettingsUi){.page = SET_RACE};
+        settings_return = STATE_STAGE_SELECT;
+        state = STATE_SETTINGS;
+      }
       g_career_bonus = 0;
       const bool career_modes_ok = ext_career && stage_num < csave.unlocked && csave.unlocked >= 3;
       if (!career_modes_ok || KEY_EDGE(BTN_LEFT) || KEY_EDGE(BTN_RIGHT)) career_mode = 0;
@@ -6586,11 +6594,6 @@ int game_run(void) {
             ext_pt_start_tournament(&pt);
             ptmatch = 1;
             state = STATE_PT_INFO;
-          } else if (gmode == GMODE_FREE_PLAY && !ext_normal) {
-            // Free Play's Race Setup first, on Start Race.
-            settings_ui = (SettingsUi){.page = SET_RACE, .row = 8};
-            settings_return = STATE_STAGE_SELECT;
-            state = STATE_SETTINGS;
           } else {
             state = STATE_STAGE_LOADING;
             stage_loadcnt = 30;
@@ -6832,10 +6835,15 @@ int game_run(void) {
         if (progress_path_ok) game_settings_save(progress_path, &settings);
         state = settings_return;
       } else if (act == SETTINGS_START) {
-        // Race Setup's Start Race: kept for next time, then the stage loads.
+        // Race Setup's Start Race: kept for next time, then the stage loads
+        // (one that failed to load stays in the list, as its confirm does).
         if (progress_path_ok) game_settings_save(progress_path, &settings);
-        state = STATE_STAGE_LOADING;
-        stage_loadcnt = 30;
+        if (stage_preview_ok) {
+          state = STATE_STAGE_LOADING;
+          stage_loadcnt = 30;
+        } else {
+          state = STATE_STAGE_SELECT;
+        }
       } else if (act == SETTINGS_CAREER_RESET) {
         // Settings > Reset RPG Mode: the career from scratch, saved.
         career_reset(&csave);
@@ -10637,8 +10645,31 @@ int game_run(void) {
           && (stage_num != 11 || (GameMode)gmode != GMODE_NFM2)) {
         gfx_draw_image(&g, menu_back.tex, 115, 135, menu_back.w, menu_back.h);
       }
-      if (menu_next.tex >= 0 && stage_num != 27) {
+      if (menu_next.tex >= 0 &&
+          stage_num != (ext_normal ? EXT_LAST_STAGE : gmode == GMODE_FREE_PLAY ? FREE_PLAY_LAST_STAGE : 27)) {
         gfx_draw_image(&g, menu_next.tex, 625, 135, menu_next.w, menu_next.h);
+      }
+      if (gmode == GMODE_FREE_PLAY && !ext_normal) {
+        // Free Play's Race Setup at a glance, and the button that opens it.
+        static const char *const kTierShort[5] = {"Any cars", "Classic", "Extended", "R&R", "Custom"};
+        static const char *const kWinShort[3] = {"Race or Waste", "Waste only", "Race only"};
+        char sl[128];
+        int32_t len = snprintf(sl, sizeof(sl), "%d rivals: %s  -  %s", (int)settings.fp_opponents + 1,
+                               settings.fp_pick ? "Manual" : kTierShort[settings.fp_tier], kWinShort[settings.fp_win]);
+        if (settings.fp_laps > 0) len += snprintf(sl + len, sizeof(sl) - (size_t)len, "  -  %d laps", (int)settings.fp_laps);
+        if (!settings.fp_arrow) len += snprintf(sl + len, sizeof(sl) - (size_t)len, "  -  no arrow");
+        if (!settings.fp_specials) snprintf(sl + len, sizeof(sl) - (size_t)len, "  -  no specials");
+        gfx_set_composite(&g, 0.6f);
+        gfx_set_color(&g, 0, 0, 0);
+        gfx_fill_rect(&g, 180, 326, 440, 40);
+        gfx_set_composite(&g, 1.0f);
+        font_set(FONT_BOLD, 12);
+        gfx_set_color(&g, 230, 230, 230);
+        draw_centered(&g, sl, 400, 340);
+        char hl[48];
+        snprintf(hl, sizeof(hl), "%s  Race Setup", KEY_VIEW);
+        gfx_set_color(&g, 255, 196, 0);
+        draw_centered(&g, hl, 400, 358);
       }
 
       if (ext_career && stage_num < csave.unlocked && csave.unlocked >= 3) {
