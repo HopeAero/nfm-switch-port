@@ -17,6 +17,8 @@
 #include "mad.h"
 #include "nfm_limits.h"
 
+struct CareerPerks;
+
 #define SPECIALS_MAX NFM_MAX_CARS
 
 typedef struct {
@@ -44,6 +46,10 @@ typedef struct {
   bool spec_on[SPECIALS_MAX];
   int32_t spec[SPECIALS_MAX][3];
   int32_t spglow[SPECIALS_MAX], spglowchange[SPECIALS_MAX];
+
+  // The career's perks (career.h), NULL elsewhere: GETAWAY, RECKLESS,
+  // FRESHNESS, STEROIDS and RUTHLESS change the player's rebuild.
+  const struct CareerPerks *perks;
 } Specials;
 
 /** Extended's number for one of this port's cars: NFM 2's 0-15 are its

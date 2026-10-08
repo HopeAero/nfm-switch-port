@@ -185,8 +185,8 @@ static void randtele(CareerStage *cs, const CareerStageWorld *w, int32_t a, bool
 /** Madness.ghostcolide (MD 714-721): the ghost's hit. */
 static void ghostcolide(CareerStage *cs, Mad *mad, ContO *co, float strength) {
   for (int32_t a = 0; a < 4; a++) {
-    mad_regx(mad, a, strength, co);
-    mad_regz(mad, a, strength, co);
+    mad_regx_by(mad, a, strength, co, mad->im);   // the hit is the car's own (DRAINER on the player)
+    mad_regz_by(mad, a, strength, co, mad->im);
   }
   co->xz = -360 + jtrunc_d(career_random() * 720.0);
   cs->ghosthit = false;

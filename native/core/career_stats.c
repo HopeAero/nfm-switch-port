@@ -2196,4 +2196,5 @@ void career_airpgstats(CareerRace *r, const CareerSave *s, const float *griprese
         r->softlevelcap = imin(i32(r->level[(r->nplayers - 1)] + bsboost), i32(maxlevel_at(i32(s->unlocked - 2)) + 5));
       }
   }
+  memcpy(r->bonuspoints, bonuspoints, sizeof(r->bonuspoints));
 }

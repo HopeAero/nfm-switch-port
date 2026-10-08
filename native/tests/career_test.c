@@ -30,11 +30,30 @@ int main(void) {
   s.sp[3][CS_END] = 9;
   s.boncomp[1] = 2;
   s.lastcar = 3;
+  s.carpoints = 9;
+  s.statchangers[0] = 1;
+  s.extpoints[3] = 14;
+  s.perk[3][2] = 7;
+  s.perk[38][5] = 20;
+  s.rebsp[5] = 1.0 / 3.0 * 2.25;   // a level transfer's ratio, kept to the last bit
+  s.xbsp[6] = 0.1;
   const char *path = "career_test_save.txt";
   CHECK(career_save(path, &s), "save");
   CHECK(career_load(path, &t), "load");
   CHECK(memcmp(&s, &t, sizeof(s)) == 0, "round trip");
   remove(path);
+
+  // A save from before perks and level transfers still loads, with none.
+  {
+    FILE *f = fopen(path, "w");
+    fprintf(f, "unlocked=4\nlaststage=2\nlastcar=1\nkills=3\nwins=5\ncarpoints=0\nchangers=1,1\n"
+               "bonus=0,0,0,0,0,0\ncar=1,6,10,2,5,5,5,5,5,5,1,2,3\n");
+    fclose(f);
+    CHECK(career_load(path, &t), "old save loads");
+    CHECK(t.unlocked == 4 && t.level[1] == 6 && t.extpoints[1] == 3, "old save's fields");
+    CHECK(t.perk[1][0] == 0 && t.rebsp[1] == 1.0 && t.xbsp[1] == 0.0 && t.rebsp[30] == 1.0, "old save: no perks, ratios 1");
+    remove(path);
+  }
 
   // Experience: a checkpoint pays, enough of it levels the car up.
   CareerRace r;

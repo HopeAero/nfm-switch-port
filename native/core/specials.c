@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "career_perks.h"
 #include "java_compat.h"
 #include "new_cars.h"
 
@@ -334,7 +335,20 @@ void specials_tick(Specials *sp, Mad *mads, Control *controls, int32_t nplayers,
     const int32_t *bsw = base->swits[c];
     const float *bac = base->acelf[c];
     const double rufreeze = md->frozen ? sp->statreduce[a3][0] : 1.0;
-    const double spdmod = 1.0 - (1.0 - rufreeze);
+    double spdmod = 1.0 - (1.0 - rufreeze);
+    float strmod = 1.0f;
+    double specialboost = 1.0;
+    if (sp->perks && a3 == 0) {
+      // The career's perks on the player (:6950-6973, 7079-7084): GETAWAY's
+      // speed and RECKLESS's strength at 80% damage, FRESHNESS's speed and
+      // STEROIDS's strength after a fix, RUTHLESS's stronger special.
+      double spdboost, fixspd;
+      float strboost, fixstr;
+      const float health = ((float)md->hitmag / (float)live->maxmag[c]) * 100.0f;
+      career_perk_specials(sp->perks, health, md->fixtime, &spdboost, &fixspd, &strboost, &fixstr, &specialboost);
+      spdmod = ((1.0 + (spdboost - 1.0)) + (fixspd - 1.0)) - (1.0 - rufreeze);
+      strmod = (1.0f + (fixstr - 1.0f)) + (strboost - 1.0f);
+    }
     double spdspboost = 0.0;
     float strspboost = 0.0f;
     const int32_t speed2 = (int32_t)((double)bsw[2] * 1.0);
@@ -345,7 +359,6 @@ void specials_tick(Specials *sp, Mad *mads, Control *controls, int32_t nplayers,
       live->airc[c] = (int32_t)((double)base->airc[c] * 1.0);
       sp->healthmulti[a3] = 1.0f;
     } else {
-      const double specialboost = 1.0;
       const float contgrip = base->grip[c], statairs = base->airs[c];
       const int32_t statairc = base->airc[c];
       if (IS(e, 3, 8, 10, 15, 11)) spdspboost = 0.3 * specialboost;
@@ -416,7 +429,7 @@ void specials_tick(Specials *sp, Mad *mads, Control *controls, int32_t nplayers,
     live->swits[c][0] = bsw[0] * maxspeed2 / bsw[2];
     live->swits[c][1] = bsw[1] * maxspeed2 / bsw[2];
     live->swits[c][2] = maxspeed2;
-    const float totalstr = 1.0f + strspboost;
+    const float totalstr = strmod + strspboost;   // strmod is 1 but for the career's perks
     if (!md->strswap && !sp->correct[a3]) live->moment[c] = base->moment[c] * totalstr;
 
     // Each stat against the car's own, for the buff list (:7106-7146).

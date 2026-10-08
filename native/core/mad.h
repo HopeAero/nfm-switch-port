@@ -37,6 +37,7 @@ extern "C" {
 #endif
 
 struct CareerStage;
+struct CareerPerks;
 
 typedef struct Mad {
   int32_t cn;
@@ -138,6 +139,12 @@ typedef struct Mad {
   // stage 13's portals) read it. NULL outside the career: every
   // career_phys_* helper is then neutral and drive() is NFM 2 / Extended's.
   struct CareerStage *career;
+  // The player's perks (career.h), the same for every car of a career race:
+  // Madness reads them by car (xt.specialstats) whoever hits whom. NULL
+  // outside the career, where every perk below is off.
+  struct CareerPerks *perks;
+  int32_t fixtime;       // FRESHNESS / STEROIDS: ticks of their boost left after a fix (Madness.fixtime)
+  bool startedgoing;
 
   CarDefine *cd;   // borrowed
   Medium *m;       // borrowed
@@ -169,6 +176,10 @@ void mad_distruct(Mad *mad, ContO *contO);
 int32_t mad_regy(Mad *mad, int32_t n, float a, ContO *contO);
 int32_t mad_regx(Mad *mad, int32_t n, float n2, ContO *contO);
 int32_t mad_regz(Mad *mad, int32_t n, float n2, ContO *contO);
+/** The same with the original's `attacker` (Madness.regx(i, f, conto,
+ * attacker)): the player's (0) hits drain the car's special by DRAINER. */
+int32_t mad_regx_by(Mad *mad, int32_t n, float n2, ContO *contO, int32_t attacker);
+int32_t mad_regz_by(Mad *mad, int32_t n, float n2, ContO *contO, int32_t attacker);
 
 #ifdef __cplusplus
 }

@@ -1351,6 +1351,8 @@ static void hud_say_draw(Graphics2D *g, Medium *m, int32_t y, const char *str,
 static const bool *g_arrow_skip = NULL;
 // ...and the standings the undead (stat$m 4274, noarrow). NULL outside the career.
 static const bool *g_board_skip = NULL;
+// The career's levels by slot, for the car the arrow points at. NULL outside it.
+static const int32_t *g_arrow_levels = NULL;
 
 /**
  * Ports the !arrace branch of XtGraphics.js's arrow(n, n2, checkPoints, b)
@@ -1472,6 +1474,16 @@ static void draw_checkpoint_arrow(Graphics2D *g, Medium *m, XtGraphicsStub *xt,
     hud_say_draw(g, m, 13, "[                                ]", 76, 67, 240, 0);
     if (target >= 0 && target < NFM_MAX_CARS && sc[target] >= 0 && sc[target] < CAR_COUNT) {
       hud_say_draw(g, m, 13, car_name(sc[target]), 0, 0, 0, 0);
+    }
+    if (g_arrow_levels && target > 0) {
+      // The career: its level beside it, red when more than 5 above yours
+      // (XT 1901-1912).
+      char lv[24];
+      snprintf(lv, sizeof(lv), "Level %d", (int)g_arrow_levels[target]);
+      font_set(FONT_BOLD, 15);
+      if (g_arrow_levels[target] > g_arrow_levels[0] + 5) gfx_set_color(g, 150, 0, 0);
+      else gfx_set_color(g, 0, 60, 0);
+      font_draw(g, lv, 488, 15);
     }
     return;
   }
@@ -3890,6 +3902,338 @@ static void draw_specials_hud(Graphics2D *g, Medium *m, const Specials *sp, cons
 // its name -- glowing in its condition's colour -- and a bar: damage while
 // the arrow points at cars, power while it points at the track, and the
 // special's charge after the List Bars button (its D).
+// The car select's career questions.
+enum { CC_RESHUFFLE = 1, CC_TRANSFER = 2, CC_SELL = 3, CC_TRANSFER_TO = 4 };
+
+/** The car select's career panel (the Special button): three pages --
+ * STATS (stat points into the six stats), PERKS (car points into the car's
+ * six perks, after bonus stage 4) and CAR (reshuffle, level transfer,
+ * sell) -- switched with Left / Right, rows with Up / Down. The original's
+ * mouse screen (carselect's +-buttons, "extra stats", "change stats",
+ * "sell car") laid out for a pad. */
+static void draw_career_panel(Graphics2D *g, const CareerSave *s, int32_t ec, int32_t page, int32_t row) {
+  static const char *const kStatNames[CS_N] = {"Top Speed", "Acceleration", "Handling", "Stunts", "Strength", "Endurance"};
+  static const char *const kPages[3] = {"STATS", "PERKS", "CAR"};
+  const int32_t x0 = 200, y0 = 100, w = 400, h = 244;   // clear of the special's box and the stat bars
+  gfx_set_composite(g, 0.9f);
+  gfx_set_color(g, 10, 14, 30);
+  gfx_fill_rect(g, x0, y0, w, h);
+  gfx_set_composite(g, 1.0f);
+  gfx_set_color(g, 255, 196, 0);
+  gfx_draw_rect(g, x0, y0, w, h);
+  // The tabs.
+  font_set(FONT_BOLD, 13);
+  for (int32_t p = 0; p < 3; p++) {
+    const int32_t tx = x0 + 10 + p * 128;
+    if (p == page) {
+      gfx_set_color(g, 255, 196, 0);
+      gfx_fill_rect(g, tx, y0 + 8, 124, 22);
+      gfx_set_color(g, 10, 14, 30);
+    } else {
+      gfx_set_color(g, 90, 90, 110);
+      gfx_draw_rect(g, tx, y0 + 8, 124, 22);
+      gfx_set_color(g, 170, 170, 190);
+    }
+    draw_centered(g, kPages[p], tx + 62, y0 + 24);
+  }
+  char line[96];
+  const int32_t ry = y0 + 70;   // the first row's baseline
+  // The car's level and experience on the left of every page.
+  snprintf(line, sizeof(line), "Level %d   XP %d / %d", (int)s->level[ec], (int)s->exp[ec],
+           (int)career_reqneed(s->level[ec], ec));
+  font_set(FONT_BOLD, 12);
+  gfx_set_color(g, 255, 196, 0);
+  font_draw(g, line, x0 + 20, y0 + 50);
+  font_set(FONT_BOLD, 13);
+  if (page == 0) {
+    snprintf(line, sizeof(line), "STAT POINTS:   %d", (int)s->statpoints[ec]);
+    gfx_set_color(g, 255, 50, 0);
+    font_draw(g, line, x0 + w - 20 - font_width(line), y0 + 50);
+    font_set(FONT_BOLD, 12);
+    for (int32_t k = 0; k < CS_N; k++) {
+      const bool sel = k == row;
+      gfx_set_color(g, sel ? 255 : 210, sel ? 196 : 210, sel ? 0 : 210);
+      font_draw(g, kStatNames[k], x0 + 30, ry + k * 20);
+      snprintf(line, sizeof(line), "%s%d", sel ? "> " : "", (int)s->sp[ec][k]);
+      font_draw(g, line, x0 + 300, ry + k * 20);
+    }
+  } else if (page == 1) {
+    if (s->boncomp[3] > 0) {
+      snprintf(line, sizeof(line), "CAR POINTS:   %d", (int)s->carpoints);
+      gfx_set_color(g, 255, 50, 0);
+    } else {
+      snprintf(line, sizeof(line), "Win bonus stage 4 for car points");
+      gfx_set_color(g, 170, 170, 170);
+      font_set(FONT_BOLD, 11);
+    }
+    font_draw(g, line, x0 + w - 20 - font_width(line), y0 + 50);
+    font_set(FONT_BOLD, 12);
+    for (int32_t k = 0; k < CAREER_PERK_SLOTS; k++) {
+      const int32_t p = career_statsalc[ec][k], v = s->perk[ec][k];
+      const bool sel = k == row, used = career_perk_applied(p);
+      const int32_t yy = ry + k * 20;
+      if (used) gfx_set_color(g, sel ? 255 : 210, sel ? 196 : 210, sel ? 0 : 210);
+      else gfx_set_color(g, sel ? 200 : 140, sel ? 160 : 140, sel ? 60 : 140);
+      snprintf(line, sizeof(line), "%s%s%s", sel ? "> " : "", career_perk_name[p], used ? "" : " *");
+      font_draw(g, line, x0 + 30, yy);
+      // Its points, 0-20, as a bar.
+      gfx_set_color(g, 60, 60, 80);
+      gfx_fill_rect(g, x0 + 200, yy - 9, 120, 9);
+      gfx_set_color(g, 255, 150, 0);
+      gfx_fill_rect(g, x0 + 200, yy - 9, 120 * v / CAREER_PERK_MAX, 9);
+      gfx_set_color(g, 210, 210, 210);
+      snprintf(line, sizeof(line), "%d / %d", (int)v, CAREER_PERK_MAX);
+      font_draw(g, line, x0 + 330, yy);
+    }
+    // writeboosts' text for the chosen one.
+    const int32_t p = career_statsalc[ec][row < CAREER_PERK_SLOTS ? row : 0];
+    const CareerPerkText *t = &career_perk_text[p];
+    font_set(FONT_BOLD, 11);
+    int32_t ty = ry + 6 * 20 - 2;
+    char what[96];
+    snprintf(what, sizeof(what), "%s %s %s", career_perk_name[p], t->what[0], t->what[1] ? t->what[1] : "");
+    gfx_set_color(g, 235, 235, 235);
+    draw_centered(g, what, 400, ty);
+    ty += 14;
+    snprintf(what, sizeof(what), "%s %s", t->max[0], t->max[1] ? t->max[1] : "");
+    gfx_set_color(g, 150, 240, 150);
+    draw_centered(g, what, 400, ty);
+    if (!career_perk_applied(p)) {
+      gfx_set_color(g, 170, 170, 170);
+      draw_centered(g, "* Extended v2.8 describes this perk but never applies it.", 400, ty + 14);
+    }
+  } else {
+    snprintf(line, sizeof(line), "Reshuffles: %d   Transfers: %d", (int)s->statchangers[0], (int)s->statchangers[1]);
+    gfx_set_color(g, 200, 200, 200);
+    font_set(FONT_BOLD, 12);
+    font_draw(g, line, x0 + w - 20 - font_width(line), y0 + 50);
+    const int32_t cost = career_reshuffle_cost(s, ec);
+    char right[3][32];
+    if (cost == 0) snprintf(right[0], sizeof(right[0]), "free");
+    else snprintf(right[0], sizeof(right[0]), "costs %d stat points", (int)cost);
+    if (s->statchangers[1] > 0) snprintf(right[1], sizeof(right[1]), "%d left", (int)s->statchangers[1]);
+    else snprintf(right[1], sizeof(right[1]), "none left");
+    if (s->boncomp[3] > 0) snprintf(right[2], sizeof(right[2]), "+%d car points", (int)career_sell_price(s, ec));
+    else snprintf(right[2], sizeof(right[2]), "back to level 1");
+    const char *names[3] = {"RESHUFFLE STATS", "LEVEL TRANSFER", s->boncomp[3] > 0 ? "SELL CAR" : "RESET CAR"};
+    font_set(FONT_BOLD, 14);
+    for (int32_t k = 0; k < 3; k++) {
+      const bool sel = k == row, off = k == 1 && s->statchangers[1] == 0;
+      const int32_t yy = ry + 4 + k * 30;
+      if (sel) {
+        gfx_set_color(g, 255, 196, 0);
+        gfx_draw_rect(g, x0 + 20, yy - 18, w - 40, 26);
+      }
+      if (off) gfx_set_color(g, 120, 120, 120);
+      else gfx_set_color(g, sel ? 255 : 220, sel ? 196 : 220, sel ? 0 : 220);
+      font_draw(g, names[k], x0 + 32, yy);
+      font_set(FONT_BOLD, 12);
+      gfx_set_color(g, off ? 120 : 200, off ? 120 : 200, off ? 120 : 200);
+      font_draw(g, right[k], x0 + 372 - font_width(right[k]), yy);
+      font_set(FONT_BOLD, 14);
+    }
+    // carqhover's info boxes (XT 16300-16352).
+    static const char *const kInfo[3][2] = {
+        {"Unlocking a new stage gives you a free stat", "reshuffle, but costs stat points otherwise."},
+        {"Unlocking a new stage lets you transfer your", "level and stat points to another car once."},
+        {"The car goes back to level 1; its perks stay.", NULL}};
+    font_set(FONT_BOLD, 11);
+    gfx_set_color(g, 235, 235, 235);
+    const int32_t r3 = row < 3 ? row : 0;
+    draw_centered(g, kInfo[r3][0], 400, ry + 104);
+    if (kInfo[r3][1]) draw_centered(g, kInfo[r3][1], 400, ry + 117);
+  }
+  char foot[128];
+  snprintf(foot, sizeof(foot), "Left / Right page    %s %s    %s done", KEY_CONTINUE,
+           page == 0 ? "add a point" : page == 1 ? "add a car point" : "choose", KEY_BACK);
+  gfx_set_color(g, 170, 170, 170);
+  font_set(FONT_BOLD, 11);
+  draw_centered(g, foot, 400, y0 + h - 10);
+}
+
+/** A career question with YES / NO (carselect's shufflefase 2, 3 and 6 and
+ * the sell's savefase 1), in the original's words. */
+static void draw_career_confirm(Graphics2D *g, const CareerSave *s, int32_t ec, int32_t from, int32_t which, bool yes) {
+  char l[6][96];
+  int32_t n = 0, red_from = 99;
+  if (which == CC_RESHUFFLE) {
+    snprintf(l[n++], 96, "you'll get your stat points");
+    snprintf(l[n++], 96, "back but at the cost of %d.", (int)career_reshuffle_cost(s, ec));
+    snprintf(l[n++], 96, "do you want to continue?");
+  } else if (which == CC_TRANSFER) {
+    snprintf(l[n++], 96, "you will reset this car and");
+    snprintf(l[n++], 96, "transfer its level and stat");
+    snprintf(l[n++], 96, "points. Continue?");
+  } else if (which == CC_SELL) {
+    if (s->boncomp[3] == 0) {
+      snprintf(l[n++], 96, "are you sure? You get no");
+      snprintf(l[n++], 96, "stat points from this!");
+    } else {
+      snprintf(l[n++], 96, "you will get %d car", (int)career_sell_price(s, ec));
+      snprintf(l[n++], 96, "points. Continue?");
+    }
+  } else {
+    const int32_t pf = ext_car_to_port(from >= 0 ? from : 0), pt = ext_car_to_port(ec);
+    snprintf(l[n++], 96, "You will reset your:");
+    snprintf(l[n++], 96, "%s, level %d", car_name(pf), (int)s->level[from >= 0 ? from : 0]);
+    snprintf(l[n++], 96, "And transfer its level and stat points to:");
+    snprintf(l[n++], 96, "%s, level %d", car_name(pt), (int)s->level[ec]);
+    red_from = n;
+    snprintf(l[n++], 96, "This cannot be undone and will save the");
+    snprintf(l[n++], 96, "game. Continue?");
+  }
+  const int32_t w = 360, h = 70 + n * 18, x0 = 400 - w / 2, y0 = 225 - h / 2;
+  gfx_set_composite(g, 0.92f);
+  gfx_set_color(g, 0, 0, 0);
+  gfx_fill_rect(g, x0, y0, w, h);
+  gfx_set_composite(g, 1.0f);
+  gfx_set_color(g, 255, 196, 0);
+  gfx_draw_rect(g, x0, y0, w, h);
+  font_set(FONT_BOLD, 13);
+  for (int32_t i = 0; i < n; i++) {
+    if (i >= red_from) gfx_set_color(g, 255, 60, 60);
+    else if (which == CC_TRANSFER_TO && (i == 1 || i == 3)) gfx_set_color(g, 0, 200, 0);
+    else gfx_set_color(g, 235, 235, 235);
+    draw_centered(g, l[i], 400, y0 + 26 + i * 18);
+  }
+  // YES / NO.
+  font_set(FONT_BOLD, 16);
+  for (int32_t b = 0; b < 2; b++) {
+    const bool sel = (b == 0) == yes;
+    const int32_t bx = 400 - 120 + b * 130, by = y0 + h - 38;
+    gfx_set_color(g, sel ? 255 : 70, sel ? 196 : 70, sel ? 0 : 70);
+    gfx_fill_rect(g, bx, by, 110, 26);
+    gfx_set_color(g, sel ? 0 : 200, sel ? 0 : 200, sel ? 0 : 200);
+    draw_centered(g, b == 0 ? "YES" : "NO", bx + 55, by + 19);
+  }
+}
+
+/** Scouting's first page: the Titan's slot is skipped on its fight (XT 9739-9742). */
+static int32_t career_scout_first(const CareerRace *r, const CareerSave *s) {
+  return (r->stage == 23 && (s->unlocked == 23 || r->hardstage)) ? 2 : 1;
+}
+
+/** xtGraphics.scouting (fase 205, XT 9723-9982): one opponent a page --
+ * its name and level (red when more than 5 above yours), its six stats
+ * beside yours and the difference; an undead's are mostly hidden. Drawn
+ * over the stage's start card; Left / Right page, confirm goes on. */
+static void draw_career_scout(Graphics2D *g, const CareerRace *r, const CareerSave *s, const CarDefine *cd, int32_t page,
+                              int32_t flash) {
+  if (r->nplayers < 2 || page < 1 || page >= r->nplayers) return;
+  static const char *const kRows[CS_N] = {"Top Speed:", "Acceleration:", "Control:", "Stunting:", "Strength:", "Defence:"};
+  const int32_t skipone = career_scout_first(r, s) - 1;
+  gfx_set_color(g, 16, 18, 28);
+  gfx_fill_rect(g, 65, 25, 670, 400);
+  gfx_set_color(g, 0, 0, 0);
+  gfx_fill_rect(g, 0, 0, 65, 450);
+  gfx_fill_rect(g, 735, 0, 65, 450);
+  gfx_fill_rect(g, 65, 0, 670, 25);
+  gfx_fill_rect(g, 65, 425, 670, 25);
+  // Who is undead (11's vans, 17's hunters, bonus 4's field), or a
+  // guardian (13's floors).
+  bool undead = false, partundead = false;
+  if (r->stage == 17 && page >= 1 && page <= 3) undead = true;
+  if (r->stage == 11 && r->bonus != 2 && page >= 1 && page <= 4) undead = true;
+  if (r->stage == 13 && (page == 2 || page == 3 || page == 5 || page == 6 || page == 8 || page == 9))
+    undead = partundead = true;
+  if (r->bonus == 4 && page < r->nplayers - 1) undead = true;
+  const char *banner = NULL;
+  if (undead) banner = partundead ? "GUARDIAN!" : "UNDEAD OPPONENT!";
+  else if (r->shadow[page]) banner = "SHADOW OPPONENT!";
+  else if (r->beast[page]) banner = "BEAST OPPONENT!";
+  if (banner) {
+    const int32_t a = flash < 0 ? 0 : (flash > 255 ? 255 : flash);
+    gfx_set_composite(g, (float)a / 255.0f);
+    gfx_set_color(g, 255, 255, 255);
+    font_set(FONT_BOLD, 26);
+    draw_centered(g, banner, 400, 60);
+    gfx_set_composite(g, 1.0f);
+  }
+  char line[96];
+  const int32_t pcn = ext_car_to_port(r->sc[page]);
+  int32_t number = page - skipone;
+  bool titled = true;
+  if (r->stage == 17 || (r->stage == 11 && r->bonus != 2)) {
+    const int32_t caroffset = r->stage == 17 ? 3 : 4;
+    number = page - caroffset;
+    titled = page > caroffset;
+  }
+  font_set(FONT_BOLD, 22);
+  gfx_set_color(g, 255, 255, 255);
+  if (titled) {
+    snprintf(line, sizeof(line), "OPPONENT %d: %s", (int)number, car_name(pcn));
+    draw_centered(g, line, 400, 95);
+  } else {
+    draw_centered(g, car_name(pcn), 400, 95);
+  }
+  font_set(FONT_BOLD, 18);
+  snprintf(line, sizeof(line), "Level %d", (int)r->level[page]);
+  if (r->level[page] > r->level[0] + 5) gfx_set_color(g, 220, 40, 40);
+  else gfx_set_color(g, 60, 200, 60);
+  draw_centered(g, line, 400, 120);
+  // The columns: theirs, yours, the difference.
+  int32_t theirs[CS_N], mine[CS_N];
+  career_scout_stats(cd, pcn, r->sc[page], r->sp[page], theirs);
+  career_scout_stats(cd, ext_car_to_port(r->sc[0]), r->sc[0], r->sp[0], mine);
+  gfx_set_composite(g, 0.86f);
+  gfx_set_color(g, 255, 255, 255);
+  gfx_fill_rect(g, 268, 136, 82, 25);
+  gfx_fill_rect(g, 384, 136, 128, 25);
+  gfx_set_composite(g, 1.0f);
+  font_set(FONT_BOLD, 15);
+  gfx_set_color(g, 0, 0, 0);
+  draw_centered(g, "STATS:", 309, 154);
+  draw_centered(g, "YOUR STATS:", 448, 154);
+  for (int32_t k = 0; k < CS_N; k++) {
+    const int32_t y = 194 + 30 * k;
+    gfx_set_color(g, 255, 255, 255);
+    font_set(FONT_BOLD, 15);
+    font_draw(g, kRows[k], 130, y);
+    for (int32_t b = 0; b < 2; b++) {
+      gfx_set_color(g, 0, 100, 0);
+      gfx_fill_rect(g, 285 + b * 138, y - 19, 56, 25);
+    }
+    font_set(FONT_BOLD, 18);
+    gfx_set_color(g, 230, 230, 230);
+    // An undead shows its speed and strength only (XT 9861-9868).
+    const bool hidden = undead && !partundead && (k == 1 || k == 2 || k == 3 || k == 5);
+    if (hidden) snprintf(line, sizeof(line), "-");
+    else snprintf(line, sizeof(line), "%d", (int)theirs[k]);
+    draw_centered(g, line, 313, y);
+    snprintf(line, sizeof(line), "%d", (int)mine[k]);
+    draw_centered(g, line, 451, y);
+    if (!undead || partundead) {
+      const int32_t d = mine[k] - theirs[k];
+      if (d > 0) {
+        gfx_set_color(g, 60, 200, 60);
+        snprintf(line, sizeof(line), "+%d", (int)d);
+      } else if (d < 0) {
+        gfx_set_color(g, 220, 40, 40);
+        snprintf(line, sizeof(line), "%d", (int)d);
+      } else {
+        gfx_set_color(g, 220, 220, 220);
+        snprintf(line, sizeof(line), "-");
+      }
+      draw_centered(g, line, 586, y);
+    }
+  }
+  if (r->stage >= 16) {
+    snprintf(line, sizeof(line), "Bonus stat points: %d (%d)", (int)r->bonuspoints[page], (int)s->extpoints[r->sc[0]]);
+    font_set(FONT_BOLD, 15);
+    gfx_set_color(g, 230, 230, 230);
+    font_draw(g, line, 130, 380);
+  }
+  // Paging and the way on.
+  font_set(FONT_BOLD, 13);
+  gfx_set_color(g, 255, 196, 0);
+  if (page > career_scout_first(r, s)) font_draw(g, "< Left", 90, 120);
+  if (page < r->nplayers - 1) font_draw(g, "Right >", 710 - font_width("Right >"), 120);
+  snprintf(line, sizeof(line), "Opponent %d of %d      %s continue", (int)(page - skipone),
+           (int)(r->nplayers - 1 - skipone), KEY_CONTINUE);
+  gfx_set_color(g, 200, 200, 200);
+  draw_centered(g, line, 400, 412);
+}
+
 static void draw_ext_board(Graphics2D *g, const Medium *m, const CheckPoints *cp, const Mad *mads, int32_t nplayers,
                            const int32_t *sc, const Specials *sp, bool arrace, bool listbars, bool step,
                            const char *const *driver_names) {
@@ -4722,7 +5066,24 @@ int game_run(void) {
   // (XT carselect 15705-15760, statincrease), one row at a time.
   bool career_panel = false;
   int32_t career_panel_row = 0;
+  // The panel's pages: the stat points, the perks (car points), and the
+  // car's options -- carselect's reshuffle, level transfer and sell
+  // (shufflefase 1-11, savefase 1), each behind a YES / NO question.
+  int32_t career_panel_page = 0;
+  int32_t career_confirm = 0;          // the question up (CC_*), 0 none
+  bool career_confirm_yes = false;     // NO is the default answer
+  int32_t career_transfer_from = -1;   // a level transfer looking for its car (shufflefase 5), Extended number
   if (getenv("NFM_CAREER_PANEL")) career_panel = true;   // headless: the panel open
+  // Headless: its page and row, a question, a transfer's source car.
+  if (getenv("NFM_CAREER_PANEL_PAGE")) career_panel_page = atoi(getenv("NFM_CAREER_PANEL_PAGE")) % 3;
+  if (getenv("NFM_CAREER_PANEL_ROW")) career_panel_row = atoi(getenv("NFM_CAREER_PANEL_ROW"));
+  if (getenv("NFM_CAREER_CONFIRM")) career_confirm = atoi(getenv("NFM_CAREER_CONFIRM"));
+  if (getenv("NFM_CAREER_TRANSFER")) career_transfer_from = atoi(getenv("NFM_CAREER_TRANSFER"));
+  // Scouting (fase 205): the field, one opponent a page, before the start.
+  bool career_scout = false;
+  int32_t career_scout_page = 1;
+  int32_t career_scout_flash = 0;
+  bool career_scout_up = true;
   career_reset(&csave);
   char career_path[1100] = "";
   // NFM_CAREER=1 (with NFM_STAGE_NUM, NFM_CAR_INDEX): race the career headless.
@@ -4731,6 +5092,10 @@ int game_run(void) {
     ext_career = true;
     g_ext_career = true;
     if (getenv("NFM_CAREER_BONUS")) g_career_bonus = atoi(getenv("NFM_CAREER_BONUS"));   // 1-4
+  }
+  if (state == STATE_STAGE_INTRO && ext_career && getenv("NFM_CAREER_SCOUT")) {
+    career_scout = true;   // headless: scouting at that page
+    career_scout_page = atoi(getenv("NFM_CAREER_SCOUT"));
   }
   // The tournament is on: normal mode's stage 26 with a match picked.
 #define PT_ACTIVE (ext_normal && !ext_career && stage_num == EXT_PT_STAGE && ptmatch > 0)
@@ -5469,20 +5834,63 @@ int game_run(void) {
       // branch); this port's extra custom-car slot extends maxsl by one,
       // but only in Free Play, which is the only mode that can select it.
       const bool career_car_open = ext_career && career_car_lock(&csave, ext_car_of(car_index)) == 0;
-      if (career_panel) {
+      // A bonus car shown with no points gets its own (XT 15885-15887).
+      if (career_car_open) career_bonus_car_points(&csave, ext_car_of(car_index));
+      if (career_confirm != 0) {
+        // A YES / NO question: any direction flips the answer.
         const int32_t ec = ext_car_of(car_index);
-        if (KEY_EDGE(BTN_DOWN)) career_panel_row = (career_panel_row + 1) % CS_N;
-        if (KEY_EDGE(BTN_UP)) career_panel_row = (career_panel_row + CS_N - 1) % CS_N;
-        if ((KEY_EDGE(BTN_RIGHT) || KEY_EDGE(BTN_CONFIRM)) && csave.statpoints[ec] > 0) {
-          csave.sp[ec][career_panel_row]++;
-          csave.statpoints[ec]--;
+        if (KEY_EDGE(BTN_LEFT) || KEY_EDGE(BTN_RIGHT) || KEY_EDGE(BTN_UP) || KEY_EDGE(BTN_DOWN))
+          career_confirm_yes = !career_confirm_yes;
+        if (KEY_EDGE(BTN_CANCEL)) {
+          if (career_confirm == CC_TRANSFER_TO) career_transfer_from = -1;   // NO ends the transfer (shufflefase 0)
+          career_confirm = 0;
+        } else if (KEY_EDGE(BTN_CONFIRM)) {
+          if (career_confirm_yes) {
+            if (career_confirm == CC_RESHUFFLE) career_reshuffle(&csave, ec);
+            if (career_confirm == CC_SELL) career_sell(&csave, ec);
+            if (career_confirm == CC_TRANSFER) {
+              career_transfer_from = ec;   // now pick the car to take it
+              career_panel = false;
+            }
+            if (career_confirm == CC_TRANSFER_TO) {
+              career_transfer(&csave, career_transfer_from, ec);
+              career_transfer_from = -1;
+            }
+            if (career_path[0]) career_save(career_path, &csave);   // the original saves on a transfer, at its next save otherwise
+          } else if (career_confirm == CC_TRANSFER_TO) {
+            career_transfer_from = -1;
+          }
+          career_confirm = 0;
+        }
+      } else if (career_panel) {
+        const int32_t ec = ext_car_of(car_index);
+        const int32_t nrows = career_panel_page == 2 ? 3 : CS_N;
+        if (career_panel_row >= nrows) career_panel_row = 0;
+        if (KEY_EDGE(BTN_DOWN)) career_panel_row = (career_panel_row + 1) % nrows;
+        if (KEY_EDGE(BTN_UP)) career_panel_row = (career_panel_row + nrows - 1) % nrows;
+        if (KEY_EDGE(BTN_RIGHT) || KEY_EDGE(BTN_LEFT)) {
+          career_panel_page = (career_panel_page + (KEY_EDGE(BTN_RIGHT) ? 1 : 2)) % 3;
+          career_panel_row = 0;
+        } else if (KEY_EDGE(BTN_CONFIRM)) {
+          if (career_panel_page == 0 && csave.statpoints[ec] > 0) {
+            csave.sp[ec][career_panel_row]++;
+            csave.statpoints[ec]--;
+          }
+          // Car points work once bonus stage 4 is won (its "extra stats" button).
+          if (career_panel_page == 1 && csave.boncomp[3] > 0) career_spend_perk(&csave, ec, career_panel_row);
+          if (career_panel_page == 2) {
+            if (career_panel_row == 0) career_confirm = CC_RESHUFFLE;
+            if (career_panel_row == 1 && csave.statchangers[1] > 0) career_confirm = CC_TRANSFER;
+            if (career_panel_row == 2) career_confirm = CC_SELL;
+            career_confirm_yes = false;
+          }
         }
         if (KEY_EDGE(BTN_CANCEL) || KEY_EDGE(BTN_SPECIAL)) {
           career_panel = false;
           if (career_path[0]) career_save(career_path, &csave);
         }
       } else {
-      if (ext_career && career_car_open && car_flipo == 0 && KEY_EDGE(BTN_SPECIAL)) {
+      if (ext_career && career_car_open && car_flipo == 0 && career_transfer_from < 0 && KEY_EDGE(BTN_SPECIAL)) {
         career_panel = true;
         career_panel_row = 0;
       }
@@ -5492,7 +5900,8 @@ int game_run(void) {
         if (KEY_EDGE(BTN_LEFT) && car_index != 0) { car_nextc = -1; car_flipo = 20; }
       }
       if (KEY_EDGE(BTN_CANCEL)) {
-        state = STATE_GAMEMODE_MENU;
+        if (career_transfer_from >= 0) career_transfer_from = -1;   // the transfer called off
+        else state = STATE_GAMEMODE_MENU;
       }
       // :6465 -- confirm is gated on `k == 0 && flipo < 10`, i.e. the car
       // must be unlocked AND the swap animation must be past its
@@ -5503,7 +5912,13 @@ int game_run(void) {
       // one arriving. Locked cars land fine, they just can't be confirmed
       // -- game_progress_can_pick_car() is the same gate the locked-car
       // overlay's own visibility uses below.
-      if (KEY_EDGE(BTN_CONFIRM) && car_flipo < 10) {
+      if (KEY_EDGE(BTN_CONFIRM) && car_flipo < 10 && career_transfer_from >= 0) {
+        // shufflefase 5: an open car other than the source takes the transfer.
+        if (career_car_open && ext_car_of(car_index) != career_transfer_from) {
+          career_confirm = CC_TRANSFER_TO;
+          career_confirm_yes = false;
+        }
+      } else if (KEY_EDGE(BTN_CONFIRM) && car_flipo < 10) {
         const bool career_open = !ext_career || career_car_lock(&csave, ext_car_of(car_index)) == 0;
         if (career_open &&
             (car_index == CUSTOM_CAR_INDEX || game_progress_can_pick_car(&progress, (GameMode)gmode, car_index))) {
@@ -5680,6 +6095,10 @@ int game_run(void) {
         state = STATE_STAGE_INTRO;
         intro_frame = 0;
         intro_dudo = 150;
+        // getstats (XT 9697-9709): a career race opens on scouting, at
+        // the first opponent (the Titan's slot skipped on its fight).
+        career_scout = ext_career && !bench.active;
+        career_scout_page = 0;   // set once the field is known
       }
     } else if (state == STATE_STAGE_INTRO) {
       // loadmusic()'s tail (:2971-2983): the track starts once it has
@@ -5695,6 +6114,15 @@ int game_run(void) {
           interface_playing = false;
         }
       }
+      if (career_scout && ext_career && intro_frame >= 1) {
+        // Scouting's pages (XT 9944-9963): Left / Right through the field,
+        // confirm (or back) to the start card.
+        const int32_t first = career_scout_first(&crace, &csave);
+        if (career_scout_page < first) career_scout_page = first;
+        if (KEY_EDGE(BTN_RIGHT) && career_scout_page < crace.nplayers - 1) career_scout_page++;
+        if (KEY_EDGE(BTN_LEFT) && career_scout_page > first) career_scout_page--;
+        if (KEY_EDGE(BTN_CONFIRM) || KEY_EDGE(BTN_CANCEL)) career_scout = false;
+      } else
       // musicomp() (:3105-3155): handbrake or enter starts the race, with
       // the full-canvas viewport and the default camera projection.
       if (intro_frame >= 1 && (KEY_EDGE(BTN_CONFIRM) || (bench.active && intro_frame >= 40))) {
@@ -6309,6 +6737,14 @@ int game_run(void) {
       specials_reset(&specials);
       if (ext_career) {
         career_run_start(&crun, &crace, &csave);
+        // The player's perks, read by every car's physics and the specials.
+        for (int32_t i = 0; i < nplayers; i++) mad[i].perks = &crun.perks;
+        specials.perks = &crun.perks;
+        // Headless: both bonus stat point popups up from the start (they pay).
+        if (getenv("NFM_CAREER_POPUPS")) {
+          crun.winchance[1] = 40;
+          crun.killchance[1] = 500;
+        }
         career_seen_clear = 0;
         career_settled = false;
         // The stage's recorded bots (GameSparker.java 1749-1790).
@@ -6413,6 +6849,7 @@ int game_run(void) {
         }
       }
       g_arrow_skip = ext_career ? cstage_arrow_skip : NULL;
+      g_arrow_levels = ext_career ? crace.level : NULL;
       g_board_skip = ext_career ? cstage_board_skip : NULL;
       for (int32_t k = 0; k < NFM_MAX_CARS; k++) cstage_arrow_skip[k] = cstage_board_skip[k] = false;
       m.polyoutline_on = false;
@@ -6423,6 +6860,7 @@ int game_run(void) {
       // NFM_HOOK_VIEW=n and NFM_HOOK_LISTBARS=1: a camera and the list bars, headless.
       if (getenv("NFM_HOOK_VIEW")) race_view = atoi(getenv("NFM_HOOK_VIEW"));
       if (getenv("NFM_HOOK_LISTBARS")) ext_listbars = true;
+      if (getenv("NFM_HOOK_ARRACE")) control[0].arrace = true;   // the arrow on the cars
       // GameSparker.java:2768 -- record.reset(array) at the tail of
       // loadstage(), AFTER every car's ContO is (re)constructed for this
       // race but BEFORE the first tick -- clears the whole replay ring
@@ -6918,6 +7356,7 @@ int game_run(void) {
               const bool full = mad[0].power == 98.0f && starcnt == 0 && !mad[0].dest && !race_holdit &&
                                 fabsf(mad[0].speed) > 0.0f;
               career_tick(&crun, &crace, &csave, starcnt == 0, full);
+              career_popups_tick(&crun, &crace, &csave);   // the bonus stat points pay as they show
               // (The undead, careermode$m's, are career_stage_tick's below.)
               crace.level[0] = csave.level[crace.sc[0]];
             }
@@ -7827,6 +8266,27 @@ int game_run(void) {
           gfx_fill_rect(&g, 12, y0 + 14, fill, 4);
           gfx_set_color(&g, 70, 70, 70);
           gfx_draw_rect(&g, 12, y0 + 14, 200, 4);
+          // stat$m's bonus stat point popups (XT 5631-5835), sliding in from
+          // the left: the waste's in red, the checkpoint's under it in green.
+          // (The original's running totals beside them are left out.) Their
+          // shake is this frame's own, not the career's random stream.
+          {
+            static uint32_t shake = 12345u;
+            int32_t py = 218;
+            for (int32_t i = 0; i < 2; i++) {
+              const int32_t chance = i == 0 ? crun.killchance[1] : crun.winchance[1];
+              if (chance > 1000 || crun.pop_amount[i] == 0) continue;
+              char pl[48];
+              if (crun.pop_amount[i] == 1) snprintf(pl, sizeof(pl), "YOU HAVE GAINED 1 BONUS STAT POINT!");
+              else snprintf(pl, sizeof(pl), "YOU HAVE GAINED %d BONUS STAT POINTS!", (int)crun.pop_amount[i]);
+              shake = shake * 1103515245u + 12345u;
+              font_set(FONT_BOLD, 16);
+              if (i == 0) gfx_set_color(&g, 130, 0, 0);
+              else gfx_set_color(&g, 0, 110, 0);
+              font_draw(&g, pl, crun.pop_x[i], py + (int32_t)((shake >> 16) % 5u));
+              py += 23;
+            }
+          }
           // careermode$m's own HUD: the Titan's bar (XT 8472-8535), bonus
           // 4's last car (8308-8350), 250 wide, top centre; and its flashing
           // red line (drawcs(450, ...)), over the level bar.
@@ -9120,39 +9580,43 @@ int game_run(void) {
                  (int)career_reqneed(csave.level[ec], ec));
         font_set(FONT_BOLD, 12);
         gfx_set_color(&g, 255, 196, 0);
-        draw_centered(&g, line, 575, 116);
+        if (!career_panel) draw_centered(&g, line, 575, 116);
         snprintf(line, sizeof(line), "Stat points: %d", (int)csave.statpoints[ec]);
-        draw_centered(&g, line, 575, 132);
-        if (!career_panel) {
+        if (!career_panel) draw_centered(&g, line, 575, 132);
+        if (!career_panel && career_transfer_from < 0) {
           char hint[64];
           snprintf(hint, sizeof(hint), "Press %s to upgrade", KEY_SPECIAL);
           gfx_set_color(&g, 200, 200, 200);
           font_set(FONT_BOLD, 11);
           draw_centered(&g, hint, 575, 147);
-        } else {
-          static const char *const kStatNames[CS_N] = {"Top Speed", "Acceleration", "Handling",
-                                                       "Stunts",    "Strength",     "Endurance"};
-          gfx_set_composite(&g, 0.85f);
-          gfx_set_color(&g, 10, 14, 30);
-          gfx_fill_rect(&g, 250, 140, 300, 40 + CS_N * 22);
-          gfx_set_composite(&g, 1.0f);
-          gfx_set_color(&g, 255, 196, 0);
-          gfx_draw_rect(&g, 250, 140, 300, 40 + CS_N * 22);
-          font_set(FONT_BOLD, 12);
-          for (int32_t k = 0; k < CS_N; k++) {
-            const bool sel = k == career_panel_row;
-            gfx_set_color(&g, sel ? 255 : 210, sel ? 196 : 210, sel ? 0 : 210);
-            font_draw(&g, kStatNames[k], 270, 162 + k * 22);
-            char v[16];
-            snprintf(v, sizeof(v), "%s%d", sel ? "> " : "", (int)csave.sp[ec][k]);
-            font_draw(&g, v, 470, 162 + k * 22);
-          }
-          char foot[96];
-          snprintf(foot, sizeof(foot), "%s add a point    %s done", KEY_CONTINUE, KEY_BACK);
-          gfx_set_color(&g, 170, 170, 170);
-          font_set(FONT_BOLD, 11);
-          draw_centered(&g, foot, 400, 170 + CS_N * 22);
+        } else if (career_panel) {
+          draw_career_panel(&g, &csave, ec, career_panel_page, career_panel_row);
         }
+      }
+      if (ext_career && career_transfer_from >= 0 && career_confirm == 0) {
+        // shufflefase 5's box (XT 16438-16473): which car takes the transfer.
+        const int32_t ec = ext_car_of(car_index);
+        const bool here = ec != career_transfer_from && career_car_lock(&csave, ec) == 0;
+        char l2[64];
+        snprintf(l2, sizeof(l2), "%s?", car_name(car_index));
+        const char *lines[2] = {here ? "transfer to" : "select car to", here ? l2 : "transfer to..."};
+        gfx_set_composite(&g, 0.92f);
+        gfx_set_color(&g, 255, 255, 255);
+        gfx_fill_rect(&g, 290, 100, 220, 74);
+        gfx_set_composite(&g, 1.0f);
+        font_set(FONT_BOLD, 16);
+        gfx_set_color(&g, 0, 0, 0);
+        draw_centered(&g, lines[0], 400, 122);
+        draw_centered(&g, lines[1], 400, 142);
+        char hint[96];
+        if (here) snprintf(hint, sizeof(hint), "%s transfer here    %s cancel", KEY_CONTINUE, KEY_BACK);
+        else snprintf(hint, sizeof(hint), "Left / Right: a car    %s cancel", KEY_BACK);
+        font_set(FONT_BOLD, 11);
+        gfx_set_color(&g, 90, 90, 90);
+        draw_centered(&g, hint, 400, 164);
+      }
+      if (ext_career && career_confirm != 0) {
+        draw_career_confirm(&g, &csave, ext_car_of(car_index), career_transfer_from, career_confirm, career_confirm_yes);
       }
       if (car_index != CUSTOM_CAR_INDEX) {
         int32_t unlock_k = ext_career ? career_car_lock(&csave, ext_car_of(car_index))
@@ -9789,6 +10253,18 @@ int game_run(void) {
           gfx_set_composite(&g, 1.0f);
         }
         if (step) intro_pstar ^= 1;
+      }
+      if (ext_career && career_scout && intro_frame >= 1) {
+        // The beast / shadow / undead header's flash (XT 9964-9980), on
+        // this screen's paced step.
+        if (step) {
+          if (career_scout_flash < 20) career_scout_up = true;
+          if (career_scout_flash > 240) career_scout_up = false;
+          career_scout_flash += career_scout_up ? 12 : -12;
+        }
+        int32_t page = career_scout_page;
+        if (page < career_scout_first(&crace, &csave)) page = career_scout_first(&crace, &csave);
+        draw_career_scout(&g, &crace, &csave, &cd, page, career_scout_flash);
       }
       if (step) intro_frame++;
     }

@@ -93,6 +93,24 @@ fix routing 8933-9509, reset 9841-9877.
 6 FEARLESS, 7 PUSHING, 9 RECKLESS, 10 SURVIVAL, 11 RAMPAGE, 12 BRAVERY, 13
 AWARENESS, 14 BACKHIT, 15 ARMOUR, 16 WEIGHT, 17 LIFTING, 18 DRAINER, 19
 LEAKAGE, 20 RUTHLESS, 21 FRESHNESS, 22 STEROIDS, 23 BERSERK, 24 SAFETY.
+Port: core/career_perks.h (each as the original computes it), mad.c and
+specials.c through Mad.perks / Specials.perks (NULL outside the career).
+Every loop takes the last of the six slots holding the perk with points.
+Dead in v2.8 by its own table: LEAKAGE (reads DRAINER's slot; cancels it),
+SAFETY (needs the hitter's car to hold SAFETY and the player's FEARLESS in
+the same slot -- no two cars do). Car points: only selling earns them
+(level / 3; the original pays before bonus stage 4 too, its text says not);
+bonus stage 4 makes them usable.
+
+## Bonus stat points
+stat$m: a checkpoint rolls winchance[0] = rand*1000+1 (not with noexp)
+against (18 + min(clear, 25) + bspbuff) * doublechance * plshelp * GAMBLER,
+a waste rolls killchance[0] against 140 * doublechance * chancemod (beast
+2.55 / 1.3 bonus, shadow 2.8) * plshelp * GAMBLER * levelboost; under the
+soft level cap a hit rolls [1]; its popup pays 4 (<= 50 + 200 * morechance),
+2 (<= 300 + 1000 * morechance) or 1 as it first shows (rcestatgain /
+wststatgain, the waste's held while its popup is up), into statpoints,
+extpoints and statgain. Port: career.c, career_popups_tick.
 
 ## Bonus stages
 1 (stage 5) Snake Dance 18 laps -> cars 31-33; 2 (11) AI Revenge 15 laps ->

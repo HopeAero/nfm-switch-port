@@ -180,7 +180,50 @@ Map of the original: docs/extended-career.md.
 - [ ] Visuals left (rendering untouched on purpose so far): 22's night dim
       (dn_dim), 7's green outline pulse (polyoutline), 23's greystage, the
       undead's green flames (newflame), the portal fade, stars/snow/water.
-- [ ] Undead out of the car list's ranking; opponent levels on the HUD.
-- [ ] Scouting, perks (car points, 24 applied ones), bonus stat point rolls
-      (winchance/killchance, extpoints), stat changers / selling cars.
+- [ ] Undead out of the car list's ranking.
+- [x] Opponent levels on the HUD: the arrow's car (Up on the D-pad) shows
+      "Level N" beside its name, red when more than 5 above yours (XT 1901).
+- [x] Bonus stat points (career.c, stat$m XT 5030-5120, 5320-5420,
+      5531-5835): every checkpoint and waste rolls winchance / killchance
+      (levelbarrier, plshelp, bspbuff, levelboost, beast / shadow odds,
+      GAMBLER) on career_random in the original's order; a hit pays 4, 2 or 1
+      (morechance on hard races) into statpoints and extpoints as its popup
+      slides in, once per popup (a waste's not again while it shows); a loss
+      on the newest stage takes them back (statgain). The popups are drawn,
+      the running totals beside them are not. Checked against stat$m's own
+      code under node (career_bonus_test, 200 runs, 4962 events). Fixed on the
+      way: a waste's experience used the wastes counter after this waste.
+- [x] Perks (career_perks.h, the 24 the original applies; 8 and 25-39 are
+      shown, marked, never applied): car points (Win bonus stage 4, then sell
+      cars) into each car's six perks, 0-20, on the car select panel's PERKS
+      page; GREED on every experience award, GAMBLER on the rolls; in mad.c
+      (career only, through Mad.perks): ENERGY / PUSHING / RAMPAGE / LIFTING
+      every tick, CHEAPSHOT / BACKHIT / BRAVERY / BERSERK hitting, FEARLESS /
+      SURVIVAL / AWARENESS / ARMOUR / SAFETY hit, WEIGHT, ESCAPE, DRAINER /
+      LEAKAGE through the hits' attacker (Madness.regx's 4th argument),
+      FRESHNESS / STEROIDS' fix time; in specials.c GETAWAY, RECKLESS,
+      FRESHNESS, STEROIDS, RUTHLESS. The original's bugs kept: LEAKAGE reads
+      DRAINER's slot (so it cancels it), SAFETY looks for itself on the
+      hitter's car and takes FEARLESS's points (never both in v2.8's table: it
+      does nothing). Each formula checked against its JS lines
+      (career_perks_test). Save: perk=car,p0..p5 lines.
+- [x] Car options (the panel's CAR page, YES / NO in the original's words):
+      RESHUFFLE STATS (free once per stage won, else 35% of the bonus points),
+      LEVEL TRANSFER (once per stage won: choose the car in the car select;
+      xbspratio / rebsp scale the bonus points), SELL CAR (level / 3 car
+      points; RESET CAR before bonus stage 4 -- the original pays the points
+      then too); bonus cars keep their own base points (resetstats). Saved at
+      once. Checked against carselect's own blocks (career_shuffle_test).
+      Save: bsp=car,rebsp,xbsp lines.
+- [x] Scouting (fase 205): a career race opens on it, after loading, before
+      the start card: one opponent a page (Left / Right), name, level, its
+      six stats beside yours and the difference, undead / guardian / beast /
+      shadow banners, bonus points from stage 16; confirm goes on. Numbers
+      checked against scouting's own lines. Headless: NFM_CAREER_SCOUT=page
+      with NFM_SCREENSHOT_MENU=intro; NFM_CAREER_PANEL_PAGE / _ROW,
+      NFM_CAREER_CONFIRM=1-4, NFM_CAREER_TRANSFER=car, NFM_CAREER_POPUPS=1,
+      NFM_HOOK_ARRACE=1.
+- [ ] Not ported: the experience from hits (Madness.js 1006-1013, hitgain),
+      the popups' running totals (TOTAL WASTES / CLEARED WITH), RUTHLESS's
+      numbers in the car select's special description.
 - [ ] Play it through on the Switch: the Titan fight end to end, bots.

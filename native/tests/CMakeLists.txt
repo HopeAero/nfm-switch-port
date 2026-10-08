@@ -294,6 +294,33 @@ add_executable(career_test
 )
 target_link_libraries(career_test m)
 
+# The bonus stat points and experience (career.c) against stat$m's own code.
+add_executable(career_bonus_test
+  career_bonus_test.c
+  ../core/career.c
+  ../core/career_stats.c
+  ../core/java_compat.c
+)
+target_link_libraries(career_bonus_test m)
+
+# The perks' effects (career_perks.h) against Madness/xtGraphics's own lines.
+add_executable(career_perks_test
+  career_perks_test.c
+  ../core/career.c
+  ../core/career_stats.c
+  ../core/java_compat.c
+)
+target_link_libraries(career_perks_test m)
+
+# The car select's reshuffle, level transfer, sell and car points (career.c).
+add_executable(career_shuffle_test
+  career_shuffle_test.c
+  ../core/career.c
+  ../core/career_stats.c
+  ../core/java_compat.c
+)
+target_link_libraries(career_shuffle_test m)
+
 add_executable(career_stats_test
   career_stats_test.c
   ../core/career_stats.c
@@ -396,6 +423,9 @@ add_test(NAME radical_mod_test COMMAND radical_mod_test WORKING_DIRECTORY ${CMAK
 add_test(NAME bots_test COMMAND bots_test)
 add_test(NAME career_test COMMAND career_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_test(NAME career_stats_test COMMAND career_stats_test)
+add_test(NAME career_bonus_test COMMAND career_bonus_test)
+add_test(NAME career_perks_test COMMAND career_perks_test)
+add_test(NAME career_shuffle_test COMMAND career_shuffle_test)
 add_test(NAME career_lineup_test COMMAND career_lineup_test)
 add_test(NAME career_stage_test COMMAND career_stage_test)
 add_test(NAME ogg_music_test COMMAND ogg_music_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})

@@ -1,5 +1,6 @@
 // ports web/Mad.js -- see mad.h for scope.
 #include "mad.h"
+#include "career_perks.h"
 #include "career_stage.h"
 #include "new_cars.h"
 #include "java_compat.h"
@@ -29,6 +30,8 @@ void mad_init(Mad *mad, CarDefine *cd, Medium *m, Record *rpd, XtGraphicsStub *x
 void mad_reseto(Mad *mad, int32_t cn, ContO *contO, CheckPoints *checkPoints) {
   mad->cn = cn;
   mad->lastcolider = -1;
+  mad->fixtime = 0;   // Madness.js 1053
+  mad->startedgoing = false;
   // Extended (Madness.java:1154-1155): an empty bar; the next tick refills
   // speclast (an empty bar and no special left).
   mad->spatk = 0.0f;
@@ -354,7 +357,38 @@ static void mad_recolor_plane(Plane *p) {
   p->c[2] = rgb & 255;
 }
 
-int32_t mad_regy(Mad *mad, int32_t n, float a, ContO *contO) {
+/** The player's (attacker 0) hit drains the car's special by DRAINER
+ * (career_perk_drain); the original's power drain there is 0. */
+static void perk_drain(Mad *mad, float f3, int32_t attacker) {
+  if (!mad->perks || attacker != 0 || mad->dest) return;
+  const float proportion = career_perk_drain(mad->perks);
+  if (proportion == 0.0f) return;
+  const float percentage = (fabsf(f3) * 100.0f) / (float)mad->cd->maxmag[mad->cn];
+  const float drain = (percentage * proportion) * 1.2f;
+  if (!mad->specialact) {
+    mad->spatk = mad->spatk - drain;
+  } else {
+    mad->speclast = mad->speclast - drain;
+    mad->speclast2 = mad->speclast2 - drain;
+  }
+}
+
+static int32_t regy_by(Mad *mad, int32_t n, float a, ContO *contO, int32_t attacker);
+static int32_t regx_by(Mad *mad, int32_t n, float n2, ContO *contO, int32_t attacker);
+static int32_t regz_by(Mad *mad, int32_t n, float n2, ContO *contO, int32_t attacker);
+
+// Hits from the track, the walls and the stage pass Madness's attacker 1.
+int32_t mad_regy(Mad *mad, int32_t n, float a, ContO *contO) { return regy_by(mad, n, a, contO, 1); }
+int32_t mad_regx(Mad *mad, int32_t n, float n2, ContO *contO) { return regx_by(mad, n, n2, contO, 1); }
+int32_t mad_regz(Mad *mad, int32_t n, float n2, ContO *contO) { return regz_by(mad, n, n2, contO, 1); }
+int32_t mad_regx_by(Mad *mad, int32_t n, float n2, ContO *contO, int32_t attacker) {
+  return regx_by(mad, n, n2, contO, attacker);
+}
+int32_t mad_regz_by(Mad *mad, int32_t n, float n2, ContO *contO, int32_t attacker) {
+  return regz_by(mad, n, n2, contO, attacker);
+}
+
+static int32_t regy_by(Mad *mad, int32_t n, float a, ContO *contO, int32_t attacker) {
   CarDefine *cd = mad->cd;
   Medium *m = mad->m;
   int32_t n2 = 0;
@@ -392,6 +426,7 @@ int32_t mad_regy(Mad *mad, int32_t n, float a, ContO *contO) {
               mad->hitmag = jtrunc((float)mad->hitmag + fabsf(n5));
               n2 = jtrunc((float)n2 + fabsf(n5));
             }
+            perk_drain(mad, n5, attacker);
           }
         }
         if (n5 != 0.0f) {
@@ -451,7 +486,7 @@ int32_t mad_regy(Mad *mad, int32_t n, float a, ContO *contO) {
   return n2;
 }
 
-int32_t mad_regx(Mad *mad, int32_t n, float n2, ContO *contO) {
+static int32_t regx_by(Mad *mad, int32_t n, float n2, ContO *contO, int32_t attacker) {
   CarDefine *cd = mad->cd;
   Medium *m = mad->m;
   int32_t n3 = 0;
@@ -477,6 +512,7 @@ int32_t mad_regx(Mad *mad, int32_t n, float n2, ContO *contO) {
             mad->hitmag = jtrunc((float)mad->hitmag + fabsf(a));
             n3 = jtrunc((float)n3 + fabsf(a));
           }
+          perk_drain(mad, a, attacker);
         }
       }
       if (a != 0.0f) {
@@ -497,7 +533,7 @@ int32_t mad_regx(Mad *mad, int32_t n, float n2, ContO *contO) {
   return n3;
 }
 
-int32_t mad_regz(Mad *mad, int32_t n, float n2, ContO *contO) {
+static int32_t regz_by(Mad *mad, int32_t n, float n2, ContO *contO, int32_t attacker) {
   CarDefine *cd = mad->cd;
   Medium *m = mad->m;
   int32_t n3 = 0;
@@ -523,6 +559,7 @@ int32_t mad_regz(Mad *mad, int32_t n, float n2, ContO *contO) {
             mad->hitmag = jtrunc((float)mad->hitmag + fabsf(a));
             n3 = jtrunc((float)n3 + fabsf(a));
           }
+          perk_drain(mad, a, attacker);
         }
       }
       if (a != 0.0f) {
@@ -641,6 +678,10 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
         float compradSum = cd->comprad[mad2->cn] + cd->comprad[mad->cn];
         float rpyThreshold = (float)(n3b + n4) * compradSum;
         if (mad_rpy(array[j], array4[k], array2[j], array5[k], array3[j], array6[k]) < rpyThreshold) {
+          float ph[9] = {0};   // the perks' factors on this contact's damage (career_perk_hit)
+          if (mad->perks)
+            career_perk_hit(mad->perks, mad->im, mad2->im, mad2->capsized, mad2->wtouch, mad->speed, mad2->speed,
+                            mad2->power, ph);
           if (fabsf(mad->scx[j] * cd->moment[mad->cn]) > fabsf(mad2->scx[k] * cd->moment[mad2->cn])) {
             float n6 = mad2->scx[k] * cd->revpush[mad->cn];
             if (n6 > 300.0f) n6 = 300.0f;
@@ -651,13 +692,15 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
             if (n7 < -300.0f) n7 = -300.0f;
             mad2->scx[k] = mad2->scx[k] + n7;
             if (xt_graphics_stub_human(mad->xt, mad->im)) mad2->colidim = true;
-            int32_t n9 = n + mad_regx(mad2, k, ((n7 * cd->moment[mad->cn]) * n5) * masheen_hit, contO2);
+            float hx = ((n7 * cd->moment[mad->cn]) * n5) * masheen_hit;
+            if (mad->perks) hx = career_perk_hit_apply(hx, ph);
+            int32_t n9 = n + regx_by(mad2, k, hx, contO2, mad->im);
             if (mad2->colidim) mad2->colidim = false;
             mad->scx[j] = mad->scx[j] - n6;
-            n2 += mad_regx(mad, j, (-n6 * recoil) * n5, contO);
+            n2 += regx_by(mad, j, (-n6 * recoil) * n5, contO, mad->im);
             mad->scy[j] = mad->scy[j] - (float)cd->revlift[mad->cn];
             if (mad->im == mad->xt->im) mad2->colidim = true;
-            n = n9 + mad_regy(mad2, k, cd->revlift[mad->cn] * 7.0f, contO2);
+            n = n9 + regy_by(mad2, k, cd->revlift[mad->cn] * 7.0f, contO2, mad2->im);
             if (mad2->colidim) mad2->colidim = false;
             if (medium_random(m) > medium_random(m)) {
               cont_o_sprk(contO2, (array[j] + array4[k]) / 2.0f, (array2[j] + array5[k]) / 2.0f, (array3[j] + array6[k]) / 2.0f,
@@ -674,13 +717,15 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
             if (n13 < -300.0f) n13 = -300.0f;
             mad2->scz[k] = mad2->scz[k] + n13;
             if (mad->im == mad->xt->im) mad2->colidim = true;
-            int32_t n15 = n + mad_regz(mad2, k, ((n13 * cd->moment[mad->cn]) * n5) * masheen_hit, contO2);
+            float hz = ((n13 * cd->moment[mad->cn]) * n5) * masheen_hit;
+            if (mad->perks) hz = career_perk_hit_apply(hz, ph);
+            int32_t n15 = n + regz_by(mad2, k, hz, contO2, mad->im);
             if (mad2->colidim) mad2->colidim = false;
             mad->scz[j] = mad->scz[j] - n12;
-            n2 += mad_regz(mad, j, (-n12 * recoil) * n5, contO);
+            n2 += regz_by(mad, j, (-n12 * recoil) * n5, contO, mad2->im);
             mad->scy[j] = mad->scy[j] - (float)cd->revlift[mad->cn];
             if (mad->im == mad->xt->im) mad2->colidim = true;
-            n = n15 + mad_regy(mad2, k, cd->revlift[mad->cn] * 7.0f, contO2);
+            n = n15 + regy_by(mad2, k, cd->revlift[mad->cn] * 7.0f, contO2, mad->im);
             if (mad2->colidim) mad2->colidim = false;
             if (medium_random(m) > medium_random(m)) {
               cont_o_sprk(contO2, (array[j] + array4[k]) / 2.0f, (array2[j] + array5[k]) / 2.0f, (array3[j] + array6[k]) / 2.0f,
@@ -693,7 +738,9 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
           mad->bot_hit = mad2->bot_hit = true;
           mad->isabot = mad2->isabot = false;
           if (xt_graphics_stub_human(mad->xt, mad2->im)) mad->lastcolido = 70;
-          mad2->scy[k] = mad2->scy[k] - (float)cd->lift[mad->cn];
+          int32_t lifts = cd->lift[mad->cn];
+          if (mad->perks && mad2->im == 0) lifts = career_perk_lifts(mad->perks, lifts);   // WEIGHT
+          mad2->scy[k] = mad2->scy[k] - (float)lifts;
         }
       }
     }
@@ -1972,6 +2019,8 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
   }
 
   if (contO->fcnt == 7 || contO->fcnt == 8) {
+    // FRESHNESS / STEROIDS: a fix starts their boost.
+    if (mad->perks && mad->im == 0) mad->fixtime = career_perk_fixtime(mad->perks, mad->fixtime);
     mad->squash = 0; mad->nbsq = 0; mad->hitmag = 0; mad->cntdest = 0; mad->dest = false; mad->newcar = true;
     mad->just_fixed = true; // see mad.h's own doc comment on this field
     contO->fcnt = 9;
@@ -1980,6 +2029,20 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
   if (mad->newedcar != 0) {
     mad->newedcar--;
     if (mad->newedcar == 10) mad->newcar = false;
+  }
+  if (mad->perks) {
+    // The fix boost runs down once the car moves (Madness.js 3631-3655), as
+    // do BERSERK's and SAFETY's clocks; a wreck ends them.
+    if (mad->fixtime == 0) mad->startedgoing = false;
+    if (mad->mtouch || mad->startedgoing) {
+      mad->startedgoing = true;
+      if (mad->fixtime > 0) mad->fixtime = mad->dest ? 0 : mad->fixtime - 1;
+    }
+    if (mad->im == 0) {
+      for (int32_t a = 0; a < 2; a++) {
+        if (mad->perks->killtime[a] > 0) mad->perks->killtime[a] = mad->dest ? 0 : mad->perks->killtime[a] - 1;
+      }
+    }
   }
 
   if (!mad->mtouch) {
@@ -2061,7 +2124,9 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
         if (n117 == 4) mad->capcnt = 1;
       } else {
         mad->capcnt++;
-        if (mad->capcnt == 30) {
+        // ESCAPE: the player rights a bad landing sooner (Madness.js 2979-2985).
+        const int32_t captime = (mad->perks && mad->im == 0) ? career_perk_captime(mad->perks) : 30;
+        if (mad->capcnt == captime) {
           mad->speed = 0.0f;
           contO->y += cd->flipy[mad->cn];
           mad->pxy += 180;
@@ -2083,6 +2148,11 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
         mad->xtpower--;
       }
     }
+  }
+  if (mad->perks && mad->im == 0) {
+    // ENERGY, PUSHING, RAMPAGE and LIFTING, every tick (career_perk_tables).
+    career_perk_tables(mad->perks, &cd->powerloss[mad->cn], &cd->push[mad->cn], &cd->revpush[mad->cn],
+                       &cd->lift[mad->cn]);
   }
 
   if (mad->isabot && control->wall != -1) control->wall = -1;   // Madness.js:3173
