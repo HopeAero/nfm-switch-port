@@ -7748,9 +7748,15 @@ int game_run(void) {
           // handbrake already held on the ground (`pushed`, a drift) arms
           // nothing when the wheels skip off a bump -- without that term the
           // throttle went dead for those ticks mid-drift.
+          // Not on the landing tick (wheels down, loop 2 -> -1 inside drive()):
+          // there drive() latches pu/pd/pl/pr from the keys held, so they must
+          // be the driving ones -- with the stunt set a ZR held through the
+          // landing latched nothing, and the next tick read it as "up" in the
+          // post-stunt tilt (loop -1), flipping the car forward on its own.
           if (!bench.active)
-            input_set_stunting(&control[0], mad[0].loop == 2 || (control[0].handb && !mad[0].wtouch &&
-                                                                  !mad[0].pushed && mad[0].loop == 0));
+            input_set_stunting(&control[0], (mad[0].loop == 2 && !mad[0].wtouch) ||
+                                                (control[0].handb && !mad[0].wtouch && !mad[0].pushed &&
+                                                 mad[0].loop == 0));
           DIAG_PHASE("race tick: driving");
           for (int32_t i = 0; i < nplayers; i++) {
             g_diag.aux[0] = i;
