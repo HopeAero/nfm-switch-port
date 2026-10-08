@@ -220,6 +220,7 @@ GameSettings game_settings_defaults(int32_t graphics) {
   s.board_names = 0;
   s.shake = 0;   // the extended build starts without it
   s.rumble = 1;
+  s.cam_orbit = s.cam_watch = s.cam_far = 1;
   s.steer_dpad = 0;
   // Indices into game.c's Switch button list: ZR, ZL, B, X, D-Pad Up,
   // D-Pad Down, Plus, Y, Minus -- the scheme v1.0 shipped with.
@@ -245,6 +246,9 @@ static const SettingKey kSettingKeys[] = {
   {"board_names", offsetof(GameSettings, board_names), 0, 1, 1},
   {"screen_shake", offsetof(GameSettings, shake), 0, 1, 1},
   {"vibration", offsetof(GameSettings, rumble), 0, 1, 1},
+  {"camera_orbit", offsetof(GameSettings, cam_orbit), 0, 1, 1},
+  {"camera_tripod", offsetof(GameSettings, cam_watch), 0, 1, 1},
+  {"camera_far", offsetof(GameSettings, cam_far), 0, 1, 1},
   {"steer_dpad", offsetof(GameSettings, steer_dpad), 0, 1, 1},
   {"bind_accelerate", offsetof(GameSettings, bind[BIND_ACCEL]), 0, 19, 1},
   {"bind_brake", offsetof(GameSettings, bind[BIND_BRAKE]), 0, 19, 1},

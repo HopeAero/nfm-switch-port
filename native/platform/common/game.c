@@ -1535,9 +1535,11 @@ static void draw_checkpoint_arrow(Graphics2D *g, Medium *m, XtGraphicsStub *xt,
     gfx_set_color(g, hud_tint(120.0, m->snap[0]), hud_tint(114.0, m->snap[1]),
                   hud_tint(255.0, m->snap[2]));
     gfx_draw_polygon(g, sx, sy, 7);
-    // :8673-8676 -- name the locked car, framed by a bracket pair: literally
-    // "[" + 32 spaces + "]" in the source.
-    hud_say_draw(g, m, 13, "[                                ]", 76, 67, 240, 0);
+    // :8673-8676 -- name the locked car, framed by a bracket pair, in Arial
+    // bold 11 (Extended's XT 1469-1471: "[" + 36 spaces + "]"); without its
+    // own font it took whatever the frame drew last.
+    font_set(FONT_BOLD, 11);
+    hud_say_draw(g, m, 13, "[                                    ]", 76, 67, 240, 0);
     if (target >= 0 && target < NFM_MAX_CARS && sc[target] >= 0 && sc[target] < CAR_COUNT) {
       hud_say_draw(g, m, 13, car_name(sc[target]), 0, 0, 0, 0);
     }
@@ -3385,13 +3387,14 @@ static const char *const kSteerNames[] = {ICON_LSTICK " Left Stick", ICON_DPAD "
 
 #define SET_FIELD(f) offsetof(GameSettings, f)
 static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
-  [SET_MAIN] = {"SETTINGS", 8, {
+  [SET_MAIN] = {"SETTINGS", 9, {
     {ROW_OPEN, "Graphics", SET_GRAPHICS, 0, 0, 0, NULL, false},
     {ROW_OPEN, "Audio", SET_AUDIO, 0, 0, 0, NULL, false},
     {ROW_OPEN, "Interface", SET_INTERFACE, 0, 0, 0, NULL, false},
     {ROW_OPEN, "Gameplay", SET_GAMEPLAY, 0, 0, 0, NULL, false},
     {ROW_OPEN, "Controls", SET_CONTROLS, 0, 0, 0, NULL, NEED_REMAP},
     {ROW_BENCH, "Performance Test", 0, 0, 0, 0, NULL, false},
+    {ROW_BENCH, "Stress Test", 1, 0, 0, 0, NULL, false},
     {ROW_RESET, "Reset to Defaults", 0, 0, 0, 0, NULL, false},
     {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
   [SET_GRAPHICS] = {"SETTINGS - GRAPHICS", 8, {
@@ -3411,9 +3414,12 @@ static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
     {ROW_CHOICE, "Show FPS", 0, SET_FIELD(show_fps), 3, 1, kFpsNames, false},
     {ROW_CHOICE, "Names in Standings", 0, SET_FIELD(board_names), 2, 1, kOnOff, false},
     {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
-  [SET_GAMEPLAY] = {"SETTINGS - GAMEPLAY", 3, {
+  [SET_GAMEPLAY] = {"SETTINGS - GAMEPLAY", 6, {
     {ROW_CHOICE, "Screen Shake", 0, SET_FIELD(shake), 2, 1, kOnOff, false},
     {ROW_CHOICE, "Vibration", 0, SET_FIELD(rumble), 2, 1, kOnOff, NEED_RUMBLE},
+    {ROW_CHOICE, "Orbit Camera", 0, SET_FIELD(cam_orbit), 2, 1, kOnOff, false},
+    {ROW_CHOICE, "Tripod Camera", 0, SET_FIELD(cam_watch), 2, 1, kOnOff, false},
+    {ROW_CHOICE, "Far Camera", 0, SET_FIELD(cam_far), 2, 1, kOnOff, false},
     {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
   [SET_CONTROLS] = {"SETTINGS - CONTROLS", 13, {
     {ROW_CHOICE, "Steer and Stunt With", 0, SET_FIELD(steer_dpad), 2, 1, kSteerNames, false},
@@ -3437,7 +3443,7 @@ typedef struct { int32_t page, row; } SettingsUi;
 // A touch's target: what it selects (sel = sel_value) and the button it
 // presses on release (BTN_COUNT: none).
 typedef struct { int32_t *sel; int32_t sel_value; Button btn; } TouchHit;
-typedef enum { SETTINGS_STAY, SETTINGS_EXIT, SETTINGS_BENCH } SettingsAction;
+typedef enum { SETTINGS_STAY, SETTINGS_EXIT, SETTINGS_BENCH, SETTINGS_STRESS } SettingsAction;
 
 static int32_t *settings_field(GameSettings *s, const SettingsRow *r) {
   return (int32_t *)((char *)s + r->off);
@@ -3519,7 +3525,7 @@ static SettingsAction settings_screen_input(SettingsUi *ui, GameSettings *s, int
     } else if (row->kind == ROW_BACK) {
       back = true;
     } else if (row->kind == ROW_BENCH) {
-      return SETTINGS_BENCH;
+      return row->page ? SETTINGS_STRESS : SETTINGS_BENCH;
     }
   }
   if (back) {
@@ -3681,6 +3687,7 @@ typedef struct {
   int32_t n;
   BenchFrame *f;
   bool ended_early; // the race ended (wasted / finished) before the time was up
+  bool stress;      // the Stress Test: Extended's biggest stage, a full field (NFM_MAX_CARS)
   char lines[14][80];
   int32_t nlines;
   char path[1024];
@@ -3823,7 +3830,7 @@ static void bench_result_draw(Graphics2D *g, const Bench *b) {
   gfx_fill_rect(g, 80, 22, 640, 32);
   gfx_set_color(g, SET_YELLOW);
   font_set(FONT_BOLD, 22);
-  draw_centered(g, "PERFORMANCE TEST", 400, 46);
+  draw_centered(g, b->stress ? "STRESS TEST" : "PERFORMANCE TEST", 400, 46);
   font_set(FONT_BOLD, 18);
   gfx_set_color(g, 17, 17, 17);
   gfx_fill_rect(g, 80, 70, 640, 34 * b->nlines + 20);
@@ -6358,9 +6365,10 @@ int game_run(void) {
       if (act == SETTINGS_EXIT) {
         if (progress_path_ok) game_settings_save(progress_path, &settings);
         state = settings_return;
-      } else if (act == SETTINGS_BENCH) {
+      } else if (act == SETTINGS_BENCH || act == SETTINGS_STRESS) {
         if (progress_path_ok) game_settings_save(progress_path, &settings);
         bench_start = true;
+        bench.stress = act == SETTINGS_STRESS;
       }
     } else if (state == STATE_BENCH_RESULT) {
       if (KEY_EDGE(BTN_CONFIRM) || KEY_EDGE(BTN_CANCEL)) state = STATE_MAIN_MENU;
@@ -6379,7 +6387,13 @@ int game_run(void) {
         bench.n = 0;
         bench.ended_early = false;
         gmode = GMODE_FREE_PLAY;
-        stage_num = getenv("NFM_BENCH_STAGE") ? atoi(getenv("NFM_BENCH_STAGE")) : BENCH_STAGE;
+        ext_normal = ext_career = g_ext_career = false;
+        if (getenv("NFM_BENCH_STRESS")) bench.stress = true;
+        // The Stress Test races Free Play's last stage, Extended's biggest
+        // (28, "A Competitive Ending", 189 pieces).
+        stage_num = getenv("NFM_BENCH_STAGE") ? atoi(getenv("NFM_BENCH_STAGE"))
+                    : bench.stress            ? FREE_PLAY_LAST_STAGE
+                                              : BENCH_STAGE;
         car_index = BENCH_CAR;
         stage_read_name(stage_num, stage_name_buf, sizeof(stage_name_buf));
         nfm_set_seed(BENCH_SEED);
@@ -6655,6 +6669,7 @@ int game_run(void) {
       // every per-race loop from here on (reset, sortcars, construction,
       // collision, checkstat, AI, cleanup) sees the right car count.
       nplayers = race_nplayers > 0 ? race_nplayers : (ext_normal ? EXT_NORMAL_PLAYERS : BOTS_MAX_PLAYERS);
+      if (bench.active && bench.stress) nplayers = NFM_MAX_CARS;
       if (ext_career) {
         // randomno (XT 18144): the career's field size for the stage.
         memset(&crace, 0, sizeof(crace));
@@ -7834,9 +7849,13 @@ int game_run(void) {
       // (xt_graphics.c gates its SFX decisions on it); `mutem` gets
       // applied to the music stream just below, and the view cycle feeds
       // the camera dispatch further down.
-      if (KEY_EDGE(BTN_VIEW)) {
-        race_view++;
-        if (race_view == (xt.extended ? 4 : 3)) race_view = 0; // :3635-3638; Extended's far camera is 3
+      {
+        // :3635-3638; Extended's far camera is 3. Settings > Gameplay can
+        // take any but the chase camera (0) out of the cycle.
+        const bool cam_on[4] = {true, settings.cam_orbit != 0, settings.cam_watch != 0,
+                                xt.extended && settings.cam_far != 0};
+        if (KEY_EDGE(BTN_VIEW)) do race_view = (race_view + 1) % 4; while (!cam_on[race_view]);
+        if (!cam_on[race_view]) race_view = 0;
       }
       if (KEY_EDGE(BTN_MUTE_MUSIC)) {
         control[0].mutem = !control[0].mutem;
@@ -8347,6 +8366,28 @@ int game_run(void) {
           gfx_fill_rect(&g, 12, y0 + 14, fill, 4);
           gfx_set_color(&g, 70, 70, 70);
           gfx_draw_rect(&g, 12, y0 + 14, 200, 4);
+          {
+            // This port's addition: the bar's numbers, and "+N XP" for what the
+            // last second or so earned (checkpoints, wastes, stunts summed).
+            static int32_t xp_prev = -1, xp_shown = 0, xp_timer = 0;
+            if (starcnt > 0 || xp_prev < 0) xp_prev = csave.exp[me], xp_shown = 0, xp_timer = 0;
+            const int32_t delta = csave.exp[me] - xp_prev;
+            xp_prev = csave.exp[me];
+            if (delta > 0) {   // a level-up lowers exp: not a gain
+              xp_shown = xp_timer > 0 ? xp_shown + delta : delta;
+              xp_timer = 90;
+            }
+            char xs[32];
+            snprintf(xs, sizeof(xs), "%d / %d", (int)csave.exp[me], (int)crun.expneeded);
+            gfx_set_color(&g, 200, 200, 200);
+            font_draw(&g, xs, 212 - font_width(xs), y0 + 11);
+            if (xp_timer > 0) {
+              xp_timer--;
+              snprintf(xs, sizeof(xs), "+%d XP", (int)xp_shown);
+              gfx_set_color(&g, 90, 200, 255);
+              font_draw(&g, xs, 18 + font_width(lv), y0 + 11);
+            }
+          }
           // stat$m's bonus stat point popups (XT 5631-5835), sliding in from
           // the left: the waste's in red, the checkpoint's under it in green.
           // (The original's running totals beside them are left out.) Their
@@ -10576,7 +10617,7 @@ int game_run(void) {
           snprintf(btxt, sizeof(btxt), "PERFORMANCE TEST  %d S",
                    bench_seconds - (int32_t)((prof_now - bench.start_us) / 1000000u));
         } else {
-          snprintf(btxt, sizeof(btxt), "PERFORMANCE TEST");
+          snprintf(btxt, sizeof(btxt), bench.stress ? "STRESS TEST" : "PERFORMANCE TEST");
         }
         font_set(FONT_BOLD, 13);
         const int32_t tw = font_width(btxt);

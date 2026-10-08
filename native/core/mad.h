@@ -133,6 +133,7 @@ typedef struct Mad {
   bool isabot;           // the career's recorded bot drives this car (Madness.isabot): no random bumps, no
                          // auto-righting, its special charges as the player's; a hit ends it (bot_hit)
   bool bot_hit;          // it collided with a car since game.c last looked (Bots.botbreak)
+  bool specend;          // its special ran out this tick: specials.c clears fixspecials (Madness 3143)
 
   // Extended's career stage scripts (career_stage.h): the stage-gated physics
   // (gravity, floors, ice/sand/water, nofix, stage 11's undead wrecks,

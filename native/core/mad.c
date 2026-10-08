@@ -37,7 +37,7 @@ void mad_reseto(Mad *mad, int32_t cn, ContO *contO, CheckPoints *checkPoints) {
   mad->spatk = 0.0f;
   mad->speclast = 0.0f;
   mad->speclast2 = 120.0f;
-  mad->specialact = mad->frozen = mad->strswap = mad->leech = mad->redstr = false;
+  mad->specialact = mad->specend = mad->frozen = mad->strswap = mad->leech = mad->redstr = false;
   // Extended (Madness.java:1080-1087): M A S H E E N takes less damage and
   // reaches further in Classic Mode, in this car's copy of the tables.
   if (mad->xt->extended) {
@@ -792,6 +792,7 @@ static void mad_special_tick(Mad *mad, Control *control) {
   if (mad->speclast == 0.0f && mad->spatk == 120.0f) {
     mad->spatk = 0.0f;
     mad->specialact = false;
+    mad->specend = true;   // xt.fixspecials[im] = false
   }
   if (mad->speclast == 0.0f && mad->spatk == 0.0f) {
     mad->speclast = 120.0f;

@@ -133,6 +133,12 @@ void specials_tick(Specials *sp, Mad *mads, Control *controls, int32_t nplayers,
 
   // Who has a special running (:6487-6497).
   for (int32_t c = 0; c < nplayers; c++) {
+    if (mads[c].specend) {
+      // Madness 3143: a spent special is over (both bars refill the same
+      // tick, so the speclast2 test below never sees it reach 0).
+      sp->fixspecials[c] = false;
+      mads[c].specend = false;
+    }
     if (mads[c].specialact) sp->fixspecials[c] = true;
     if (sp->fixspecials[c] && mads[c].speclast2 == 0.0f) sp->fixspecials[c] = false;
     if (sp->fixspecials[c] && !mads[c].specialact) mads[c].specialact = true;

@@ -203,6 +203,9 @@ typedef struct {
   // Gameplay
   int32_t shake;        // 0/1: the screen shake on a crash (the original's `shaka`)
   int32_t rumble;       // 0/1: controller vibration on a crash, where the platform has it
+  int32_t cam_orbit;    // 0/1: the view button cycles through the orbit camera...
+  int32_t cam_watch;    // 0/1: ...the roadside tripod...
+  int32_t cam_far;      // 0/1: ...and Extended's far camera (the chase camera always)
   // Controls (the Switch only)
   int32_t steer_dpad;          // 0 steer and stunt with the left stick, 1 with the D-pad
   int32_t bind[BIND_COUNT];    // per BindAction, an index into game.c's kPadNames
