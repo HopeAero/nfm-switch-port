@@ -7181,6 +7181,7 @@ int game_run(void) {
       xt.classicmode = !ext_spec[0] || strncmp(ext_spec, "classictracks", 13) == 0;
       xt.ptmatch = PT_ACTIVE ? ptmatch : 0;
       xt.wasteonly = false;   // set below for Free Play's Wasting Only
+      xt.nfmpower = gmode == GMODE_NFM1 || gmode == GMODE_NFM2;   // NFM 2's own power rule there
       xt.career.careermode = false;   // set again below when the career races
       xt.im = 0;
 

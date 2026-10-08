@@ -122,6 +122,7 @@ typedef struct {
   bool classicmode; // Extended's Classic Mode: NFM 2's stages and cars (M A S H E E N's own rules)
   int32_t ptmatch;   // Extended's Premier Tournament match 1..5, 0 otherwise
   bool wasteonly;    // Free Play's "Wasting Only": the AI hunts every car (control.c)
+  bool nfmpower;     // the NFM 1 / NFM 2 campaigns: NFM 2's power rule, not Extended's 0.76 (mad.c)
   bool lan;
   int32_t starcnt;
   bool mutes;

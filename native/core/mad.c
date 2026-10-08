@@ -965,7 +965,9 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
       // AI's does not. Career acceleration points scale it back up
       // (powfactor, career_power_factor).
       const bool ext = mad->xt->extended;
-      if (ext && mad->im == 0 && mad->power != 98.0f && !career_phys_noslow(cs, mad->im)) power = (float)((double)power * mad->powfactor);
+      // NFM 2 itself never had it: the NFM 1 / NFM 2 campaigns race without.
+      if (ext && !mad->xt->nfmpower && mad->im == 0 && mad->power != 98.0f && !career_phys_noslow(cs, mad->im))
+        power = (float)((double)power * mad->powfactor);
       if (control->down && !career_phys_forcehandb(cs, mad->im)) {
         if (mad->speed > 0.0f) {
           // Java: `speed -= handb / 2` -- int division, 7/2 is 3; Extended's
