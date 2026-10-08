@@ -97,6 +97,9 @@ add_library(nfm_core STATIC
   core/ext_mode.c
   core/ext_pt.c
   core/new_cars.c
+  core/career.c
+  core/career_lineup.c
+  core/career_stats.c
   core/car_identity.c
   core/progress.c
   core/wav_decode.c

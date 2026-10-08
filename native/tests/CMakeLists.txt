@@ -263,6 +263,28 @@ add_executable(radical_mod_test
 )
 target_link_libraries(radical_mod_test ZLIB::ZLIB)
 
+add_executable(career_test
+  career_test.c
+  ../core/career.c
+  ../core/career_stats.c
+  ../core/java_compat.c
+)
+target_link_libraries(career_test m)
+
+add_executable(career_stats_test
+  career_stats_test.c
+  ../core/career_stats.c
+  ../core/java_compat.c
+)
+target_link_libraries(career_stats_test m)
+
+add_executable(career_lineup_test
+  career_lineup_test.c
+  ../core/career_lineup.c
+  ../core/java_compat.c
+)
+target_link_libraries(career_lineup_test m)
+
 add_executable(ogg_music_test
   ogg_music_test.c
   ../core/ogg_music.c
@@ -323,6 +345,9 @@ add_test(NAME wav_decode_test COMMAND wav_decode_test WORKING_DIRECTORY ${CMAKE_
 add_test(NAME audio_mixer_test COMMAND audio_mixer_test)
 add_test(NAME radical_mod_test COMMAND radical_mod_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_test(NAME bots_test COMMAND bots_test)
+add_test(NAME career_test COMMAND career_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_test(NAME career_stats_test COMMAND career_stats_test)
+add_test(NAME career_lineup_test COMMAND career_lineup_test)
 add_test(NAME ogg_music_test COMMAND ogg_music_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 # vfs_test reads the real stages/1.txt with a path relative to this build
 # dir (native/tests/build/) -- WORKING_DIRECTORY pins that regardless of

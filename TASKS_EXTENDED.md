@@ -138,5 +138,29 @@ fixes for many cars in view (trackgrid, archive loading) are reused.
 
 ## Phase 4 -- RPG / career
 
-- [ ] careermode, levels, perks, bonus stages, beasts, shadows, undead, boss,
-      recorded bots, teleports, stage effects, Ogg music, saves.
+Map of the original: docs/extended-career.md.
+
+- [x] Milestone 1, a career you can play through (2026-10-07): the game-mode
+      menu's fifth row "RPG Mode" (data/port/career_label.png); normal mode's
+      flow on careertracks.radq 1-31; career.txt beside the progress file
+      (career.c, its own text format, written aside and renamed); the car
+      locks (stage wins, bonus prizes); per car level, experience and stat
+      points, spent in the car select's panel (the Special button); the
+      field (career_lineup.c: randomno, sortcars, beasts, sortshadows, the
+      original's re-roll over loads) and every opponent's level and points
+      (career_stats.c: airpgstats whole), both tested against the JS
+      transpile; each car's points into its stats (career_apply_stats, per
+      racing slot, specials rebuild from them); the player's power factor;
+      experience from checkpoints, wastes, stunts, full power and the win,
+      level-ups, the loss on the newest stage given back; the HUD's level
+      bar; winning the newest stage opens the next; Ogg music (stages 1-25)
+      and modules (26-28). Headless: NFM_CAREER=1 NFM_STAGE_NUM=n
+      NFM_CAR_INDEX=c (a career.txt with unlocked >= n), NFM_CAREER_PANEL=1.
+- [ ] Beasts (B models, x3 powerloss, x2 radius), shadows (dark outline),
+      undead (immortal, out of the ranking), the Titan boss on 23.
+- [ ] Stage effects and gimmicks per stage (Medium.effect, water, snow,
+      floors and teleports on 13, lives on 20, crumbling 21, gravity 15).
+- [ ] Career AI (Control's per-stage branches) and recorded bots.
+- [ ] Bonus stages 1-4 and their prizes, scouting, perks (car points),
+      bonus stat point rolls (winchance/killchance), stat changers / sell,
+      hard / scale / no levels, opponent levels on the HUD, start grids.

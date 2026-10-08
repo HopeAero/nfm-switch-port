@@ -2,7 +2,10 @@
 label, lettered like options2.png's NFM 1 / NFM 2 / Free Play (Adventure,
 the same orange, 16 px tall). Run:
 
-    python3 tools/bake_menu_label.py <path to Adventure.ttf>
+    python3 tools/bake_menu_label.py <path to Adventure.ttf> [text] [out.png]
+
+(defaults "Extended", data/port/extended_label.png; "RPG Mode" makes
+data/port/career_label.png).
 """
 import io
 import sys
@@ -14,11 +17,13 @@ from PIL import Image, ImageDraw, ImageFont
 ref = Image.open(io.BytesIO(zipfile.ZipFile('data/images.zip').read('options2.png'))).convert('RGBA')
 orange = Counter(p[:3] for p in ref.getdata() if p[3] > 200).most_common(1)[0][0]
 font = ImageFont.truetype(sys.argv[1], 17)
+text = sys.argv[2] if len(sys.argv) > 2 else 'Extended'
+out = sys.argv[3] if len(sys.argv) > 3 else 'data/port/extended_label.png'
 d0 = ImageDraw.Draw(Image.new('RGBA', (1, 1)))
-w = int(d0.textlength('Extended', font=font)) + 4
+w = int(d0.textlength(text, font=font)) + 4
 im = Image.new('RGBA', (w, 16), (0, 0, 0, 0))
 d = ImageDraw.Draw(im)
 for dx in (0, 1):
-    d.text((1 + dx, 8), 'Extended', font=font, fill=orange + (255,), anchor='lm')
-im.save('data/port/extended_label.png')
-print('data/port/extended_label.png', im.size, orange)
+    d.text((1 + dx, 8), text, font=font, fill=orange + (255,), anchor='lm')
+im.save(out)
+print(out, im.size, orange)

@@ -125,6 +125,8 @@ typedef struct Mad {
   float strengthreduce;  // the strength a swap hands over
   double wxzd;           // Extended's double ContO.wxz (its cars turn 7.5 a tick); contO->wxz is its int
   int32_t lastcolider;   // the car that last hit this one (its im), -1 none: who a wasting is credited to
+  double powfactor;      // Extended: the player's power below full counts this much (0.76; career raises it)
+  float stunt_gain;      // landed stunts' powerup since game.c last read it (career experience)
 
   CarDefine *cd;   // borrowed
   Medium *m;       // borrowed

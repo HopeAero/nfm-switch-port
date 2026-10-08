@@ -53,10 +53,12 @@ int32_t specials_ext_car(int32_t cn);
 void specials_reset(Specials *sp);
 
 /** One race tick, after every car's drive (Extended calls it each frame of
- * the race, GameSparker.java:2565). `base` holds each car's own stats, which
- * every car's live copy (mad->cd) is rebuilt from. `nplayers` <= 8. */
+ * the race, GameSparker.java:2565). `base_all` holds each car's own stats,
+ * which every car's live copy (mad->cd) is rebuilt from; `slot_bases`, when
+ * not NULL, one CarDefine per racing slot instead (the career's, each car
+ * with its own points). */
 void specials_tick(Specials *sp, Mad *mads, Control *controls, int32_t nplayers, CheckPoints *cp,
-                   const CarDefine *base);
+                   const CarDefine *base_all, const CarDefine *slot_bases);
 
 /** The car-select description of `cn`'s special, up to 4 lines (NULL-ended). */
 const char *const *specials_describe(int32_t cn);

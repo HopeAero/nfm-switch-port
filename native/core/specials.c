@@ -119,7 +119,7 @@ static void status_lines(Specials *sp, Mad *mads, int32_t nplayers) {
 }
 
 void specials_tick(Specials *sp, Mad *mads, Control *controls, int32_t nplayers, CheckPoints *cp,
-                   const CarDefine *base) {
+                   const CarDefine *base_all, const CarDefine *slot_bases) {
   if (nplayers > SPECIALS_MAX) nplayers = SPECIALS_MAX;
   for (int32_t a = 0; a < nplayers; a++) {
     if (mads[a].dest) {
@@ -329,6 +329,7 @@ void specials_tick(Specials *sp, Mad *mads, Control *controls, int32_t nplayers,
   for (int32_t a3 = 0; a3 < nplayers; a3++) {
     Mad *md = &mads[a3];
     CarDefine *live = md->cd;
+    const CarDefine *base = slot_bases ? &slot_bases[a3] : base_all;
     const int32_t c = md->cn, e = specials_ext_car(c);
     const int32_t *bsw = base->swits[c];
     const float *bac = base->acelf[c];

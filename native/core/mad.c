@@ -13,6 +13,7 @@ void mad_init(Mad *mad, CarDefine *cd, Medium *m, Record *rpd, XtGraphicsStub *x
   mad->nmlt = 1;
   mad->focus = -1;
   mad->power = 75.0f;
+  mad->powfactor = 0.76;
   mad->fixes = -1;
   mad->cd = cd;
   mad->m = m;
@@ -865,9 +866,10 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
       if (power < 40.0f) power = 40.0f;
       // Extended (Madness.java:1587-1608, carried from the older NFM 2): the
       // player's power counts for 0.76 of itself until it is full, 98. The
-      // AI's does not. (Career stat points scale it back up; not ported.)
+      // AI's does not. Career acceleration points scale it back up
+      // (powfactor, career_power_factor).
       const bool ext = mad->xt->extended;
-      if (ext && mad->im == 0 && mad->power != 98.0f) power = (float)((double)power * 0.76);
+      if (ext && mad->im == 0 && mad->power != 98.0f) power = (float)((double)power * mad->powfactor);
       if (control->down) {
         if (mad->speed > 0.0f) {
           // Java: `speed -= handb / 2` -- int division, 7/2 is 3; Extended's
@@ -1952,6 +1954,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
           if (abs(mad->travxz) > 90) mad->powerup = mad->powerup + (float)abs(mad->travxz) / 18.0f;
           if (mad->surfer) mad->powerup = mad->powerup + (mad->xt->extended ? 15.0f : 30.0f);   // Extended halves it (Madness.java:2869)
           mad->power = mad->power + mad->powerup;
+          mad->stunt_gain += mad->powerup;   // the career's stunt experience (game.c consumes it)
           // Extended (Madness.java:2900-2916): a landed stunt charges the
           // special bar too -- a third of it for the AI's ordinary stunts, a
           // fifth for the player's and for big ones -- unless one is running.

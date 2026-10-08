@@ -89,6 +89,7 @@
 #include "ext_mode.h"
 #include "ext_pt.h"
 #include "new_cars.h"
+#include "career.h"
 #include "diag.h"
 
 // GameSparker.js's own ContO[610] held NFM 2's stages; Extended's reach 1106
@@ -212,22 +213,34 @@ static bool load_stage_objects(ContO **objects_ptr, int32_t *count_ptr, int32_t 
   return ok;
 }
 
+// The career (career.c) runs on normal mode's flow with its own stages:
+// careertracks.radq 1-31, no tournament.
+static bool g_ext_career = false;
+
 // Extended's normal-mode stage `stage` as a "pack:entry" spec (26 is the
 // Premier Tournament's match `ptmatch`).
 static void ext_stage_spec(int32_t stage, int32_t ptmatch, char *out, size_t outsz) {
   char pack[16], entry[16];
+  if (g_ext_career) {
+    snprintf(out, outsz, "careertracks:%d.txt", (int)stage);
+    return;
+  }
   ext_stage_entry(stage, ptmatch, pack, sizeof(pack), entry, sizeof(entry));
   snprintf(out, outsz, "%s:%s", pack, entry);
 }
 
 /** A normal-mode stage's name, from its file's name(...) line. */
 static void ext_read_name(int32_t stage, char *out, size_t outsz) {
-  if (stage == EXT_PT_STAGE) {
+  if (stage == EXT_PT_STAGE && !g_ext_career) {
     snprintf(out, outsz, "The Premier Tournament");
     return;
   }
   char pack[16], entry[16];
   ext_stage_entry(stage, 1, pack, sizeof(pack), entry, sizeof(entry));
+  if (g_ext_career) {
+    snprintf(pack, sizeof(pack), "careertracks");
+    snprintf(entry, sizeof(entry), "%d.txt", (int)stage);
+  }
   char *text = ext_stage_text(pack, entry);
   snprintf(out, outsz, "Stage %d", stage);
   if (!text) return;
@@ -365,6 +378,7 @@ typedef enum {
 // clicknow()'s prompt; the original asks for a mouse click.
 #define KEY_START_PROMPT "Press Cross to Start"
 #define KEY_ARRACE_HINT  "Press Up on the D-pad"
+#define KEY_SPECIAL "L"
 #elif defined(NFM_TARGET_SWITCH)
 // The Switch's buttons as platform/switch/{platform,input}.c bind them: the
 // same names and places on the Joy-Cons (handheld or paired) and on the Pro
@@ -379,6 +393,7 @@ typedef enum {
 #define KEY_BACK     PAD_ICON(b)
 #define KEY_START_PROMPT "Press " PAD_ICON(a) " to Start"
 #define KEY_ARRACE_HINT  key_arrace("Press")
+#define KEY_SPECIAL  kPadIcons[key_settings()->bind[BIND_SPECIAL]]
 #else
 #define KEY_STEER    "Arrow Keys"
 #define KEY_STUNT    "Arrow Keys"
@@ -389,6 +404,7 @@ typedef enum {
 #define KEY_START_PROMPT "Click here to Start"
 // The stage cards' hint (stages 3 and 14), in their own sentence case.
 #define KEY_ARRACE_HINT  "Press [ A ]"
+#define KEY_SPECIAL "S"
 #endif
 
 // The original's wide SPACEBAR key carries its label across its own face.
@@ -1141,9 +1157,23 @@ static void boot_loading_frame(Graphics2D *g, const BootImages *bi, int32_t done
 // Returned as an id so a re-race on the same track skips the re-render:
 // 1..32 are music/stageN.zip, 33 is party.zip.
 static int32_t stage_music_id(int32_t stage_num, int32_t gmode) {
+  if (gmode == 4) return 200 + stage_num;   // Extended's career (callers pass 4): careermusic
   if (gmode == 3) return 100 + stage_num;   // Extended's normal mode (callers pass 3), ext_stage_music
   if (stage_num == 27 && gmode == 2) return 33;
   return stage_num;
+}
+
+// The career's music (XT loadmusic 2633): stage N's stageNa.ogg once, then
+// stageNb.ogg looping (ogg_music.c). Held here while it plays.
+static uint8_t *g_career_ogg[2];
+static int32_t g_career_ogg_len[2];
+
+static void career_ogg_free(void) {
+  for (int32_t k = 0; k < 2; k++) {
+    free(g_career_ogg[k]);
+    g_career_ogg[k] = NULL;
+    g_career_ogg_len[k] = 0;
+  }
 }
 
 // ModuleLoader.loadMod() reads the zip's FIRST entry, whatever its name.
@@ -1158,6 +1188,32 @@ static bool load_music_track(int32_t id, RadicalTrack *out) {
       {220, 8000, 125}, {261, 8000, 125}, {276, 8800, 145}, {182, 8000, 125}, {220, 8000, 125},
       {200, 8000, 125}, {350, 7900, 125}, {310, 8000, 125}, {400, 7600, 125}};
   memset(out, 0, sizeof(*out));
+  if (id > 200) {
+    // Stages 1-25: an Ogg pair (played by audio_start_ogg, `out` stays
+    // empty); 26-28 a module in careermusic; 29-31 nothing.
+    career_ogg_free();
+    const int32_t st = id - 200;
+    if (st <= 25) {
+      char path[96];
+      for (int32_t k = 0; k < 2; k++) {
+        snprintf(path, sizeof(path), "ext/data/Files/careermusic/stage%d%c.ogg", (int)st, k ? 'b' : 'a');
+        g_career_ogg[k] = vfs_read_bytes(path, &g_career_ogg_len[k]);
+      }
+      return g_career_ogg[1] != NULL;
+    }
+    if (st > 28) return false;
+    char path[96];
+    snprintf(path, sizeof(path), "ext/data/Files/careermusic/stage%d.radq", (int)st);
+    VfsZip zip;
+    if (!vfs_read_zip(path, &zip)) return false;
+    // ponytail: normal mode's loadMod numbers for the same stage number;
+    // read the career's own from XT loadmusic if these sound off.
+    const ExtMusic mu = ext_stage_music(st);
+    bool ok = zip.count > 0 &&
+              radical_render_stage(zip.entries[0].data, (size_t)zip.entries[0].len, mu.amp, mu.rate, mu.tempo, out);
+    vfs_free_zip(&zip);
+    return ok;
+  }
   if (id > 100 && id <= 100 + EXT_NORMAL_STAGES) {
     // Extended's normal mode: ext/data/Files/music/stageN.radq, its own
     // loadMod(amp, rate, tempo) (ext_mode.c).
@@ -2703,7 +2759,7 @@ static void draw_main_menu(Graphics2D *g,
 static void draw_gamemode_menu(Graphics2D *g,
                                  HudImg bgmain, HudImg logomadbg, HudImg logomadnes,
                                  HudImg dude, HudImg logocars, HudImg opback, HudImg opti2,
-                                 HudImg byrd, HudImg nfmcoms, HudImg extlabel,
+                                 HudImg byrd, HudImg nfmcoms, HudImg extlabel, HudImg careerlabel,
                                  int32_t *bgmy_ptr, int32_t *flkat_ptr,
                                  int32_t *gxdu_ptr, int32_t *gydu_ptr, int32_t *movly_ptr,
                                  int32_t opselect, bool *aflk_ptr) {
@@ -2729,14 +2785,15 @@ static void draw_gamemode_menu(Graphics2D *g,
   // Drawing all rows unconditionally is therefore the FAITHFUL
   // behaviour, not a simplification of one.
   struct MenuOpt { int32_t x, y, w; int32_t r_aflk, g_aflk, b_aflk; int32_t r_solid, g_solid, b_solid; };
-  const struct MenuOpt opts[4] = {
+  const struct MenuOpt opts[5] = {
     { 358, 262,  82, 200,  64,   0, 255, 128,  0 },  // NFM 1     (Java opselect=0)
     { 358, 290,  82, 200,  64,   0, 255,  95,  0 },  // NFM 2     (Java opselect=1)
     { 348, 318, 102, 200,  64,   0, 255, 128,  0 },  // Free Play (Java opselect=3, moved from y=346)
     { 354, 346,  90, 200,  64,   0, 255, 128,  0 },  // Extended (its normal mode), the original's 4th slot
+    { 348, 374, 102, 200,  64,   0, 255, 128,  0 },  // RPG Mode, Extended's career
   };
 
-  for (int32_t i = 0; i < 4; i++) {
+  for (int32_t i = 0; i < 5; i++) {
     const struct MenuOpt *o = &opts[i];
     draw_menu_option_rect(g, o->x, o->y, o->w, 22, i == opselect,
                            o->r_aflk, o->g_aflk, o->b_aflk,
@@ -2772,6 +2829,8 @@ static void draw_gamemode_menu(Graphics2D *g,
                         0, 85, opti2.w, 15, opti2.w, opti2.h);
   }
   if (extlabel.tex >= 0) gfx_draw_image(g, extlabel.tex, 400 - extlabel.w / 2, 349, extlabel.w, extlabel.h);
+  if (careerlabel.tex >= 0)
+    gfx_draw_image(g, careerlabel.tex, 400 - careerlabel.w / 2, 377, careerlabel.w, careerlabel.h);
 
   // Footer bylines, same positions as main menu.
   if (byrd.tex >= 0) {
@@ -4037,6 +4096,7 @@ int game_run(void) {
   HudImg menu_opback = {-1, 0, 0};                          // opback.png -- brown pill
   HudImg menu_opti = {-1, 0, 0};                            // options.png -- main menu 4-option label block
   HudImg menu_extlabel = {-1, 0, 0};                        // data/port/extended_label.png -- the Extended row
+  HudImg menu_careerlabel = {-1, 0, 0};                     // data/port/career_label.png -- the RPG Mode row
   HudImg menu_opti2 = {-1, 0, 0};                           // options2.png -- gamemode submenu 4-option label block
   HudImg menu_opsettings = {-1, 0, 0};                      // data/port/opsettings.png -- this port's Settings row
   HudImg menu_byrd = {-1, 0, 0};                            // byrd.png -- byline
@@ -4169,6 +4229,7 @@ int game_run(void) {
       menu_opti = load_menu_png(&images_zip, "options.png");
       menu_opti2 = load_menu_png(&images_zip, "options2.png");
       menu_extlabel = load_menu_png_file("data/port/extended_label.png");
+      menu_careerlabel = load_menu_png_file("data/port/career_label.png");
       // This port's fourth main-menu row. Not an original asset: options.png's
       // style redrawn (tools/gen_menu_label.py), a loose file beside data/vita/.
       menu_opsettings = load_menu_png_file("data/port/opsettings.png");
@@ -4479,8 +4540,35 @@ int game_run(void) {
     if (getenv("NFM_PTMATCH")) ptmatch = atoi(getenv("NFM_PTMATCH"));
   }
   static ExtPT pt;               // the Premier Tournament (ext_pt.c)
+  // Extended's career ("RPG Mode", the game-mode menu's fifth row): normal
+  // mode's flow (ext_normal stays true) on careertracks.radq, with levels,
+  // experience and stat points per car (career.c). Saved to career.txt.
+  bool ext_career = false;
+  static CareerSave csave;
+  static CareerRace crace;
+  static CareerRun crun;          // this race's experience (career.c)
+  int32_t career_seen_clear = 0;  // the player's checkpoints already paid for
+  int32_t career_seen_dested[NFM_MAX_CARS] = {0};
+  bool career_settled = false;    // the race's end already paid or taken back
+  // The car select's stat panel: the player's points into the six stats
+  // (XT carselect 15705-15760, statincrease), one row at a time.
+  bool career_panel = false;
+  int32_t career_panel_row = 0;
+  if (getenv("NFM_CAREER_PANEL")) career_panel = true;   // headless: the panel open
+  career_reset(&csave);
+  char career_path[1100] = "";
+  // NFM_CAREER=1 (with NFM_STAGE_NUM, NFM_CAR_INDEX): race the career headless.
+  if (getenv("NFM_CAREER")) {
+    ext_normal = true;
+    ext_career = true;
+    g_ext_career = true;
+  }
   // The tournament is on: normal mode's stage 26 with a match picked.
-#define PT_ACTIVE (ext_normal && stage_num == EXT_PT_STAGE && ptmatch > 0)
+#define PT_ACTIVE (ext_normal && !ext_career && stage_num == EXT_PT_STAGE && ptmatch > 0)
+  // The stage reached and the last one, normal mode's or the career's.
+#define EXT_UNLOCKED (ext_career ? csave.unlocked : ext_prog.normal_unlocked)
+#define EXT_LAST_STAGE (ext_career ? CAREER_STAGES : EXT_NORMAL_STAGES)
+#define MUSIC_MODE (ext_career ? 4 : (ext_normal ? 3 : gmode))
   bool mainmenu_aflk = false;
   // Java xtGraphics.java:416 (`firstime = true`) + :44 (`oldfase`) -- the
   // first-run Instructions gate. The VERY first time the player picks
@@ -4574,6 +4662,12 @@ int game_run(void) {
   if (progress_path_ok) {
     game_progress_load_from_disk(&progress, progress_path);
     ext_progress_load(progress_path, &ext_prog);
+    {
+      const char *slash = strrchr(progress_path, '/');
+      const int dir = slash ? (int)(slash - progress_path) + 1 : 0;
+      snprintf(career_path, sizeof(career_path), "%.*scareer.txt", dir, progress_path);
+      career_load(career_path, &csave);
+    }
   } else {
     game_progress_reset(&progress);
   }
@@ -4646,6 +4740,7 @@ int game_run(void) {
   static Control control[NFM_MAX_CARS];
   static Mad mad[NFM_MAX_CARS];
   static CarDefine live_cd[NFM_MAX_CARS]; // each racing car's own stats (see mad_init below)
+  static CarDefine race_base[NFM_MAX_CARS]; // what specials rebuild each live_cd from (the career's points in)
   static Specials specials;                    // Extended's specials (specials.c)
   bool ext_listbars = false;                   // Extended's control.swap: list bars show specials
   // Which car (0-15) each slot drives -- ports xtGraphics.java's own
@@ -5096,8 +5191,8 @@ int game_run(void) {
       // hidden same as main menu.
       // A fourth row, Extended (its normal mode), where the original's own
       // fourth row sat.
-      if (KEY_EDGE(BTN_DOWN)) gamemode_opselect = (gamemode_opselect + 1) % 4;
-      if (KEY_EDGE(BTN_UP)) gamemode_opselect = (gamemode_opselect + 3) % 4;
+      if (KEY_EDGE(BTN_DOWN)) gamemode_opselect = (gamemode_opselect + 1) % 5;
+      if (KEY_EDGE(BTN_UP)) gamemode_opselect = (gamemode_opselect + 4) % 5;
       if (KEY_EDGE(BTN_CANCEL)) {
         state = STATE_MAIN_MENU;
       }
@@ -5112,8 +5207,11 @@ int game_run(void) {
           case 1: gmode = 2; break;  // NFM 2
           case 2: gmode = 0; break;  // Free Play
           case 3: gmode = 0; break;  // Extended (Free Play's flow, ext_normal)
+          case 4: gmode = 0; break;  // Extended's career (normal mode's flow, ext_career)
         }
-        ext_normal = gamemode_opselect == 3;
+        ext_normal = gamemode_opselect == 3 || gamemode_opselect == 4;
+        ext_career = gamemode_opselect == 4;
+        g_ext_career = ext_career;
         // :4646-4659 -- Java resets its cursor to 0 when confirming NFM2
         // or Free Play (its own opselect 1 and 3); the NFM1 branch does
         // not, but it is already 0 there so all three paths leave the
@@ -5134,6 +5232,11 @@ int game_run(void) {
           car_index = ext_normal ? EXT_FIRST_CAR : 0;   // Extended starts on its car 0, Remington
         }
         if (ext_normal) stage_num = ext_prog.normal_unlocked;
+        if (ext_career) {
+          // RPG MODE (XT 14573): the car and stage the player left off on.
+          car_index = ext_car_to_port(csave.lastcar);
+          stage_num = csave.laststage <= csave.unlocked ? csave.laststage : csave.unlocked;
+        }
         // Java stageselect :1914/:1925 -- entering the picker starts at
         // the next-to-unlock stage for the gmode. Free Play stays at
         // whatever stage_num already was so screenshot hooks keep working.
@@ -5196,8 +5299,26 @@ int game_run(void) {
       // values Java computes are all inside its `multion != 0` netplay
       // branch); this port's extra custom-car slot extends maxsl by one,
       // but only in Free Play, which is the only mode that can select it.
+      const bool career_car_open = ext_career && career_car_lock(&csave, ext_car_of(car_index)) == 0;
+      if (career_panel) {
+        const int32_t ec = ext_car_of(car_index);
+        if (KEY_EDGE(BTN_DOWN)) career_panel_row = (career_panel_row + 1) % CS_N;
+        if (KEY_EDGE(BTN_UP)) career_panel_row = (career_panel_row + CS_N - 1) % CS_N;
+        if ((KEY_EDGE(BTN_RIGHT) || KEY_EDGE(BTN_CONFIRM)) && csave.statpoints[ec] > 0) {
+          csave.sp[ec][career_panel_row]++;
+          csave.statpoints[ec]--;
+        }
+        if (KEY_EDGE(BTN_CANCEL) || KEY_EDGE(BTN_SPECIAL)) {
+          career_panel = false;
+          if (career_path[0]) career_save(career_path, &csave);
+        }
+      } else {
+      if (ext_career && career_car_open && car_flipo == 0 && KEY_EDGE(BTN_SPECIAL)) {
+        career_panel = true;
+        career_panel_row = 0;
+      }
       if (car_flipo == 0) {
-        int32_t car_maxsl = (gmode == GMODE_FREE_PLAY) ? car_last_index(ext_normal) : 15;
+        int32_t car_maxsl = (gmode == GMODE_FREE_PLAY) ? (ext_career ? CAR_COUNT - 1 : car_last_index(ext_normal)) : 15;
         if (KEY_EDGE(BTN_RIGHT) && car_index != car_maxsl) { car_nextc = 1; car_flipo = 20; }
         if (KEY_EDGE(BTN_LEFT) && car_index != 0) { car_nextc = -1; car_flipo = 20; }
       }
@@ -5214,7 +5335,9 @@ int game_run(void) {
       // -- game_progress_can_pick_car() is the same gate the locked-car
       // overlay's own visibility uses below.
       if (KEY_EDGE(BTN_CONFIRM) && car_flipo < 10) {
-        if (car_index == CUSTOM_CAR_INDEX || game_progress_can_pick_car(&progress, (GameMode)gmode, car_index)) {
+        const bool career_open = !ext_career || career_car_lock(&csave, ext_car_of(car_index)) == 0;
+        if (career_open &&
+            (car_index == CUSTOM_CAR_INDEX || game_progress_can_pick_car(&progress, (GameMode)gmode, car_index))) {
           // :6466 -- leaving car select clears the preview camera's `crs`
           // (draw_car_preview sets it). See the race setup for why it
           // matters.
@@ -5229,14 +5352,20 @@ int game_run(void) {
           if (gmode == GMODE_NFM1) progress.scm[0] = car_index;
           else if (gmode == GMODE_NFM2) progress.scm[1] = car_index;
           if (progress_path_ok) game_progress_save_to_disk(&progress, progress_path);
+          if (ext_career) {
+            csave.lastcar = ext_car_of(car_index);
+            if (career_path[0]) career_save(career_path, &csave);
+          }
+          career_panel = false;
           if (ext_normal) {
-            if (stage_num < 1 || stage_num > ext_prog.normal_unlocked) stage_num = ext_prog.normal_unlocked;
+            if (stage_num < 1 || stage_num > EXT_UNLOCKED) stage_num = EXT_UNLOCKED;
             ext_read_name(stage_num, stage_name_buf, sizeof(stage_name_buf));
             stage_preview_loaded_num = -1;
           }
           state = STATE_STAGE_SELECT;
         }
       }
+      }   // !career_panel
     } else if (state == STATE_STAGE_SELECT) {
       // Stage navigation -- :2594-2636, ported exactly. Three things this
       // port had wrong:
@@ -5262,8 +5391,8 @@ int game_run(void) {
                        : (gm == GMODE_NFM2) ? progress.unlocked[1] + 10
                        : -1;
       // Extended's normal mode: stages 1..28, up to the one reached.
-      const int32_t last_stage = ext_normal ? EXT_NORMAL_STAGES : 27;
-      if (ext_normal) frontier = ext_prog.normal_unlocked;
+      const int32_t last_stage = ext_normal ? EXT_LAST_STAGE : 27;
+      if (ext_normal) frontier = EXT_UNLOCKED;
       if (KEY_EDGE(BTN_RIGHT)) {
         if (frontier >= 0 && stage_num == frontier && stage_num != last_stage) {
           // :2614-2616 -- at the frontier, RIGHT shows the locked card.
@@ -5289,7 +5418,7 @@ int game_run(void) {
         car_select_needs_intro = true;
       }
       if (KEY_EDGE(BTN_CONFIRM)) {
-        if (ext_normal ? stage_num > ext_prog.normal_unlocked : !game_progress_can_pick_stage(&progress, gm, stage_num)) {
+        if (ext_normal ? stage_num > EXT_UNLOCKED : !game_progress_can_pick_stage(&progress, gm, stage_num)) {
           // Java cantgo() -- xtGraphics.java:1993, armed at :2615-2616.
           // The countdown is 100 frames, not the 40 this port used (its
           // comment asserted Java used 40; :2616 is `lockcnt = 100`).
@@ -5303,7 +5432,11 @@ int game_run(void) {
           // for ~30 frames (~1.6s at our 18.9 FPS tick rate; feels close
           // to the original applet's actual asset-fetch time on the JS's
           // own frame rate). Then flip to STATE_RACING.
-          if (ext_normal && stage_num == EXT_PT_STAGE) {
+          if (ext_career) {
+            csave.laststage = stage_num;
+            if (career_path[0]) career_save(career_path, &csave);
+          }
+          if (ext_normal && !ext_career && stage_num == EXT_PT_STAGE) {
             // Extended's Premier Tournament (ext_pt.c): five matches, each
             // shown with its rules first.
             ext_pt_start_tournament(&pt);
@@ -5370,8 +5503,11 @@ int game_run(void) {
       // loaded, i.e. as the "Please Wait" card gives way to musicomp().
       if (intro_frame >= 1 && stage_music_pending) {
         stage_music_pending = false;
-        if (stage_music_loaded_for == stage_music_id(stage_num, ext_normal ? 3 : gmode)) {
-          audio_start_music(&audio, &stage_music);
+        if (stage_music_loaded_for == stage_music_id(stage_num, MUSIC_MODE)) {
+          if (g_career_ogg[1] && ext_career)
+            audio_start_ogg(&audio, g_career_ogg[0], g_career_ogg_len[0], g_career_ogg[1], g_career_ogg_len[1]);
+          else
+            audio_start_music(&audio, &stage_music);
           audio_set_music_muted(&audio, control[0].mutem);
           interface_playing = false;
         }
@@ -5676,7 +5812,7 @@ int game_run(void) {
       // campaign slot, shouldn't restart the track from 0 -- though in
       // practice this whole setup block only runs once per STATE_RACING
       // entry anyway, so this guard mainly documents intent).
-      const int32_t music_id = stage_music_id(stage_num, ext_normal ? 3 : gmode);
+      const int32_t music_id = stage_music_id(stage_num, MUSIC_MODE);
       if (stage_music_loaded_for != music_id) {
         audio_stop_music(&audio); // stop referencing the OLD track before freeing it
         interface_playing = false;
@@ -5692,7 +5828,10 @@ int game_run(void) {
       // headless hooks) starts it here.
       stage_music_pending = state == STATE_STAGE_INTRO && stage_music_loaded_for == music_id;
       if (!stage_music_pending && stage_music_loaded_for == music_id) {
-        audio_start_music(&audio, &stage_music);
+        if (g_career_ogg[1] && ext_career)
+          audio_start_ogg(&audio, g_career_ogg[0], g_career_ogg_len[0], g_career_ogg[1], g_career_ogg_len[1]);
+        else
+          audio_start_music(&audio, &stage_music);
         interface_playing = false;
       }
       // GameSparker.java:2755-2767 -- the card's title line.
@@ -5809,7 +5948,7 @@ int game_run(void) {
       // Classic Mode is NFM 2's stages; Extended's own (its normal mode, or a
       // headless NFM_EXT_STAGE other than classictracks) are not.
       xt.classicmode = !ext_spec[0] || strncmp(ext_spec, "classictracks", 13) == 0;
-      xt.ptmatch = (ext_normal && stage_num == EXT_PT_STAGE) ? ptmatch : 0;
+      xt.ptmatch = PT_ACTIVE ? ptmatch : 0;
       xt.im = 0;
 
       // xtGraphics.java:2354-2358 (loadstage(), top of the function) --
@@ -5819,6 +5958,15 @@ int game_run(void) {
       // every per-race loop from here on (reset, sortcars, construction,
       // collision, checkstat, AI, cleanup) sees the right car count.
       nplayers = race_nplayers > 0 ? race_nplayers : (ext_normal ? EXT_NORMAL_PLAYERS : BOTS_MAX_PLAYERS);
+      if (ext_career) {
+        // randomno (XT 18144): the career's field size for the stage.
+        memset(&crace, 0, sizeof(crace));
+        crace.stage = stage_num;
+        crace.sc[0] = ext_car_of(car_index);
+        career_randomno(&crace, &csave);
+        nplayers = crace.nplayers;
+        if (race_nplayers > 0) nplayers = crace.nplayers = race_nplayers;
+      }
       // The starting grid, rows of three: Extended's (GameSparker.java:
       // 1555-1574), which for the first seven is exactly NFM 2's
       // inishcarselect() grid (xtGraphics.java:4847-4860): x 0/-350/350,
@@ -5896,8 +6044,23 @@ int game_run(void) {
       }
       // Extended's normal mode: its own sortcars (ext_mode.c), 11 cars; on
       // stage 26 every car, the player's too, is the match's.
-      if (ext_normal) {
+      if (ext_normal && !ext_career) {
         ext_sortcars(sc, nplayers, stage_num, ext_prog.normal_unlocked, stage_num == EXT_PT_STAGE ? ptmatch : 0);
+      }
+      if (ext_career) {
+        // The career's field (career_lineup.c), every opponent's level and
+        // stat points (career_stats.c); the player's from the save.
+        const int32_t me = crace.sc[0];
+        career_sortcars(&crace, &csave);
+        // A fresh Madness holds level 1 everywhere: what stage 31 keeps (its
+        // levels are never set, career_stats.c).
+        for (int32_t i = 1; i < CAREER_MAX_PLAYERS; i++) crace.level[i] = 1;
+        crace.level[0] = csave.level[me];
+        for (int32_t k = 0; k < CS_N; k++) crace.sp[0][k] = csave.sp[me][k];
+        float gripreset[CAREER_CARS];
+        for (int32_t e = 0; e < CAREER_CARS; e++) gripreset[e] = cd.grip[ext_car_to_port(e)];
+        career_airpgstats(&crace, &csave, gripreset);
+        for (int32_t i = 0; i < nplayers; i++) sc[i] = ext_car_to_port(crace.sc[i]);
       }
       // A tournament match reached straight from a hook (NFM_PTMATCH).
       if (PT_ACTIVE && pt.match != ptmatch) {
@@ -5917,11 +6080,22 @@ int game_run(void) {
         // Madness instances do: specials (and later tourney and career
         // stats) rewrite a car's values every frame without touching the
         // others or the car-select screen's `cd`.
-        live_cd[i] = cd;
+        race_base[i] = cd;
+        if (ext_career) {
+          career_apply_stats(&race_base[i], sc[i], crace.sc[i], crace.sp[i], crace.level[i], crace.shadow[i], i == 0);
+        }
+        live_cd[i] = race_base[i];
         mad_init(&mad[i], &live_cd[i], &m, &rpd, &xt, i);
         mad_reseto(&mad[i], sc[i], &co[i], &cp);
+        if (ext_career && i == 0) mad[i].powfactor = career_power_factor(crace.sc[0], crace.sp[0], crace.level[0]);
+        career_seen_dested[i] = 0;
       }
       specials_reset(&specials);
+      if (ext_career) {
+        career_run_start(&crun, &crace, &csave);
+        career_seen_clear = 0;
+        career_settled = false;
+      }
       // NFM_HOOK_SPECIALS=1: every bar starts full, to see specials headless.
       if (getenv("NFM_HOOK_SPECIALS")) for (int32_t i = 0; i < nplayers; i++) mad[i].spatk = mad[i].speclast = mad[i].speclast2 = 120.0f;
       // NFM_HOOK_VIEW=n and NFM_HOOK_LISTBARS=1: a camera and the list bars, headless.
@@ -6279,7 +6453,28 @@ int game_run(void) {
           // Extended's specials: charged bars fire, boosts and attacks
           // rewrite each car's live stats (xtGraphics.nitroandspecials).
           if (xt.extended) {
-            specials_tick(&specials, mad, control, nplayers, &cp, &cd);
+            specials_tick(&specials, mad, control, nplayers, &cp, &cd, race_base);
+            if (ext_career) {
+              // Experience (career.c): checkpoints, wastes, stunts, full
+              // power, level-ups -- stat$m and careermode$m's bookkeeping.
+              if (mad[0].clear != career_seen_clear && mad[0].clear != 0 && !race_holdit) {
+                career_seen_clear = mad[0].clear;
+                career_xp_checkpoint(&crun, &crace, &csave, cp.clear[0]);
+              }
+              for (int32_t k = 1; k < nplayers; k++) {
+                if (cp.dested[k] == 2 && career_seen_dested[k] != 2) career_xp_waste(&crun, &crace, &csave, k);
+                career_seen_dested[k] = cp.dested[k];
+              }
+              if (mad[0].stunt_gain > 0.0f) {
+                career_xp_stunt(&crun, &crace, &csave, mad[0].stunt_gain,
+                                career_stunt_stat(&cd, sc[0], csave.sp[crace.sc[0]]));
+              }
+              const bool full = mad[0].power == 98.0f && starcnt == 0 && !mad[0].dest && !race_holdit &&
+                                fabsf(mad[0].speed) > 0.0f;
+              career_tick(&crun, &crace, &csave, starcnt == 0, full);
+              crace.level[0] = csave.level[crace.sc[0]];
+            }
+            for (int32_t k = 0; k < nplayers; k++) mad[k].stunt_gain = 0.0f;
             if (PT_ACTIVE) {
               // tourney() (ext_pt.c): wasting matches revive cars and score
               // kills, the racing ones hold damage at 0, eliminated cars go.
@@ -6353,7 +6548,16 @@ int game_run(void) {
             // Extended's finish() (XT 12648-12672): winning the newest
             // normal-mode stage opens the next.
             ext_justwon = false;
-            if (ext_normal && race_winner && stage_num != EXT_PT_STAGE) {
+            if (ext_career && race_winner) {
+              // finish() (XT 12499-12510): winning the newest stage opens
+              // the next, up to 31.
+              if (stage_num == csave.unlocked && csave.unlocked < CAREER_STAGES) {
+                csave.unlocked++;
+                csave.statchangers[0] = csave.statchangers[1] = 1;
+                ext_justwon = true;
+              }
+              if (career_path[0]) career_save(career_path, &csave);
+            } else if (ext_normal && !ext_career && race_winner && stage_num != EXT_PT_STAGE) {
               const int32_t nu = ext_unlock_after_win(ext_prog.normal_unlocked, stage_num);
               ext_justwon = nu != ext_prog.normal_unlocked;
               ext_prog.normal_unlocked = nu;
@@ -6470,6 +6674,14 @@ int game_run(void) {
               }
             }
           }
+        }
+        if (ext_career && race_holdit && !career_settled && state == STATE_RACING) {
+          // stat$m: a win pays (by racing or by wasting), a loss on the
+          // newest stage takes the race's experience back. Saved now.
+          if (race_winner) career_xp_win(&crun, &crace, &csave, cp.nsp, cp.nlaps, race_end_kind == RACE_END_FINISH);
+          else career_xp_lose(&crun, &crace, &csave);
+          career_settled = true;
+          if (career_path[0]) career_save(career_path, &csave);
         }
         // The camera -- once per tick, after the cars move, as in the Java's
         // loop. (It ran once per display frame, which ran the fly-by orbit,
@@ -7031,6 +7243,31 @@ int game_run(void) {
         if (cp.nlaps > 0) snprintf(hud, sizeof(hud), "%d / %d", mad[0].nlaps + 1, cp.nlaps);
         else snprintf(hud, sizeof(hud), "-");
         font_draw(&g, hud, 51, 18);
+        if (ext_career) {
+          // careermode$m's experience bar (XT 9164-9196), bottom left:
+          // "level N" over a 200-wide bar in 50 cells.
+          const int32_t me = crace.sc[0];
+          char lv[24];
+          snprintf(lv, sizeof(lv), "level %d", (int)csave.level[me]);
+          font_set(FONT_BOLD, 10);
+          const int32_t y0 = 450 - 24;
+          gfx_set_composite(&g, 180.0f / 255.0f);
+          gfx_set_color(&g, 0, 0, 0);
+          gfx_fill_rect(&g, 7, y0, 211, 22);
+          gfx_set_composite(&g, 1.0f);
+          gfx_set_color(&g, 255, 255, 255);
+          font_draw(&g, lv, 12, y0 + 11);
+          int32_t fill = crun.expneeded > 0 ? (int32_t)(200.0f * ((float)csave.exp[me] / (float)crun.expneeded)) : 0;
+          if (fill > 200) fill = 200;
+          if (fill < 0) fill = 0;
+          gfx_set_color(&g, 120, 120, 120);
+          gfx_fill_rect(&g, 12, y0 + 14, 200, 4);
+          gfx_set_color(&g, 0, 125, 250);
+          gfx_fill_rect(&g, 12, y0 + 14, fill, 4);
+          gfx_set_color(&g, 70, 70, 70);
+          gfx_draw_rect(&g, 12, y0 + 14, 200, 4);
+          font_set(FONT_BOLD, 12);
+        }
         if (PT_ACTIVE && (pt.match == 1 || pt.match == 4 || pt.match == 5)) {
           // tourney()'s scoreboard (XT 5718-5733): the top three and yours,
           // bottom left, moved from its 480-tall screen.
@@ -7763,7 +8000,7 @@ int game_run(void) {
       draw_gamemode_menu(&g,
                           menu_bgmain, menu_logomadbg, menu_logomadnes,
                           menu_dude[0], menu_logocars, menu_opback, menu_opti2,
-                          menu_byrd, menu_nfmcoms_asset, menu_extlabel,
+                          menu_byrd, menu_nfmcoms_asset, menu_extlabel, menu_careerlabel,
                           mainbg_bgmy, &mainmenu_flkat,
                           &mainmenu_gxdu, &mainmenu_gydu, &mainmenu_movly,
                           gamemode_opselect, &mainmenu_aflk);
@@ -8212,7 +8449,7 @@ int game_run(void) {
             // the old wrap-and-skip loop is no longer needed; the bound is
             // recomputed here rather than shared because the two sites run
             // in different phases of the frame.
-            int32_t car_maxsl = (car_gm == GMODE_FREE_PLAY) ? car_last_index(ext_normal) : 15;
+            int32_t car_maxsl = (car_gm == GMODE_FREE_PLAY) ? (ext_career ? CAR_COUNT - 1 : car_last_index(ext_normal)) : 15;
             car_index += (car_nextc > 0) ? 1 : -1;
             if (ext_normal && car_index == CUSTOM_CAR_INDEX) car_index += (car_nextc > 0) ? 1 : -1;
             if (car_index < 0) car_index = 0;
@@ -8264,8 +8501,52 @@ int game_run(void) {
       // the unlock-condition text. Skipped for the custom car slot (its
       // own, unrelated "Private Car" restriction is out of scope, see
       // game_progress_can_pick_car's doc comment).
+      if (ext_career && career_car_lock(&csave, ext_car_of(car_index)) == 0) {
+        // The car's career: level, experience, unspent points.
+        const int32_t ec = ext_car_of(car_index);
+        // Right of the special's box, under the name.
+        char line[96];
+        snprintf(line, sizeof(line), "Level %d    XP %d / %d", (int)csave.level[ec], (int)csave.exp[ec],
+                 (int)career_reqneed(csave.level[ec], ec));
+        font_set(FONT_BOLD, 12);
+        gfx_set_color(&g, 255, 196, 0);
+        draw_centered(&g, line, 575, 116);
+        snprintf(line, sizeof(line), "Stat points: %d", (int)csave.statpoints[ec]);
+        draw_centered(&g, line, 575, 132);
+        if (!career_panel) {
+          char hint[64];
+          snprintf(hint, sizeof(hint), "Press %s to upgrade", KEY_SPECIAL);
+          gfx_set_color(&g, 200, 200, 200);
+          font_set(FONT_BOLD, 11);
+          draw_centered(&g, hint, 575, 147);
+        } else {
+          static const char *const kStatNames[CS_N] = {"Top Speed", "Acceleration", "Handling",
+                                                       "Stunts",    "Strength",     "Endurance"};
+          gfx_set_composite(&g, 0.85f);
+          gfx_set_color(&g, 10, 14, 30);
+          gfx_fill_rect(&g, 250, 140, 300, 40 + CS_N * 22);
+          gfx_set_composite(&g, 1.0f);
+          gfx_set_color(&g, 255, 196, 0);
+          gfx_draw_rect(&g, 250, 140, 300, 40 + CS_N * 22);
+          font_set(FONT_BOLD, 12);
+          for (int32_t k = 0; k < CS_N; k++) {
+            const bool sel = k == career_panel_row;
+            gfx_set_color(&g, sel ? 255 : 210, sel ? 196 : 210, sel ? 0 : 210);
+            font_draw(&g, kStatNames[k], 270, 162 + k * 22);
+            char v[16];
+            snprintf(v, sizeof(v), "%s%d", sel ? "> " : "", (int)csave.sp[ec][k]);
+            font_draw(&g, v, 470, 162 + k * 22);
+          }
+          char foot[96];
+          snprintf(foot, sizeof(foot), "%s add a point    %s done", KEY_CONTINUE, KEY_BACK);
+          gfx_set_color(&g, 170, 170, 170);
+          font_set(FONT_BOLD, 11);
+          draw_centered(&g, foot, 400, 170 + CS_N * 22);
+        }
+      }
       if (car_index != CUSTOM_CAR_INDEX) {
-        int32_t unlock_k = game_progress_car_unlock_stage(&progress, (GameMode)gmode, car_index);
+        int32_t unlock_k = ext_career ? career_car_lock(&csave, ext_car_of(car_index))
+                                      : game_progress_car_unlock_stage(&progress, (GameMode)gmode, car_index);
         if (unlock_k != 0) {
           if (car_gatey == 300) {
             for (int32_t seg = 0; seg < 9; seg++) { car_pgas[seg] = false; car_pgady[seg] = 0; }
@@ -8292,8 +8573,19 @@ int game_run(void) {
           // :5362-5363, both in the Arial bold 13 set above.
           gfx_set_color(&g, 210, 210, 210);
           draw_centered(&g, "[ Car Locked ]", 400, 355);
-          char unlock_msg[64];
+          char unlock_msg[96];
           snprintf(unlock_msg, sizeof(unlock_msg), "This car unlocks when stage %d is completed...", unlock_k);
+          if (unlock_k < 0) {
+            // The bonus stages' prizes (XT 15438-15462).
+            const int32_t ecar = ext_car_of(car_index);
+            if (ecar == 35 && csave.boncomp[1] == 2)
+              snprintf(unlock_msg, sizeof(unlock_msg), "Win bonus stage 2 by racing to unlock this car...");
+            else if (ecar == 36 && csave.boncomp[1] == 1)
+              snprintf(unlock_msg, sizeof(unlock_msg), "Win bonus stage 2 by wasting to unlock this car...");
+            else
+              snprintf(unlock_msg, sizeof(unlock_msg), "Win bonus stage %d to unlock this car...", (int)-unlock_k);
+          }
+          if (unlock_k == 99) snprintf(unlock_msg, sizeof(unlock_msg), "A secret car...");
           gfx_set_color(&g, 255, 96, 0);
           draw_centered(&g, unlock_msg, 400, 375);
         }
@@ -8433,7 +8725,7 @@ int game_run(void) {
       // to draw both unconditionally, which advertised a move that the
       // (then-wrapping) list would make in the wrong direction.
       {
-        int32_t car_maxsl = (gmode == GMODE_FREE_PLAY) ? car_last_index(ext_normal) : 15;
+        int32_t car_maxsl = (gmode == GMODE_FREE_PLAY) ? (ext_career ? CAR_COUNT - 1 : car_last_index(ext_normal)) : 15;
         if (menu_back.tex >= 0 && car_index != 0) {
           gfx_draw_image(&g, menu_back.tex, 95, 275, menu_back.w, menu_back.h);
         }
@@ -8685,7 +8977,7 @@ int game_run(void) {
       // unlocked when stage N is complete!" where N = unlocked[gmode-1].
       {
         char msg[128];
-        int32_t nfrom = ext_normal ? ext_prog.normal_unlocked : (gmode == 1) ? progress.unlocked[0] : progress.unlocked[1];
+        int32_t nfrom = ext_normal ? EXT_UNLOCKED : (gmode == 1) ? progress.unlocked[0] : progress.unlocked[1];
         snprintf(msg, sizeof(msg), "This stage will be unlocked when stage %d is complete!", nfrom);
         // :2000 -- (177,177,177), a LIGHT grey that reads against the dark
         // track backdrop. This port used (60,60,60), which is dark on dark.
@@ -8698,7 +8990,7 @@ int game_run(void) {
       {
         char lbl[64];
         int32_t nto;
-        if (ext_normal) nto = ext_prog.normal_unlocked + 1;
+        if (ext_normal) nto = EXT_UNLOCKED + 1;
         else if (gmode == 1) nto = progress.unlocked[0] + 1;
         else if (gmode == 2) nto = progress.unlocked[1] + 1;
         else nto = stage_num; // shouldn't happen (Free Play never locks)
