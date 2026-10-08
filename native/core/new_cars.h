@@ -27,6 +27,9 @@ typedef struct {
   char name[48];
   int32_t donor;      // this port's number of the car whose special and quirks it takes
   bool from_sd;       // the player's own, not Revised and Recharged's
+  // carmaker(name): who made it -- NFM 2's own directive (CarDefine's createdby),
+  // what the web Car Maker writes and Extended's car select credits. "" when none.
+  char author[32];
 } NewCarInfo;
 
 extern int32_t g_new_car_count;

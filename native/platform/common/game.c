@@ -125,6 +125,22 @@ static int32_t car_last_index(bool ext_normal) {
   return ext_normal ? CAR_COUNT - 1 : CUSTOM_CAR_INDEX;
 }
 
+/** Who made a car, as Extended's car select credits it (XT 15341-15398,
+ * "Created by ..."): Extended's own cars by its table, a new car by its
+ * .rad's carmaker(name) line (the web Car Maker's Author field); NULL for
+ * NFM 2's sixteen and a new car without one. */
+static const char *car_author(int32_t cn) {
+  if (cn >= NEW_CAR_FIRST && cn < NEW_CAR_FIRST + g_new_car_count)
+    return g_new_cars[cn - NEW_CAR_FIRST].author[0] ? g_new_cars[cn - NEW_CAR_FIRST].author : NULL;
+  if (cn < EXT_FIRST_CAR || cn > EXT_FIRST_CAR + 22) return NULL;
+  static const char *const kBy[23] = {
+      "aliff01",      "Afterburn/ToaZuka", "ACVoong", "Rulue",   "Tunari",     "Trelivision", "GX",
+      "Chaotic",      "projectDUB",        "Tunari",  "DJ Miker", "Phyrexian", "KingOfSpeed", "Excalibur",
+      "Tunari",       "Ultimato",          "Rulue",   "RAD1",    "aliff01/Phyrexian", "Vitalogy", "Tunari",
+      "DJ Miker",     "ACVoong"};
+  return kBy[cn - EXT_FIRST_CAR];
+}
+
 /** A car's name for the HUD; the custom car's, or "Car" off the end. */
 static const char *car_name(int32_t cn) {
   if (cn >= 0 && cn < CAR_COUNT) return CAR_DISPLAY_NAMES[cn];
@@ -9073,6 +9089,18 @@ int game_run(void) {
           gfx_set_color(&g, 176, 176, 176);
           draw_centered(&g, name, 400, 95);
           mainmenu_aflk = true;
+        }
+        // Extended's credit over the name (XT 15341-15398), its modes only.
+        const char *by = ext_normal ? car_author(car_index) : NULL;
+        if (by) {
+          char line[64];
+          snprintf(line, sizeof(line), "Created by %s", by);
+          // (Extended draws it at 60 over its name at 95; this port's title sits
+          // lower, so between the two.)
+          font_set(FONT_BOLD, 12);
+          gfx_set_color(&g, 246, 246, 246);
+          draw_centered(&g, line, 400, 74);
+          font_set(FONT_BOLD, 13);
         }
       }
 

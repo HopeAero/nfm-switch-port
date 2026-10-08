@@ -296,6 +296,23 @@ bool new_car_from_rad(const char *name, const char *text, ContO *model, CarDefin
   memset(out, 0, sizeof(*out));
   display_name(name, out->name, sizeof(out->name));
   out->donor = donor;
+  // rad.js readAuthor: carmaker(name), between the first ( and the last ), trimmed.
+  const char *cl;
+  size_t clen;
+  if (find_line(text, "carmaker", &cl, &clen)) {
+    const char *a = memchr(cl, '(', clen);
+    const char *b = cl + clen;
+    while (b > cl && b[-1] != ')') b--;
+    if (a && b > a + 1) {
+      a++;
+      b--;
+      while (a < b && isspace((unsigned char)*a)) a++;
+      while (b > a && isspace((unsigned char)b[-1])) b--;
+      const size_t k = (size_t)(b - a) < sizeof(out->author) - 1 ? (size_t)(b - a) : sizeof(out->author) - 1;
+      memcpy(out->author, a, k);
+      out->author[k] = '\0';
+    }
+  }
   // Their car-select bars: Extended's Control from grip, NFM 2's Endurance
   // as loadstat set it.
   cd->dishandle[slot] = (cd->grip[slot] - 10.0f) / 20.0f;
@@ -311,6 +328,9 @@ static void add(ContO *models, CarDefine *cd, Medium *m, Trackers *t, const char
     return;
   }
   info.from_sd = sd;
+  // Revised and Recharged's are all Ryan Albano's (the web credits them the
+  // same way, carstore.readModel's appended carmaker()).
+  if (!sd && !info.author[0]) snprintf(info.author, sizeof(info.author), "Ryan Albano");
   g_new_cars[i] = info;
   g_new_car_count++;
 }
