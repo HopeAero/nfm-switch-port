@@ -217,13 +217,16 @@ static bool load_stage_objects(ContO **objects_ptr, int32_t *count_ptr, int32_t 
 // The career (career.c) runs on normal mode's flow with its own stages:
 // careertracks.radq 1-31, no tournament.
 static bool g_ext_career = false;
+// The career's bonus stage being raced (1-4, careertracks bonus/K.txt), 0 none.
+static int32_t g_career_bonus = 0;
 
 // Extended's normal-mode stage `stage` as a "pack:entry" spec (26 is the
 // Premier Tournament's match `ptmatch`).
 static void ext_stage_spec(int32_t stage, int32_t ptmatch, char *out, size_t outsz) {
   char pack[16], entry[16];
   if (g_ext_career) {
-    snprintf(out, outsz, "careertracks:%d.txt", (int)stage);
+    if (g_career_bonus) snprintf(out, outsz, "careertracks:bonus/%d.txt", (int)g_career_bonus);
+    else snprintf(out, outsz, "careertracks:%d.txt", (int)stage);
     return;
   }
   ext_stage_entry(stage, ptmatch, pack, sizeof(pack), entry, sizeof(entry));
@@ -240,7 +243,8 @@ static void ext_read_name(int32_t stage, char *out, size_t outsz) {
   ext_stage_entry(stage, 1, pack, sizeof(pack), entry, sizeof(entry));
   if (g_ext_career) {
     snprintf(pack, sizeof(pack), "careertracks");
-    snprintf(entry, sizeof(entry), "%d.txt", (int)stage);
+    if (g_career_bonus) snprintf(entry, sizeof(entry), "bonus/%d.txt", (int)g_career_bonus);
+    else snprintf(entry, sizeof(entry), "%d.txt", (int)stage);
   }
   char *text = ext_stage_text(pack, entry);
   snprintf(out, outsz, "Stage %d", stage);
@@ -1158,7 +1162,7 @@ static void boot_loading_frame(Graphics2D *g, const BootImages *bi, int32_t done
 // Returned as an id so a re-race on the same track skips the re-render:
 // 1..32 are music/stageN.zip, 33 is party.zip.
 static int32_t stage_music_id(int32_t stage_num, int32_t gmode) {
-  if (gmode == 4) return 200 + stage_num;   // Extended's career (callers pass 4): careermusic
+  if (gmode == 4) return g_career_bonus ? 250 + g_career_bonus : 200 + stage_num;   // Extended's career (callers pass 4)
   if (gmode == 3) return 100 + stage_num;   // Extended's normal mode (callers pass 3), ext_stage_music
   if (stage_num == 27 && gmode == 2) return 33;
   return stage_num;
@@ -1189,6 +1193,27 @@ static bool load_music_track(int32_t id, RadicalTrack *out) {
       {220, 8000, 125}, {261, 8000, 125}, {276, 8800, 145}, {182, 8000, 125}, {220, 8000, 125},
       {200, 8000, 125}, {350, 7900, 125}, {310, 8000, 125}, {400, 7600, 125}};
   memset(out, 0, sizeof(*out));
+  if (id > 250) {
+    // The bonus stages (XT 2728-2755, 2988-2994): modules b1-b3, b4 an Ogg pair.
+    career_ogg_free();
+    const int32_t k = id - 250;
+    char path[96];
+    if (k == 4) {
+      for (int32_t p = 0; p < 2; p++) {
+        snprintf(path, sizeof(path), "ext/data/Files/bonusmusic/b4%c.ogg", p ? 'b' : 'a');
+        g_career_ogg[p] = vfs_read_bytes(path, &g_career_ogg_len[p]);
+      }
+      return g_career_ogg[1] != NULL;
+    }
+    static const int16_t kBonus[3][3] = {{250, 8500, 145}, {190, 8500, 200}, {300, 8500, 220}};
+    snprintf(path, sizeof(path), "ext/data/Files/bonusmusic/b%d.radq", (int)k);
+    VfsZip zip;
+    if (k < 1 || k > 3 || !vfs_read_zip(path, &zip)) return false;
+    bool ok = zip.count > 0 && radical_render_stage(zip.entries[0].data, (size_t)zip.entries[0].len, kBonus[k - 1][0],
+                                                    kBonus[k - 1][1], kBonus[k - 1][2], out);
+    vfs_free_zip(&zip);
+    return ok;
+  }
   if (id > 200) {
     // Stages 1-25: an Ogg pair (played by audio_start_ogg, `out` stays
     // empty); 26-28 a module in careermusic; 29-31 nothing.
@@ -1207,11 +1232,10 @@ static bool load_music_track(int32_t id, RadicalTrack *out) {
     snprintf(path, sizeof(path), "ext/data/Files/careermusic/stage%d.radq", (int)st);
     VfsZip zip;
     if (!vfs_read_zip(path, &zip)) return false;
-    // ponytail: normal mode's loadMod numbers for the same stage number;
-    // read the career's own from XT loadmusic if these sound off.
-    const ExtMusic mu = ext_stage_music(st);
-    bool ok = zip.count > 0 &&
-              radical_render_stage(zip.entries[0].data, (size_t)zip.entries[0].len, mu.amp, mu.rate, mu.tempo, out);
+    // loadmusic's numbers for stracks 53-55 (XT 2910-2916).
+    static const int16_t kLate[3][3] = {{300, 7600, 125}, {305, 7600, 136}, {250, 7600, 135}};
+    bool ok = zip.count > 0 && radical_render_stage(zip.entries[0].data, (size_t)zip.entries[0].len, kLate[st - 26][0],
+                                                    kLate[st - 26][1], kLate[st - 26][2], out);
     vfs_free_zip(&zip);
     return ok;
   }
@@ -4566,6 +4590,7 @@ int game_run(void) {
     ext_normal = true;
     ext_career = true;
     g_ext_career = true;
+    if (getenv("NFM_CAREER_BONUS")) g_career_bonus = atoi(getenv("NFM_CAREER_BONUS"));   // 1-4
   }
   // The tournament is on: normal mode's stage 26 with a match picked.
 #define PT_ACTIVE (ext_normal && !ext_career && stage_num == EXT_PT_STAGE && ptmatch > 0)
@@ -5421,6 +5446,16 @@ int game_run(void) {
         state = STATE_CAR_SELECT;
         car_select_needs_intro = true;
       }
+      g_career_bonus = 0;
+      if (ext_career && KEY_EDGE(BTN_SPECIAL) && stage_preview_ok && stage_num <= EXT_UNLOCKED &&
+          (stage_num == 5 || stage_num == 11 || stage_num == 15 || stage_num == 18)) {
+        // BONUS STAGE! (XT 13433, 16938-16960): the bonus hanging off this
+        // stage, its own track and field.
+        g_career_bonus = stage_num == 5 ? 1 : stage_num == 11 ? 2 : stage_num == 15 ? 3 : 4;
+        stage_preview_loaded_num = -1;
+        state = STATE_STAGE_LOADING;
+        stage_loadcnt = 30;
+      }
       if (KEY_EDGE(BTN_CONFIRM)) {
         if (ext_normal ? stage_num > EXT_UNLOCKED : !game_progress_can_pick_stage(&progress, gm, stage_num)) {
           // Java cantgo() -- xtGraphics.java:1993, armed at :2615-2616.
@@ -5966,6 +6001,7 @@ int game_run(void) {
         // randomno (XT 18144): the career's field size for the stage.
         memset(&crace, 0, sizeof(crace));
         crace.stage = stage_num;
+        crace.bonus = g_career_bonus;
         crace.sc[0] = ext_car_of(car_index);
         career_randomno(&crace, &csave);
         nplayers = crace.nplayers;
@@ -6576,7 +6612,9 @@ int game_run(void) {
             if (ext_career) {
               // Experience (career.c): checkpoints, wastes, stunts, full
               // power, level-ups -- stat$m and careermode$m's bookkeeping.
-              if (mad[0].clear != career_seen_clear && mad[0].clear != 0 && !race_holdit) {
+              if (crace.bonus == 1 || crace.bonus == 3) mad[0].nlaps = 0;   // unlimitedlaps (XT 4668)
+              if (mad[0].clear != career_seen_clear && mad[0].clear != 0 && !race_holdit &&
+                  crace.bonus != 1 && crace.bonus != 3) {
                 career_seen_clear = mad[0].clear;
                 career_xp_checkpoint(&crun, &crace, &csave, cp.clear[0]);
               }
@@ -6686,7 +6724,18 @@ int game_run(void) {
             if (ext_career && race_winner) {
               // finish() (XT 12499-12510): winning the newest stage opens
               // the next, up to 31.
-              if (stage_num == csave.unlocked && csave.unlocked < CAREER_STAGES) {
+              if (crace.bonus) {
+                // The bonus stages' prizes (XT 12511-12532): bonus 2 by
+                // racing (1), by wasting (2), both (3).
+                const int32_t a = crace.bonus - 1;
+                const bool racing = race_end_kind == RACE_END_FINISH, wasting = !racing;
+                if (a != 1) {
+                  if (csave.boncomp[a] == 0) csave.boncomp[a] = 1;
+                } else {
+                  if (csave.boncomp[a] == 0) csave.boncomp[a] = racing ? 1 : 2;
+                  if ((csave.boncomp[a] == 1 && wasting) || (csave.boncomp[a] == 2 && racing)) csave.boncomp[a] = 3;
+                }
+              } else if (stage_num == csave.unlocked && csave.unlocked < CAREER_STAGES) {
                 csave.unlocked++;
                 csave.statchangers[0] = csave.statchangers[1] = 1;
                 ext_justwon = true;
@@ -7375,7 +7424,8 @@ int game_run(void) {
         draw_hud_img(&g, hud_images.lap, 19, 7);
         hud_set_ink(&g, 0, 0, 100);
         char hud[64];
-        if (cp.nlaps > 0) snprintf(hud, sizeof(hud), "%d / %d", mad[0].nlaps + 1, cp.nlaps);
+        if (ext_career && (crace.bonus == 1 || crace.bonus == 3)) snprintf(hud, sizeof(hud), "- / %d", cp.nlaps);
+        else if (cp.nlaps > 0) snprintf(hud, sizeof(hud), "%d / %d", mad[0].nlaps + 1, cp.nlaps);
         else snprintf(hud, sizeof(hud), "-");
         font_draw(&g, hud, 51, 18);
         if (ext_career) {
@@ -9068,6 +9118,18 @@ int game_run(void) {
         gfx_draw_image(&g, menu_next.tex, 625, 135, menu_next.w, menu_next.h);
       }
 
+      if (ext_career && stage_num <= EXT_UNLOCKED &&
+          (stage_num == 5 || stage_num == 11 || stage_num == 15 || stage_num == 18)) {
+        char bl[64];
+        snprintf(bl, sizeof(bl), "Press %s for the BONUS STAGE!", KEY_SPECIAL);
+        gfx_set_composite(&g, 0.6f);
+        gfx_set_color(&g, 255, 255, 255);
+        gfx_fill_rect(&g, 250, 352, 300, 24);
+        gfx_set_composite(&g, 1.0f);
+        gfx_set_color(&g, 0, 0, 0);
+        font_set(FONT_BOLD, 13);
+        draw_centered(&g, bl, 400, 369);
+      }
       // 8. Confirm button (continue.gif) at (355, 385).
       HudImg confirm = (menu_contin.tex >= 0) ? menu_contin : menu_play;
       if (confirm.tex >= 0) {
