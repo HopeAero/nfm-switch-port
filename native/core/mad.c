@@ -913,6 +913,11 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
         n5 = (airc * medium_cos(m, (float)contO->xz)) * (float)n2;
       } else if (mad->ucomp != 0.0f && mad->ucomp > -2.0f) {
         mad->ucomp = mad->ucomp - 0.5f * airs;
+        // The original's decay steps past 0 (its start is not a multiple of
+        // the step) and parks near -2, then the dcomp decay below -- gated on
+        // ucomp, not dcomp -- runs dcomp negative without end: a car left
+        // alone after a stunt kept flipping forward. Stop both at 0.
+        if (mad->ucomp < 0.0f) mad->ucomp = 0.0f;
       }
       if (control->down) {
         if (mad->dcomp == 0.0f) {
@@ -930,6 +935,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
         }
       } else if (mad->dcomp != 0.0f && mad->ucomp > -2.0f) {
         mad->dcomp = mad->dcomp - 0.5f * airs;
+        if (mad->dcomp < 0.0f) mad->dcomp = 0.0f;
       }
       if (control->left) {
         if (mad->lcomp == 0.0f) mad->lcomp = 5.0f;
