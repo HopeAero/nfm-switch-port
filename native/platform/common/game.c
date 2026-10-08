@@ -10801,6 +10801,32 @@ int game_run(void) {
         draw_centered(&g, hl, 400, 358);
       }
 
+      if (ext_career && stage_num <= csave.unlocked && ext_car_of(car_index) >= 0 &&
+          ext_car_of(car_index) < CAREER_CARS) {
+        // What the race pays: the field's level and the experience
+        // (career_stage_info), so a stage that gives none is known before.
+        CareerStageInfo si;
+        const bool modes_ok = stage_num < csave.unlocked && csave.unlocked >= 3;
+        career_stage_info(&csave, ext_car_of(car_index), stage_num, modes_ok ? career_mode : 0, &si);
+        char il[128];
+        int32_t len = snprintf(il, sizeof(il), "Stage level %d (you %d)  -  ", (int)si.level,
+                               (int)csave.level[ext_car_of(car_index)]);
+        if (si.noexp)
+          snprintf(il + len, sizeof(il) - (size_t)len, "NO XP (%s)", si.capped ? "level cap reached" : "no levels");
+        else if (si.expmult < 1.0)
+          snprintf(il + len, sizeof(il) - (size_t)len, "Reduced XP (x%d%%): you outlevel it", (int)(si.expmult * 100.0 + 0.5));
+        else
+          snprintf(il + len, sizeof(il) - (size_t)len, "Full XP%s", si.hard ? "  -  tough field: more bonus points" : "");
+        gfx_set_composite(&g, 0.6f);
+        gfx_set_color(&g, 0, 0, 0);
+        gfx_fill_rect(&g, 180, 300, 440, 22);
+        gfx_set_composite(&g, 1.0f);
+        font_set(FONT_BOLD, 13);
+        if (si.noexp) gfx_set_color(&g, 255, 90, 90);
+        else if (si.expmult < 1.0) gfx_set_color(&g, 255, 170, 0);
+        else gfx_set_color(&g, 120, 230, 120);
+        draw_centered(&g, il, 400, 315);
+      }
       if (ext_career && stage_num < csave.unlocked && csave.unlocked >= 3) {
         static const char *const kModes[4] = {"Normal", "Hard mode", "Scale levels", "No levels"};
         char ml[64];

@@ -441,6 +441,37 @@ void career_run_start(CareerRun *run, const CareerRace *r, const CareerSave *s) 
   }
 }
 
+void career_stage_info(const CareerSave *s, int32_t me, int32_t stage, int32_t mode, CareerStageInfo *out) {
+  memset(out, 0, sizeof(*out));
+  const int32_t my = s->level[me];
+  if (mode == 3) {   // no levels: everyone level 1, no experience
+    out->level = 1;
+    out->noexp = true;
+    return;
+  }
+  if (mode == 2) {   // scale levels (career_airpgstats' else branch)
+    int32_t level = my < 3 ? 3 : my;
+    const int32_t top = s->unlocked >= 2 ? kMaxLevel[s->unlocked - 2] - 1 : level;
+    if (level > top) level = top;
+    out->level = level + 1;
+  } else {
+    // The top car is maxlevel's on every stage (11, 13, 17, 21 and 23 set
+    // theirs by hand, to the same numbers).
+    out->level = kMaxLevel[stage >= 1 && stage <= CAREER_STAGES ? stage - 1 : 0];
+  }
+  const int32_t cap = out->level + 5;   // softlevelcap
+  if (my >= cap) {
+    int32_t leveldiff = my - cap;
+    if (leveldiff > 5) leveldiff = 5;
+    out->expmult = 0.5 - leveldiff * 0.05;
+  } else {
+    out->expmult = 1.0;
+  }
+  out->capped = stage == s->unlocked && s->unlocked > 1 && s->unlocked < CAREER_STAGES && my >= kMaxLevel[s->unlocked];
+  out->noexp = out->capped;
+  out->hard = (mode == 1 || stage == s->unlocked) && my < out->level - 3;
+}
+
 /** XT 5038-5061 / 5333-5356: the level below which a car rolls 1.3 times as often. */
 static int32_t level_barrier(int32_t car) {
   int32_t lb = (car - 7) * 5;

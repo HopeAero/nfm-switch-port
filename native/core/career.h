@@ -203,6 +203,19 @@ typedef struct {
 } CareerRun;
 
 void career_run_start(CareerRun *run, const CareerRace *r, const CareerSave *s);
+/** The stage select's preview of a race (this port's own): the field's top
+ * level, and the experience the player's car `me` will get there -- none,
+ * cut (expmult < 1: it has outgrown the stage) or full -- worked out ahead
+ * the way career_airpgstats and career_tick will. `mode` is the select's
+ * 0 normal, 1 hard mode, 2 scale levels, 3 no levels. `hard`: the field
+ * outlevels the car (isithard, near enough: the top level stands in for the
+ * average), so its bonus stat points come more often. */
+typedef struct {
+  int32_t level;
+  double expmult;
+  bool noexp, capped, hard;   // capped: no experience past the newest stage's cap
+} CareerStageInfo;
+void career_stage_info(const CareerSave *s, int32_t me, int32_t stage, int32_t mode, CareerStageInfo *out);
 /** Every race tick: experience rate, full-power experience, level-ups.
  * `started`: the countdown is over; `full_power`: the player's power is 98
  * and it is moving, not wasted. */
