@@ -202,6 +202,29 @@ add_executable(control_test
 )
 target_link_libraries(control_test m ZLIB::ZLIB)
 
+# Extended's career AI (control_career.inc) against web/ext/Control.js: see
+# control_career_test.c and tools/control_career_oracle.mjs.
+add_executable(control_career_test
+  control_career_test.c
+  ../core/control.c
+  ../core/car_identity.c
+  ../core/check_points.c
+  ../core/medium.c
+  ../core/trackers.c
+  ../core/java_compat.c
+  ../core/trig.c
+  ../core/gfx.c
+  ../core/record.c
+  ../core/mad.c
+  ../core/cont_o.c
+  ../core/wheels.c
+  ../core/plane.c
+  ../core/car_define.c
+  ../core/xt_graphics.c
+  ../core/vfs.c
+)
+target_link_libraries(control_career_test m ZLIB::ZLIB)
+
 add_executable(car_define_test
   car_define_test.c
   ../core/car_define.c
@@ -337,6 +360,7 @@ add_test(NAME game_sparker_test COMMAND game_sparker_test WORKING_DIRECTORY ${CM
 add_test(NAME ext_stage_test COMMAND ext_stage_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_test(NAME check_points_test COMMAND check_points_test)
 add_test(NAME control_test COMMAND control_test)
+add_test(NAME control_career_test COMMAND control_career_test)
 add_test(NAME car_define_test COMMAND car_define_test)
 add_test(NAME record_test COMMAND record_test)
 add_test(NAME mad_test COMMAND mad_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
