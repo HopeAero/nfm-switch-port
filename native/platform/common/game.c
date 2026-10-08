@@ -4576,6 +4576,12 @@ int game_run(void) {
   int32_t career_seen_dested[NFM_MAX_CARS] = {0};
   bool career_undead_wrecked[NFM_MAX_CARS] = {false};
   static CareerBots cbots;        // this race's recorded bots (career_bots.c)
+  // The car list's names in the career: "Beast ", "Shadow ", "Undead "
+  // before the car's (stat$m's namestouse, XT 5200-5213).
+  static char career_names_buf[NFM_MAX_CARS][48];
+  static const char *career_names[NFM_MAX_CARS];
+  // Cars the last win opened (finish()'s congratulations, XT 12116-12167).
+  int32_t career_new_cars[4] = {-1, -1, -1, -1};
   int32_t cbots_last_clear[NFM_MAX_CARS] = {0}, cbots_since[NFM_MAX_CARS] = {0};
   bool career_settled = false;    // the race's end already paid or taken back
   // The car select's stat panel: the player's points into the six stats
@@ -6182,6 +6188,12 @@ int game_run(void) {
           }
         }
         for (int32_t i = 0; i < nplayers; i++) {
+          const char *c = sc[i] == 9 ? "SoJ" : (sc[i] == 2 ? "Wow C." : car_name(sc[i]));
+          const char *pre = crace.shadow[i] ? "Shadow " : crace.undead[i] ? "Undead " : crace.beast[i] ? "Beast " : "";
+          snprintf(career_names_buf[i], sizeof(career_names_buf[i]), "%s%s", pre, c);
+          career_names[i] = career_names_buf[i];
+        }
+        for (int32_t i = 0; i < nplayers; i++) {
           mad[i].isabot = false;   // set each tick once the race is on
           cbots_last_clear[i] = 0;
           cbots_since[i] = 0;
@@ -6721,6 +6733,9 @@ int game_run(void) {
             // Extended's finish() (XT 12648-12672): winning the newest
             // normal-mode stage opens the next.
             ext_justwon = false;
+            for (int32_t k = 0; k < 4; k++) career_new_cars[k] = -1;
+            bool was_locked[CAREER_CARS];
+            for (int32_t e = 0; e < CAREER_CARS; e++) was_locked[e] = ext_career && career_car_lock(&csave, e) != 0;
             if (ext_career && race_winner) {
               // finish() (XT 12499-12510): winning the newest stage opens
               // the next, up to 31.
@@ -6741,6 +6756,9 @@ int game_run(void) {
                 ext_justwon = true;
               }
               if (career_path[0]) career_save(career_path, &csave);
+              int32_t nn = 0;
+              for (int32_t e = 0; e < CAREER_CARS && nn < 4; e++)
+                if (was_locked[e] && career_car_lock(&csave, e) == 0) career_new_cars[nn++] = e;
             } else if (ext_normal && !ext_career && race_winner && stage_num != EXT_PT_STAGE) {
               const int32_t nu = ext_unlock_after_win(ext_prog.normal_unlocked, stage_num);
               ext_justwon = nu != ext_prog.normal_unlocked;
@@ -7588,7 +7606,7 @@ int game_run(void) {
           // Extended keeps its car list up all race, under the Special bar.
           if (starcnt == 0 && !race_holdit) {
             draw_ext_board(&g, &m, &cp, mad, nplayers, sc, &specials, control[0].arrace, ext_listbars,
-                           race_ticked, PT_ACTIVE ? kExtPTOpponents : NULL);
+                           race_ticked, PT_ACTIVE ? kExtPTOpponents : (ext_career ? career_names : NULL));
           }
         } else if (control[0].arrace && starcnt < 38 && !race_holdit && cp.stage != 10) {
           if (xt.alocked != -1 && cp.dested[xt.alocked] != 0) {
@@ -8355,9 +8373,15 @@ int game_run(void) {
         char line[64];
         if (ext_justwon) snprintf(line, sizeof(line), "Stage %d is now unlocked!", stage_num + 1);
         else snprintf(line, sizeof(line), "Stage %d Completed!", stage_num);
+        if (ext_career && crace.bonus) snprintf(line, sizeof(line), "Bonus Stage %d Completed!", (int)crace.bonus);
         gfx_set_color(&g, xt.aflk ? 196 : 255, xt.aflk ? 176 : 247, xt.aflk ? 0 : 165);
         font_set(FONT_BOLD, 13);
         draw_centered(&g, line, 400, 260);
+        for (int32_t k = 0; k < 4 && ext_career && career_new_cars[k] >= 0; k++) {
+          char cl[80];
+          snprintf(cl, sizeof(cl), "%s has been unlocked!", car_name(ext_car_to_port(career_new_cars[k])));
+          draw_centered(&g, cl, 400, 282 + k * 18);
+        }
       }
       bool just_crossed_threshold = (gmode == 1) ? progress.justwon1 : (gmode == 2 ? progress.justwon2 : false);
       if (race_winner && gmode != 0 && (just_crossed_threshold || stage_num == 27)) {
