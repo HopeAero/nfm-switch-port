@@ -50,6 +50,9 @@ typedef struct {
   // The career's perks (career.h), NULL elsewhere: GETAWAY, RECKLESS,
   // FRESHNESS, STEROIDS and RUTHLESS change the player's rebuild.
   const struct CareerPerks *perks;
+  // The career's level of each racing slot (CareerRace.level), for
+  // sortpower's diffmod; 0 (unset) reads as level 1, Java's outside career.
+  int32_t level[SPECIALS_MAX];
 } Specials;
 
 /** Extended's number for one of this port's cars: NFM 2's 0-15 are its

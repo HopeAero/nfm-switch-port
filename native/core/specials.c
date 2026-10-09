@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "career_perks.h"
+#include "career_stage.h"
 #include "java_compat.h"
 #include "new_cars.h"
 
@@ -22,11 +23,24 @@ void specials_reset(Specials *sp) {
 }
 
 /** xtGraphics.randomise (:9974): picks the target once, then keeps it while
- * it lives. Outside career there are no undead cars to skip. */
+ * it lives. In the career (mads[0].career set) it also skips stage 11's
+ * fakedest wrecks, the undead slots of stages 11 (not its bonus) and 17,
+ * and stage 23's Titan on the newest stage or hard mode (:9977-9993). */
 static void randomise(Specials *sp, Mad *mads, int32_t nplayers, int32_t x) {
   if (!sp->doitonce[x]) {
     sp->okdale[x] = (int32_t)(nfm_random() * (double)nplayers);
-    sp->doitonce[x] = !(sp->okdale[x] == x || mads[sp->okdale[x]].dest);
+    const int32_t o = sp->okdale[x];
+    bool redo = false;
+    const CareerStage *cs = mads[0].career;
+    if (cs) {
+      const int32_t st = cs->stage;
+      const bool st11 = st == 11 && cs->bonus != 2;   // !bonusstage[1]
+      const int32_t undeadextra = st == 17 ? 3 : (st11 ? 4 : 0);
+      if ((st == 17 || st11) && o >= 1 && o <= undeadextra) redo = true;
+      if (st == 23 && o == 1 && cs->hard) redo = true;
+      if (o >= 0 && o < NFM_MAX_CARS && cs->fakedest[o]) redo = true;
+    }
+    sp->doitonce[x] = !(o == x || mads[o].dest || redo);
   } else {
     sp->randomcar[x] = sp->okdale[x];
     const bool gone = mads[sp->randomcar[x]].dest;
@@ -35,12 +49,17 @@ static void randomise(Specials *sp, Mad *mads, int32_t nplayers, int32_t x) {
   }
 }
 
-/** xtGraphics.sortpower (:7395), outside career: how strongly `a`'s attack
- * lands on `b`, from the two cars' grip. */
+/** xtGraphics.sortpower (:7395): how strongly `a`'s attack lands on `b`,
+ * from the two cars' grip; in the career a higher-level target resists
+ * more (diffmod 50 + (level - 1) * 0.25). */
 static void sortpower(Specials *sp, Mad *mads, int32_t a, int32_t b) {
   const float ga = mads[a].cd->grip[mads[a].cn], gb = mads[b].cd->grip[mads[b].cn];
   const float mainboistat = (ga - 10.0f) / 20.0f, targetstat = (gb - 10.0f) / 20.0f;
-  const float diffmod = 50.0f;
+  float diffmod = 50.0f;
+  if (sp->perks) {
+    const int32_t lvl = sp->level[b] < 1 ? 1 : sp->level[b];
+    diffmod = 50.0f + (float)(lvl - 1) * 0.25f;
+  }
   if (ga >= gb) {
     const float difference = (mainboistat - targetstat) * 37.0f;
     sp->specpower[a] = (double)(difference / diffmod) + 1.0;
@@ -225,7 +244,10 @@ void specials_tick(Specials *sp, Mad *mads, Control *controls, int32_t nplayers,
             sortpower(sp, mads, a2, t);
             mads[t].leech = true;
           }
-          const double beastmod = 1.0;
+          // A beast drains slower, a shadow car's drain slower still (:6616-6621).
+          double beastmod = 1.0;
+          if (sp->perks && t >= 0 && t < CAREER_MAX_PLAYERS && sp->perks->beast[t]) beastmod = 1.5;
+          if (sp->perks && a2 < CAREER_MAX_PLAYERS && sp->perks->shadow[a2]) beastmod = 2.0;
           const double tmax = (double)mads[t].cd->maxmag[mads[t].cn];
           if (sp->specpower[a2] < 1.0) {
             sp->drainrate[a2] = tmax / (1500.0 * beastmod) * sp->specpower[a2];
