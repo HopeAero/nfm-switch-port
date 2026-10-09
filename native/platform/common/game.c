@@ -4677,12 +4677,21 @@ static void draw_career_panel(Graphics2D *g, const CareerSave *s, int32_t ec, in
       const CareerPerkText *t = &career_perk_text[p];
       font_set(FONT_BOLD, 11);
       int32_t ty = ry + 6 * 20 - 2;
-      char what[96];
-      snprintf(what, sizeof(what), "%s %s %s", career_perk_name[p], t->what[0], t->what[1] ? t->what[1] : "");
+      char what[160];
+      // A line at a time, as the dictionary has them.
+      snprintf(what, sizeof(what), "%s %s %s", tr(career_perk_name[p]), tr(t->what[0]), t->what[1] ? tr(t->what[1]) : "");
       gfx_set_color(g, 235, 235, 235);
-      draw_centered(g, what, 400, ty);
+      if (font_width(what) > w - 16 && t->what[1]) {
+        // Too wide for the panel (a translation): its two halves on two lines.
+        snprintf(what, sizeof(what), "%s %s", tr(career_perk_name[p]), tr(t->what[0]));
+        draw_centered(g, what, 400, ty);
+        ty += 14;
+        draw_centered(g, tr(t->what[1]), 400, ty);
+      } else {
+        draw_centered(g, what, 400, ty);
+      }
       ty += 14;
-      snprintf(what, sizeof(what), "%s %s", t->max[0], t->max[1] ? t->max[1] : "");
+      snprintf(what, sizeof(what), "%s %s", tr(t->max[0]), t->max[1] ? tr(t->max[1]) : "");
       gfx_set_color(g, 150, 240, 150);
       draw_centered(g, what, 400, ty);
     }
@@ -10740,7 +10749,10 @@ int game_run(void) {
           // Label -- Arial bold 11 (:6094) in the copper colour Java uses.
           gfx_set_color(&g, 181, 120, 40);
           font_set(FONT_BOLD, 11);
-          font_draw(&g, sb->label, sb->label_x, sb->y);
+          // A translated label can be longer than the gap before its bar:
+          // right-aligned to the bar instead (the original's own x in English).
+          const int32_t label_x = i18n_lang() == I18N_LANG_EN ? sb->label_x : bar_x - 5 - font_width(sb->label);
+          font_draw(&g, sb->label, label_x, sb->y);
 
           // Coloured bar background (statb, full 156x7).
           if (menu_statb.tex >= 0) {
