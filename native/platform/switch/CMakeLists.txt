@@ -52,7 +52,7 @@ dkp_track_assets(nfm_romfs FILES ${NFM_ROMFS_FILES})
 nx_generate_nacp(nfm_extended.nacp
   NAME "Need for Madness 2 Extended"
   AUTHOR "Radicalplay, Extended Mode (port: community)"
-  VERSION "0.1.0")
+  VERSION "0.2.0")
 
 nx_create_nro(nfm_switch
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/nfm_extended.nro
