@@ -224,6 +224,12 @@ void career_tick(CareerRun *run, const CareerRace *r, CareerSave *s, bool starte
 void career_xp_checkpoint(CareerRun *run, const CareerRace *r, CareerSave *s, int32_t clear0);
 /** The player wasted slot `k`. */
 void career_xp_waste(CareerRun *run, const CareerRace *r, CareerSave *s, int32_t k);
+/** The player's car dealt slot `k` `dmg` damage (capped at the health it
+ * had left): experience for it (Madness.java 834-852, 996-1030). `maxmag`
+ * the victim's live health, `healthreset` its car's base health. The caller
+ * leaves the undead out (their levelmod is 0). */
+void career_xp_hit(CareerRun *run, const CareerRace *r, CareerSave *s, int32_t k, int32_t dmg, int32_t maxmag,
+                   int32_t healthreset);
 /** The player won, by racing or by wasting. */
 void career_xp_win(CareerRun *run, const CareerRace *r, CareerSave *s, int32_t nsp, int32_t nlaps, bool racing);
 /** The player lost (finished behind, or wasted). */

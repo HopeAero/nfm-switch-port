@@ -600,6 +600,31 @@ void career_xp_checkpoint(CareerRun *run, const CareerRace *r, CareerSave *s, in
   if (!run->noexp) s->exp[me] += run->last_gain;
 }
 
+void career_xp_hit(CareerRun *run, const CareerRace *r, CareerSave *s, int32_t k, int32_t dmg, int32_t maxmag,
+                   int32_t healthreset) {
+  // Madness.java 996-1030: the damage dealt (hitgain) by GREED, levelmod and
+  // expmult, over xpratio -- how much health the car has for its endurance.
+  if (dmg <= 0 || k <= 0 || k >= r->nplayers || maxmag <= 0) return;
+  const int32_t me = me_car(r);
+  const int32_t endsp = r->sp[k][CS_END];
+  // Madness.java 834-852: a victim above the player's level pays as one at
+  // it would, by the health its endurance points would give it there.
+  const int32_t lcap = s->level[me];
+  double levelmod = 1.0;
+  const int32_t totalsp = r->beast[k] ? career_beastspcalc(r->level[k]) : career_spcalc(r->level[k]) + r->bonuspoints[k];
+  if (r->level[k] > lcap && totalsp > 0) {
+    const double ratio = endsp / (double)totalsp;
+    const int32_t bspadjust = (int32_t)(r->bonuspoints[k] * (double)lcap / r->level[k]);
+    const int32_t newtotalsp = r->beast[k] ? career_beastspcalc(lcap) : career_spcalc(lcap) + bspadjust;
+    const int32_t endadj = (int32_t)(newtotalsp * ratio);
+    const int32_t orighealth = career_healthcalc(healthreset, endsp, r->sc[k], 1.0f);
+    if (orighealth > 0) levelmod = career_healthcalc(healthreset, endadj, r->sc[k], 1.0f) / (double)orighealth;
+  }
+  const double xpratio = maxmag / (200.0 + endsp * 10.0);
+  run->last_gain = (int32_t)(dmg * career_perk_mod(s, me, 2) * levelmod * run->expmult / xpratio);
+  if (!run->noexp) s->exp[me] += run->last_gain;
+}
+
 void career_xp_waste(CareerRun *run, const CareerRace *r, CareerSave *s, int32_t k) {
   // stat$m XT 5241-5297: the experience, from the counters as they stood
   // before this waste (GREED raises it; BERSERK and SAFETY start their

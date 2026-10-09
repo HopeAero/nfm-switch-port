@@ -7416,6 +7416,13 @@ int game_run(void) {
         live_cd[i] = race_base[i];
         mad_init(&mad[i], &live_cd[i], &m, &rpd, &xt, i);
         mad_reseto(&mad[i], sc[i], &co[i], &cp);
+        // mad_reseto just set M A S H E E N's dent radius (Madness.java
+        // 1080-1087); a beast's multiplier 2 still applies on top of it
+        // (Madness.java 595: clrad * multiplier, XT 6194).
+        if (ext_career && crace.beast[i] && sc[i] == 13) {
+          live_cd[i].clrad[13] *= 2;
+          race_base[i].clrad[13] = live_cd[i].clrad[13];
+        }
         if (ext_career && i == 0) mad[i].powfactor = career_power_factor(crace.sc[0], crace.sp[0], crace.level[0]);
         career_seen_dested[i] = 0;
         mad[i].career = NULL;   // career_stage_start below, in the career
@@ -7426,6 +7433,8 @@ int game_run(void) {
         // The player's perks, read by every car's physics and the specials.
         for (int32_t i = 0; i < nplayers; i++) mad[i].perks = &crun.perks;
         specials.perks = &crun.perks;
+        // The targets' career levels, for sortpower's diffmod (XT 7395).
+        for (int32_t i = 0; i < nplayers; i++) specials.level[i] = crace.level[i];
         // Headless: both bonus stat point popups up from the start (they pay).
         if (getenv("NFM_CAREER_POPUPS")) {
           crun.winchance[1] = 40;
@@ -7744,7 +7753,18 @@ int game_run(void) {
             for (int32_t j = 0; j < nplayers; j++) {
               if (i == j) continue;
               if (ext_career && (cstage_ghost[i][j] || cstage_ghost[j][i])) continue;
+              const int32_t prevhitmag = mad[j].hitmag;
               mad_colide(&mad[i], &co[i], &mad[j], &co[j]);
+              // The player's hits pay experience (Madness.java 996-1030):
+              // the damage they did, up to the health the car had left;
+              // none on a wreck (regx's hitgain, 304-309) or the undead (850).
+              if (ext_career && i == 0 && !mad[j].dest && !crace.undead[j] && !cstage.undead[j]) {
+                const int32_t maxmag = live_cd[j].maxmag[sc[j]];
+                int32_t dmg = mad[j].hitmag - prevhitmag;
+                const int32_t healthleft = maxmag - prevhitmag > 0 ? maxmag - prevhitmag : 0;
+                if (dmg > healthleft) dmg = healthleft;
+                career_xp_hit(&crun, &crace, &csave, j, dmg, maxmag, cd.maxmag[sc[j]]);
+              }
             }
           }
           // A stunt armed in the air (loop 2, or the handbrake going down
@@ -7770,7 +7790,9 @@ int game_run(void) {
             g_diag.aux[0] = i;
             if (ext_career && cstage.respawning[i]) {
               // GameSparker.js 2368-2373: a respawned car resets, keeping its laps.
+              const int32_t clrad = live_cd[i].clrad[sc[i]];   // a beast M A S H E E N's, past reseto's
               career_stage_respawn_reset(&cstage, &mad[i], sc[i], &co[i], &cp);
+              live_cd[i].clrad[sc[i]] = clrad;
               continue;
             }
             mad_drive(&mad[i], &control[i], &co[i], &t, &cp);
