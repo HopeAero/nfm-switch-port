@@ -10844,7 +10844,7 @@ int game_run(void) {
         if (si.noexp)
           snprintf(il + len, sizeof(il) - (size_t)len, "NO XP (%s)", si.capped ? "level cap reached" : "no levels");
         else if (si.expmult < 1.0)
-          snprintf(il + len, sizeof(il) - (size_t)len, "Reduced XP (x%d%%)%s", (int)(si.expmult * 100.0 + 0.5),
+          snprintf(il + len, sizeof(il) - (size_t)len, "XP -%d%% (car too strong)%s", (int)((1.0 - si.expmult) * 100.0 + 0.5),
                    si.nobsp ? "  -  no bonus stat points" : "");
         else
           snprintf(il + len, sizeof(il) - (size_t)len, "Full XP%s",
