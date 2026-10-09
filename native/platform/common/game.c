@@ -4630,6 +4630,19 @@ static void draw_career_panel(Graphics2D *g, const CareerSave *s, int32_t ec, in
         font_draw(g, line, x0 + 345, ry + k * 20);
       }
     }
+    // What a point in the chosen stat does (career_apply_stats,
+    // career_power_factor, specials' grip-scaled debuffs).
+    static const char *const kStatHelp[CS_N][3] = {
+        {"+1 top speed per point (+0.5 MPH).", "The MPH under the bars shows the new top speed.", ""},
+        {"+0.1 acceleration per point, in every gear.", "Points above your level - 1 also add engine", "power (full power at 75 above)."},
+        {"+0.2 grip per point: hold corners at speed.", "Points above your level - 1 sharpen steering", "and handbrake. Your debuffs hit harder too."},
+        {"+1 air control and more flip power per point:", "faster spins and flips for bigger stunts.", ""},
+        {"More weight per point: you deal more damage", "and push other cars around more.", ""},
+        {"More health per point: you survive more hits", "before you are wasted.", ""},
+    };
+    font_set(FONT_BOLD, 11);
+    gfx_set_color(g, 190, 200, 230);
+    for (int32_t l = 0; l < 3; l++) font_draw(g, kStatHelp[row][l], x0 + 20, ry + 6 * 20 - 4 + l * 15);
   } else if (page == 1) {
     if (s->boncomp[3] > 0) {
       snprintf(line, sizeof(line), "CAR POINTS:   %d", (int)s->carpoints);
