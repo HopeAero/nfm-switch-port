@@ -7456,18 +7456,23 @@ int game_run(void) {
         VfsZip images_zip;
         if (vfs_read_zip("data/images.zip", &images_zip)) {
           const int32_t snap[3] = {m.snap[0], m.snap[1], m.snap[2]};
+          // The bars keep their own colours on a dark sky, so their fill
+          // reads against their frame; the plates behind their labels (the
+          // Java's boxes, drawn before them) do the rest.
+          const bool hud_dark = g_hud_dark;
+          g_hud_dark = false;
           hud_images.dmg = load_hud_gif(&images_zip, "damage.gif", snap, hud_images.dmg);
           hud_images.pwr = load_hud_gif(&images_zip, "power.gif", snap, hud_images.pwr);
+          g_hud_dark = hud_dark;
           {
             // Extended's Special bar: a PNG of this port's, already in its
             // colours and transparent -- hud_recolor() keys on the GIFs' grey
-            // background, which this has not -- so only the dark-sky ink.
+            // background, which this has not -- used as it is.
             int32_t len = 0;
             uint8_t *bytes = vfs_read_bytes(i18n_lang() == I18N_LANG_ES ? "data/port/es/special.png"
                                                                         : "data/port/special.png", &len);
             PngImage img;
             if (bytes && png_decode(bytes, (size_t)len, &img)) {
-              if (g_hud_dark) hud_adapt_ink(img.rgba, img.width, img.height, g_hud_sky);
               hud_images.spec.tex = upload_or_refill(hud_images.spec, img.rgba, img.width, img.height);
               hud_images.spec.w = img.width;
               hud_images.spec.h = img.height;
@@ -9260,7 +9265,7 @@ int game_run(void) {
         // port already carried -- both are kept because the condition is
         // data-driven (a hand-written or later stage file could trip it),
         // not structurally impossible.
-        if (m.darksky && kJavaDarkSkyBoxes) {
+        if (m.darksky) {
           float hsb_hud[3];
           rgb_to_hsb(m.csky[0], m.csky[1], m.csky[2], hsb_hud);
           hsb_hud[2] = 0.6f;
@@ -9272,6 +9277,14 @@ int game_run(void) {
           gfx_fill_rect(&g, 607, 29, 49, 14);  // :7980 -- behind pwr
           gfx_draw_line(&g, 606, 30, 606, 41); // :7981
           gfx_draw_line(&g, 605, 32, 605, 39); // :7982
+          if (xt.extended && race_specials) {  // Extended's Special label, under Power
+            gfx_fill_rect(&g, 602, 49, 54, 14);
+            gfx_draw_line(&g, 601, 50, 601, 61);
+            gfx_draw_line(&g, 600, 52, 600, 59);
+          }
+        }
+        // The rest of the boxes: the port reads its counters' ink instead.
+        if (m.darksky && kJavaDarkSkyBoxes) {
           gfx_fill_rect(&g, 18, 6, 155, 14);   // :7983 -- behind lap + was
           gfx_draw_line(&g, 17, 7, 17, 18);    // :7984
           gfx_draw_line(&g, 16, 9, 16, 16);    // :7985
