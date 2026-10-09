@@ -200,6 +200,7 @@ typedef struct {
   // Interface
   int32_t show_fps;     // 0 off, 1 the frame rate, 2 plus the frame-time breakdown
   int32_t board_names;  // 0/1: car names in the race standings (not in the original's single player)
+  int32_t career_counts; // 0/1: the career's running-total popups (wastes / checkpoints with the car)
   int32_t language;     // I18N_LANG_EN 0 / I18N_LANG_ES 1 (core/i18n.h)
   // Gameplay
   int32_t shake;        // 0/1: the screen shake on a crash (the original's `shaka`)

@@ -627,6 +627,22 @@ void career_xp_hit(CareerRun *run, const CareerRace *r, CareerSave *s, int32_t k
   if (!run->noexp) s->exp[me] += run->last_gain;
 }
 
+void career_count_bonus(const CareerSave *s, int32_t me, double expmult, int32_t *waste_pct, int32_t *chk_pct) {
+  double newlimit = 1.0;
+  if (expmult < 1.0) {
+    newlimit = 1.0 / (expmult * 4.0);
+    if (newlimit > 1.0) newlimit = 1.0;
+  }
+  double kilimit = s->killscn[me], winslimit = s->winscn[me] / 4.0;
+  if (kilimit > 1200.0 * newlimit) kilimit = 1200.0 * newlimit;
+  if (winslimit > 1250.0 * newlimit) winslimit = 1250.0 * newlimit;
+  *waste_pct = (int32_t)((kilimit + winslimit) / 120.0 * 100.0);
+  double winlimit = s->winscn[me], killslimit = s->killscn[me] * 4.0;
+  if (winlimit > 5000.0 / newlimit) winlimit = 5000.0 / newlimit;
+  if (killslimit > 4800.0 / newlimit) killslimit = 4800.0 / newlimit;
+  *chk_pct = (int32_t)((winlimit + killslimit) / 200.0 * 100.0);
+}
+
 void career_xp_waste(CareerRun *run, const CareerRace *r, CareerSave *s, int32_t k) {
   // stat$m XT 5241-5297: the experience, from the counters as they stood
   // before this waste (GREED raises it; BERSERK and SAFETY start their

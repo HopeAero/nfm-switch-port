@@ -218,6 +218,7 @@ GameSettings game_settings_defaults(int32_t graphics) {
   s.sfx_vol = 100;
   s.show_fps = 0;
   s.board_names = 0;
+  s.career_counts = 1;
   s.language = 0;   // English
   s.shake = 0;   // the extended build starts without it
   s.rumble = 1;
@@ -253,6 +254,7 @@ static const SettingKey kSettingKeys[] = {
   {"effects_volume", offsetof(GameSettings, sfx_vol), 0, 100, 10},
   {"show_fps", offsetof(GameSettings, show_fps), 0, 2, 1},
   {"board_names", offsetof(GameSettings, board_names), 0, 1, 1},
+  {"career_counts", offsetof(GameSettings, career_counts), 0, 1, 1},
   {"language", offsetof(GameSettings, language), 0, 1, 1},
   {"screen_shake", offsetof(GameSettings, shake), 0, 1, 1},
   {"vibration", offsetof(GameSettings, rumble), 0, 1, 1},

@@ -229,6 +229,11 @@ void career_xp_waste(CareerRun *run, const CareerRace *r, CareerSave *s, int32_t
  * had left): experience for it (Madness.java 834-852, 996-1030). `maxmag`
  * the victim's live health, `healthreset` its car's base health. The caller
  * leaves the undead out (their levelmod is 0). */
+/** What the car's running totals (killscn, winscn) add to its experience,
+ * in percent: a waste's (career_xp_waste's mult) and a checkpoint's
+ * (career_xp_checkpoint's), with the caps an outgrown stage (expmult < 1)
+ * tightens. */
+void career_count_bonus(const CareerSave *s, int32_t me, double expmult, int32_t *waste_pct, int32_t *chk_pct);
 void career_xp_hit(CareerRun *run, const CareerRace *r, CareerSave *s, int32_t k, int32_t dmg, int32_t maxmag,
                    int32_t healthreset);
 /** The player won, by racing or by wasting. */

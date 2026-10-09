@@ -3874,9 +3874,10 @@ static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
     {ROW_CHOICE, "Music", 0, SET_FIELD(music_vol), 11, 10, NULL, false},
     {ROW_CHOICE, "Effects", 0, SET_FIELD(sfx_vol), 11, 10, NULL, false},
     {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
-  [SET_INTERFACE] = {"SETTINGS - INTERFACE", 3, {
+  [SET_INTERFACE] = {"SETTINGS - INTERFACE", 4, {
     {ROW_CHOICE, "Show FPS", 0, SET_FIELD(show_fps), 3, 1, kFpsNames, false},
     {ROW_CHOICE, "Names in Standings", 0, SET_FIELD(board_names), 2, 1, kOnOff, false},
+    {ROW_CHOICE, "Career Counters", 0, SET_FIELD(career_counts), 2, 1, kOnOff, false},
     {ROW_BACK, "Back", 0, 0, 0, 0, NULL, false}}},
   [SET_GAMEPLAY] = {"SETTINGS - GAMEPLAY", 6, {
     {ROW_CHOICE, "Screen Shake", 0, SET_FIELD(shake), 2, 1, kOnOff, false},
@@ -4748,13 +4749,19 @@ static void draw_career_panel(Graphics2D *g, const CareerSave *s, int32_t ec, in
     const int32_t r3 = row < 3 ? row : 0;
     draw_centered(g, kInfo[r3][0], 400, ry + 104);
     if (kInfo[r3][1]) draw_centered(g, kInfo[r3][1], 400, ry + 117);
-    // The running totals (killscn / winscn, kills / wins).
-    font_set(FONT_BOLD, 12);
+    // The running totals (killscn / winscn, kills / wins) and what this
+    // car's add to its XP (at full XP; an outgrown stage caps them lower).
+    font_set(FONT_BOLD, 11);
     gfx_set_color(g, 255, 196, 0);
     snprintf(line, sizeof(line), "This car: %d wasted, %d cleared", (int)s->killscn[ec], (int)s->winscn[ec]);
-    draw_centered(g, line, 400, ry + 134);
+    draw_centered(g, line, 400, ry + 130);
     snprintf(line, sizeof(line), "All cars: %d wasted, %d cleared", (int)s->kills, (int)s->wins);
-    draw_centered(g, line, 400, ry + 148);
+    draw_centered(g, line, 400, ry + 142);
+    int32_t wpct, cpct;
+    career_count_bonus(s, ec, 1.0, &wpct, &cpct);
+    gfx_set_color(g, 90, 220, 90);
+    snprintf(line, sizeof(line), "XP bonus: +%d%% per waste, +%d%% per checkpoint", (int)wpct, (int)cpct);
+    draw_centered(g, line, 400, ry + 154);
   }
   char foot[128];
   if (page < 2)
@@ -9285,6 +9292,8 @@ int game_run(void) {
             // stat$m's running totals (XT 5306-5535), above them: "N WASTES
             // WITH car" on each waste, "N CLEARED IN TOTAL" every 4th
             // checkpoint, "N CLEARED WITH car" every 2nd. Same slide, on ticks.
+            // This port adds what the totals add to the car's XP (Settings >
+            // Interface > Career Counters hides them).
             static int32_t cnt_prev[3] = {-1, -1, -1}, cnt_x[3], cnt_show[3];
             static bool cnt_on[3], cnt_back[3];
             const int32_t now_v[3] = {csave.killscn[me], csave.wins, csave.winscn[me]};
@@ -9298,7 +9307,7 @@ int game_run(void) {
                 cnt_back[k] = false;
               }
               cnt_prev[k] = now_v[k];
-              if (!cnt_on[k]) continue;
+              if (!cnt_on[k] || !settings.career_counts) continue;
               if (race_ticked) {
                 if (cnt_x[k] < 15 && !cnt_back[k]) cnt_x[k] += 8;
                 if (cnt_x[k] >= 15) cnt_show[k]++;
@@ -9306,10 +9315,14 @@ int game_run(void) {
                 if (cnt_back[k]) cnt_x[k] -= 8;
                 if (cnt_x[k] <= -400) cnt_on[k] = false;
               }
-              char cl[96];
-              if (k == 0) snprintf(cl, sizeof(cl), now_v[0] == 1 ? "%d WASTE WITH %s" : "%d WASTES WITH %s", (int)now_v[0], car_name(sc[0]));
+              int32_t wpct, cpct;
+              career_count_bonus(&csave, me, crun.expmult, &wpct, &cpct);
+              char cl[128];
+              if (k == 0)
+                snprintf(cl, sizeof(cl), now_v[0] == 1 ? "%d WASTE WITH %s  (+%d%% XP)" : "%d WASTES WITH %s  (+%d%% XP)",
+                         (int)now_v[0], car_name(sc[0]), (int)wpct);
               else if (k == 1) snprintf(cl, sizeof(cl), "%d CLEARED IN TOTAL", (int)now_v[1]);
-              else snprintf(cl, sizeof(cl), "%d CLEARED WITH %s", (int)now_v[2], car_name(sc[0]));
+              else snprintf(cl, sizeof(cl), "%d CLEARED WITH %s  (+%d%% XP)", (int)now_v[2], car_name(sc[0]), (int)cpct);
               font_set(FONT_BOLD, 16);
               if (k == 0) gfx_set_color(&g, 130, 0, 0);
               else if (k == 1) gfx_set_color(&g, 0, 70, 0);
