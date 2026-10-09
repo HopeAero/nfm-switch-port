@@ -2733,6 +2733,57 @@ static void draw_car_thumb(Graphics2D *g, Medium *m, ContO *car, int32_t sx, int
   car->shadow = had_shadow;
 }
 
+/** The career's stat bars (XT carselect 16573-16716): the car's stats with
+ * its points in, numbered, each bar's colour stepping every 100 (green,
+ * red, teal, ...), top speed in MPH. Laid out for this screen: two columns
+ * of four rows from y0, under the stat panel. */
+static void draw_ext_stat_bars(Graphics2D *g, const CarDefine *cd, int32_t cn, const int32_t sp[CS_N], int32_t y0) {
+  float e[7];
+  const float sw2 = (float)cd->swits[cn][2] + (float)sp[CS_TS];
+  e[1] = (sw2 - 220.0f) / 90.0f;
+  const float a0 = cd->acelf[cn][0] + (float)sp[CS_ACC] * 0.1f;
+  const float a1 = cd->acelf[cn][1] * a0 / cd->acelf[cn][0] - 3.0f;
+  const float a2 = cd->acelf[cn][2] * a0 / cd->acelf[cn][0] - 2.0f;
+  e[2] = ((a0 - 6.0f) * 21.0f + a1 * 6.0f + a2 * 3.0f) / 201.0f;
+  e[3] = (cd->grip[cn] + (float)sp[CS_GRIP] * 0.2f - 10.0f) / 20.0f;
+  e[4] = ((float)cd->airc[cn] + (float)sp[CS_STU] + (cd->airs[cn] + (float)sp[CS_STU] * 0.025f) * 10.0f) / 125.0f;
+  e[5] = (cd->moment[cn] + (float)sp[CS_STR] * 0.025f) / 2.1f;
+  e[6] = cd->outdam[cn] + (float)sp[CS_END] * 0.01f;
+  e[0] = (e[1] + e[2] + e[3] + e[4] + e[5] + e[6]) / 6.0f;
+  static const char *const kLabels[7] = {"OVERALL:", "TOP SPEED:", "ACCELERATION:", "CONTROL:",
+                                         "STUNTING:", "STRENGTH:", "DEFENCE:"};
+  static const uint8_t kCol[8][3] = {{0, 130, 0},   {130, 0, 0},  {0, 95, 95},   {130, 0, 130},
+                                     {70, 70, 0},   {0, 0, 130},  {140, 80, 140}, {80, 80, 80}};
+  const int32_t bw = 140, bh = 12, step = 14;
+  for (int32_t i = 0; i < 7; i++) {
+    // Left: overall, top speed, acceleration, control; right (rows 2-4):
+    // stunting, strength, defence.
+    const bool left = i < 4;
+    const int32_t row = left ? i : i - 3;
+    const int32_t lx = left ? 175 : 575, bx = lx + 8, by = y0 + row * step;
+    int32_t fbar = (int32_t)(e[i] * (float)bw);
+    if (i == 1 && fbar < 15 * bw / 163) fbar = 15 * bw / 163;
+    if (fbar < 0) fbar = 0;
+    int32_t code = fbar / (bw + 1), fill = fbar;
+    if (code >= 7) { code = 7; fill = bw; }
+    else fill -= code * bw;
+    font_set(FONT_BOLD, 11);
+    gfx_set_color(g, 235, 235, 235);
+    font_draw(g, kLabels[i], lx - font_width(kLabels[i]), by + 10);
+    gfx_set_color(g, 0, 0, 0);
+    gfx_fill_rect(g, bx, by, bw, bh);
+    gfx_set_color(g, kCol[code][0], kCol[code][1], kCol[code][2]);
+    gfx_fill_rect(g, bx, by, fill, bh);
+    gfx_set_color(g, 245, 245, 245);
+    gfx_draw_rect(g, bx - 1, by - 1, bw + 1, bh + 1);
+    char v[24];
+    if (i == 1) snprintf(v, sizeof(v), "%d MPH", (int)(sw2 / 2.0f));
+    else snprintf(v, sizeof(v), "%d", (int)(e[i] * 100.0f));
+    gfx_set_color(g, 252, 206, 0);
+    font_draw(g, v, bx + (bw - font_width(v)) / 2, by + 10);
+  }
+}
+
 // draw_stage_preview (overhead 3D stage render) removed in Part 6 --
 // the Java stage-select screen doesn't have a 3D preview, and its
 // br.png torn-paper backdrop is the intended empty visual there.
@@ -10503,7 +10554,11 @@ int game_run(void) {
           { "Strength:",    483, 358, n23 },  // right col, row 1 (bar bg at 536,352)
           { "Endurance:",   473, 373, n24 },  // right col, row 2 (bar bg at 536,367)
         };
-        for (int32_t i = 0; i < 6 && !car_locked; i++) {
+        // The career: Extended's numbered bars, the car's points in.
+        const bool ext_bars = ext_career && !car_locked && car_index != CUSTOM_CAR_INDEX &&
+                              ext_car_of(car_index) >= 0 && ext_car_of(car_index) < CAREER_CARS;
+        if (ext_bars) draw_ext_stat_bars(&g, &cd, cn, csave.sp[ext_car_of(car_index)], 344);
+        for (int32_t i = 0; i < 6 && !car_locked && !ext_bars; i++) {
           const struct StatBar *sb = &bars[i];
           int32_t bar_x = (i < 3) ? 162 : 536;
           int32_t bar_y = sb->y - 6; // Java's label baseline is 6px below the bar's top
