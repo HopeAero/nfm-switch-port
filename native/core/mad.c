@@ -1919,13 +1919,42 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
   // Stage 13's portals (Madness.js 3252-3349): the fade, the drop onto the
   // next floor, the guardians -- before the checkpoints are looked at.
   career_phys_portal_move(cs, mad, contO, control, checkPoints);
+  const bool ext = mad->xt->extended;
   int32_t focus = 0;
   int32_t n110 = 0;
   int32_t n111 = 0;
   int32_t n112 = mad->nofocus ? 1 : 7;
   for (int32_t n113 = 0; n113 < checkPoints->n; n113++) {
     career_phys_portal_check(cs, mad, contO, checkPoints, n113);   // Madness.js 3353-3361
-    if (checkPoints->typ[n113] > 0) {
+    if (checkPoints->typ[n113] > 0 && ext) {
+      // Extended (Madness.java:3403-3480): the special checkpoints (typ 3 and
+      // 4) count as checkpoints too, the window is 800 high around the
+      // checkpoint, its sums are float, and a damaged car passing a special
+      // one is fixed.
+      n111++;
+      const int32_t typ = checkPoints->typ[n113];
+      const float zwin = 60.0f + fabsf(((mad->scz[0] + mad->scz[1]) + mad->scz[2]) + mad->scz[3]) / 4.0f;
+      const float xwin = 60.0f + fabsf(((mad->scx[0] + mad->scx[1]) + mad->scx[2]) + mad->scx[3]) / 4.0f;
+      const bool iny = abs(contO->y - checkPoints->y[n113]) < 800;
+      const bool inz = (float)abs(contO->z - checkPoints->z[n113]) < zwin && abs(contO->x - checkPoints->x[n113]) < 700 && iny;
+      const bool inx = (float)abs(contO->x - checkPoints->x[n113]) < xwin && abs(contO->z - checkPoints->z[n113]) < 700 && iny;
+      if (typ == 1 || typ == 3 || typ == 2 || typ == 4) {
+        if (mad->clear == n111 + mad->nlaps * checkPoints->nsp) n112 = 1;
+        if (((typ == 1 || typ == 3) ? inz : inx) && mad->clear == n111 + mad->nlaps * checkPoints->nsp - 1) {
+          career_phys_portal_cleared(cs, mad->im);   // Madness.js 3379 / 3401
+          mad->clear = n111 + mad->nlaps * checkPoints->nsp;
+          mad->pcleared = n113;
+          mad->focus = -1;
+        }
+      }
+      if (((typ == 3 && inz) || (typ == 4 && inx)) && mad->hitmag > 0 && !career_phys_nofix(cs, mad)) {
+        if (!mad->isabot) {   // Madness.js 3409-3434
+          if (contO->dist == 0) contO->fcnt = 8;
+          else contO->fix = true;
+        }
+        mad->rpd->fix[mad->im] = 300;
+      }
+    } else if (checkPoints->typ[n113] > 0) {
       n111++;
       if (checkPoints->typ[n113] == 1) {
         if (mad->clear == n111 + mad->nlaps * checkPoints->nsp) n112 = 1;
@@ -2023,7 +2052,24 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
   if (mad->nofocus) mad->nofocus = false;
   mad->point = focus;
 
-  if (mad->fixes != 0) {
+  // Extended's fix hoops (Madness.js 3569-3603): no count of fixes and no
+  // electrified state, a hoop just fixes; a recorded bot's car is fixed at
+  // once, and one not drawn (dist 0) skips the fix animation.
+  bool fixcar = false;
+  if (ext) {
+    for (int32_t n115 = 0; n115 < checkPoints->fn && !career_phys_nofix(cs, mad); n115++) {
+      const bool hit = !checkPoints->roted[n115]
+          ? abs(contO->z - checkPoints->fz[n115]) < 200 &&
+            mad_py(contO->x / 100, checkPoints->fx[n115] / 100, contO->y / 100, checkPoints->fy[n115] / 100) < 30
+          : abs(contO->x - checkPoints->fx[n115]) < 200 &&
+            mad_py(contO->z / 100, checkPoints->fz[n115] / 100, contO->y / 100, checkPoints->fy[n115] / 100) < 30;
+      if (!hit) continue;
+      if (mad->isabot) fixcar = true;
+      else if (contO->dist == 0) contO->fcnt = 8;
+      else contO->fix = true;
+      mad->rpd->fix[mad->im] = 300;
+    }
+  } else if (mad->fixes != 0) {
     if (m->noelec == 0 && !career_phys_nofix(cs, mad)) {
       for (int32_t n115 = 0; n115 < checkPoints->fn; n115++) {
         if (!checkPoints->roted[n115]) {
@@ -2049,12 +2095,12 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
     }
   }
 
-  if (contO->fcnt == 7 || contO->fcnt == 8) {
+  if (contO->fcnt == 7 || contO->fcnt == 8 || fixcar) {
     // FRESHNESS / STEROIDS: a fix starts their boost.
     if (mad->perks && mad->im == 0) mad->fixtime = career_perk_fixtime(mad->perks, mad->fixtime);
     mad->squash = 0; mad->nbsq = 0; mad->hitmag = 0; mad->cntdest = 0; mad->dest = false; mad->newcar = true;
     mad->just_fixed = true; // see mad.h's own doc comment on this field
-    contO->fcnt = 9;
+    if (contO->fcnt == 7 || contO->fcnt == 8) contO->fcnt = 9;
     if (mad->fixes > 0) mad->fixes--;
   }
   if (mad->newedcar != 0) {
