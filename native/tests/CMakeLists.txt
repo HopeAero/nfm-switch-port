@@ -41,9 +41,21 @@ add_executable(font_test
   font_test.c
   ../core/font.c
   ../core/font_data.c
+  ../core/i18n.c
+  ../core/i18n_es.c
   ../core/gfx.c
 )
 target_link_libraries(font_test m)
+
+add_executable(i18n_test
+  i18n_test.c
+  ../core/font.c
+  ../core/font_data.c
+  ../core/i18n.c
+  ../core/i18n_es.c
+  ../core/gfx.c
+)
+target_link_libraries(i18n_test m)
 
 add_executable(vfs_test
   vfs_test.c
@@ -405,6 +417,7 @@ add_test(NAME trackers_test COMMAND trackers_test)
 add_test(NAME medium_test COMMAND medium_test)
 add_test(NAME gfx_test COMMAND gfx_test)
 add_test(NAME font_test COMMAND font_test)
+add_test(NAME i18n_test COMMAND i18n_test)
 add_test(NAME plane_test COMMAND plane_test)
 add_test(NAME wheels_test COMMAND wheels_test)
 add_test(NAME cont_o_test COMMAND cont_o_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})

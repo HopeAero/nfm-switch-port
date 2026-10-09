@@ -59,6 +59,7 @@
 #include "gfx.h"
 #include "gfx_gl.h"
 #include "font.h"
+#include "i18n.h"
 #include "gif_decode.h"
 #include "jpeg_decode.h"
 #include "png_decode.h"
@@ -3724,6 +3725,7 @@ enum { NEED_RUMBLE = 1, NEED_REMAP = 2, NEED_RANDOM = 4, NEED_MANUAL = 8 };
 typedef struct { const char *title; int32_t nrows; SettingsRow rows[SETTINGS_MAX_ROWS]; } SettingsPage;
 
 static const char *const kOnOff[] = {"Off", "On"};
+static const char *const kLanguageNames[] = {"English", "Español"};   // I18N_LANG_EN, I18N_LANG_ES
 static const char *const kQualityNames[] = {"Original", "Smooth", "HD"};
 static const char *const kDistNames[] = {"Original", "Far", "Max"};
 static const char *const kDetailNames[] = {"High", "Low"};
@@ -3739,7 +3741,8 @@ static const char *const kLapNames[] = {"Stage", "1", "2", "3", "4", "5", "6", "
 
 #define SET_FIELD(f) offsetof(GameSettings, f)
 static const SettingsPage kSettingsPages[SET_PAGE_COUNT] = {
-  [SET_MAIN] = {"SETTINGS", 10, {
+  [SET_MAIN] = {"SETTINGS", 11, {
+    {ROW_CHOICE, "Language", 0, SET_FIELD(language), 2, 1, kLanguageNames, false},
     {ROW_OPEN, "Graphics", SET_GRAPHICS, 0, 0, 0, NULL, false},
     {ROW_OPEN, "Audio", SET_AUDIO, 0, 0, 0, NULL, false},
     {ROW_OPEN, "Interface", SET_INTERFACE, 0, 0, 0, NULL, false},
@@ -3968,7 +3971,9 @@ static SettingsAction settings_screen_input(SettingsUi *ui, GameSettings *s, int
       ui->page = row->page;
       ui->row = 0;
     } else if (row->kind == ROW_RESET) {
+      const int32_t language = s->language;   // the defaults are not a language change
       *s = game_settings_defaults(default_graphics);
+      s->language = language;
     } else if (row->kind == ROW_BACK) {
       back = true;
     } else if (row->kind == ROW_START) {
@@ -4339,6 +4344,7 @@ static void apply_settings(const GameSettings *s, Medium *m) {
   m->resdown = g_resdown_setting;
   cont_o_shadows = s->shadows != 0;
   cont_o_particles = s->particles != 0;
+  i18n_set_lang(s->language);
   audio_sfx_gain = (float)s->sfx_vol / 100.0f;
   radical_music_gain = (float)s->music_vol / 100.0f;
 #ifdef NFM_TARGET_SWITCH

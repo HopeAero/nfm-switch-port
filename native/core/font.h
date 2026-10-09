@@ -9,6 +9,10 @@
 // (`y` is the BASELINE, as in Java). The colour is the Graphics2D's current
 // one. Glyphs come from one atlas texture (data/port/font.png, baked with
 // font_data.c by tools/bake_font.py) set once with font_set_texture.
+//
+// font_width and font_draw pass the string through tr() (i18n.h) first, as the web port's
+// drawString and stringWidth do, so a centred line is measured in the
+// language it is drawn in.
 #ifndef NFM_FONT_H
 #define NFM_FONT_H
 
@@ -22,7 +26,11 @@ struct Graphics2D;
 
 enum { FONT_PLAIN = 0, FONT_BOLD = 1 };
 
-#define FONT_GLYPH_COUNT 95 // ' ' .. '~'
+// Glyphs: ' ' .. '~', then FONT_EXTRA_COUNT more (accented letters, the
+// Spanish marks, typographic punctuation) at the codepoints FONT_EXTRA_CP
+// lists. Strings are UTF-8; a character with no glyph draws as '?'.
+#define FONT_EXTRA_COUNT 30
+#define FONT_GLYPH_COUNT (95 + FONT_EXTRA_COUNT)
 #define FONT_SIZE_COUNT 6
 
 typedef struct {
@@ -34,6 +42,7 @@ extern const int32_t FONT_REF, FONT_ATLAS_W, FONT_ATLAS_H;
 extern const int32_t FONT_SIZES[FONT_SIZE_COUNT];
 extern const FontGlyph FONT_GLYPHS[2][FONT_GLYPH_COUNT];
 extern const uint8_t FONT_ADVANCE[2][FONT_SIZE_COUNT][FONT_GLYPH_COUNT];
+extern const uint16_t FONT_EXTRA_CP[FONT_EXTRA_COUNT];
 
 void font_set_texture(int32_t tex);
 void font_set(int32_t style, int32_t size);
