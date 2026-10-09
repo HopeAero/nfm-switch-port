@@ -9352,21 +9352,23 @@ int game_run(void) {
             // stat$m's running totals (XT 5306-5535), above them: "N WASTES
             // WITH car" on each waste, "N CLEARED IN TOTAL" every 4th
             // checkpoint, "N CLEARED WITH car" every 2nd. Same slide, on ticks.
-            // This port adds what the totals add to the car's XP (Settings >
-            // Interface > Career Counters hides them).
+            // One already up keeps sliding (its number updates), and the
+            // waste's cancels the checkpoints' (its block runs first and clears
+            // shwcnt / shwcncnt). Settings > Interface > Career Counters hides them.
             static int32_t cnt_prev[3] = {-1, -1, -1}, cnt_x[3], cnt_show[3];
             static bool cnt_on[3], cnt_back[3];
             const int32_t now_v[3] = {csave.killscn[me], csave.wins, csave.winscn[me]};
             for (int32_t k = 0; k < 3; k++) {
               if (starcnt > 0 || cnt_prev[k] < 0) {
                 cnt_on[k] = false;
-              } else if (now_v[k] > cnt_prev[k] && (k == 0 || now_v[k] % (k == 1 ? 4 : 2) == 0)) {
+              } else if (now_v[k] > cnt_prev[k] && (k == 0 || now_v[k] % (k == 1 ? 4 : 2) == 0) && !cnt_on[k]) {
                 cnt_on[k] = true;
                 cnt_x[k] = -55;
                 cnt_show[k] = 0;
                 cnt_back[k] = false;
               }
               cnt_prev[k] = now_v[k];
+              if (k > 0 && cnt_on[0]) cnt_on[k] = false;
               if (!cnt_on[k] || !settings.career_counts) continue;
               if (race_ticked) {
                 if (cnt_x[k] < 15 && !cnt_back[k]) cnt_x[k] += 8;
@@ -9375,14 +9377,10 @@ int game_run(void) {
                 if (cnt_back[k]) cnt_x[k] -= 8;
                 if (cnt_x[k] <= -400) cnt_on[k] = false;
               }
-              int32_t wpct, cpct;
-              career_count_bonus(&csave, me, crun.expmult, &wpct, &cpct);
-              char cl[128];
-              if (k == 0)
-                snprintf(cl, sizeof(cl), now_v[0] == 1 ? "%d WASTE WITH %s  (+%d%% XP)" : "%d WASTES WITH %s  (+%d%% XP)",
-                         (int)now_v[0], car_name(sc[0]), (int)wpct);
+              char cl[96];
+              if (k == 0) snprintf(cl, sizeof(cl), now_v[0] == 1 ? "%d WASTE WITH %s" : "%d WASTES WITH %s", (int)now_v[0], car_name(sc[0]));
               else if (k == 1) snprintf(cl, sizeof(cl), "%d CLEARED IN TOTAL", (int)now_v[1]);
-              else snprintf(cl, sizeof(cl), "%d CLEARED WITH %s  (+%d%% XP)", (int)now_v[2], car_name(sc[0]), (int)cpct);
+              else snprintf(cl, sizeof(cl), "%d CLEARED WITH %s", (int)now_v[2], car_name(sc[0]));
               font_set(FONT_BOLD, 16);
               if (k == 0) gfx_set_color(&g, 130, 0, 0);
               else if (k == 1) gfx_set_color(&g, 0, 70, 0);
