@@ -1,0 +1,96 @@
+Spanish UI sprites for the native port (Need for Madness / Extended)
+====================================================================
+
+Rendered 2026-10-09 by running the web port's own code (nfm-master/web/ui-sprites-es.js
+spanishSprite / spanishPauseBackground, and web/ext/sprites-es.js spanishLoadingMusic /
+spanishStart, lifted verbatim from that module) in headless Chromium 1234 (Playwright),
+fed the original GIFs decoded with createImageBitmap, exported with canvas PNG encoding.
+Fonts: "Arial Black" italic 900 (system font, Windows) and Adventure (ext/fonts/Adventure.ttf).
+
+Every PNG is RGBA. Pixels that were transparent in the GIF are (0,0,0,0) here, and canvas
+text is anti-aliased (partial alpha / blended greys), unlike the 1-bit GIF originals.
+
+Columns: PNG | replaces entry | archive | size (orig -> es) | port variable (game.c loader)
+
+--- From data/images.zip (the native port loads ALL of these from data/images.zip, base and
+--- Extended alike; it does not read Extended's images.radq for UI art) ---
+
+HUD labels (grey-192 opaque background kept: hud_recolor keys on the bottom-right pixel)
+damage.png       damage.gif       images.zip  176x16          hud_images.dmg      load_hud_gif
+power.png        power.gif        images.zip  176x16          hud_images.pwr      load_hud_gif
+                                                              + menu_opwr (help page art) load_menu_gif
+position.png     position.gif     images.zip  65x12           hud_images.pos      load_hud_gif
+speed.png        speed.gif        images.zip  178x13          hud_images.sped     load_hud_gif
+wasted.png       wasted.gif       images.zip  53x12           hud_images.was      load_hud_gif
+lap.png          lap.gif          images.zip  27x12 -> 78x12  hud_images.lap      load_hud_gif
+                 ^ WIDER than the original on purpose (web widens it to spell VUELTAS:);
+                   the HUD x of whatever follows the lap label must allow for 78px.
+
+Position ranks (grey-192 background, numeral only, no English suffix)
+1.png .. 4.png   1.gif .. 4.gif   images.zip  33x17           hud_images.rank[0..3] load_hud_gif
+5.png            5.gif            images.zip  35x18           hud_images.rank[4]    load_hud_gif
+6.png .. 8.png   6.gif .. 8.gif   images.zip  33x17           hud_images.rank[5..7] load_hud_gif
+
+Race messages / countdown (style 'ink': black on grey-192)
+0c.png           0c.gif           images.zip  73x39           hud_images.cntdn[0] ("GO" -> "¡YA!") load_hud_gif
+youwon.png       youwon.gif       images.zip  134x25          hud_images.youwon       load_hud_gif
+youlost.png      youlost.gif      images.zip  129x27          hud_images.youlost      load_hud_gif
+yourwasted.png   yourwasted.gif   images.zip  206x25          hud_images.yourwasted   load_hud_gif
+youwastedem.png  youwastedem.gif  images.zip  218x26          hud_images.youwastedem  load_hud_gif
+
+Stage-intro (presenter) card -- tinted by load_opsnap_gif, which keys on ONE pixel index
+(76 for loadingmusic, 0 for start1/2); that pixel is untouched (transparent) in these PNGs.
+loadingmusic.png loadingmusic.gif images.zip  221x131         intro_loadingmusic  load_opsnap_gif(key 76)
+start1.png       start1.gif       images.zip  82x26           intro_star[0]       load_opsnap_gif(key 0)
+start2.png       start2.gif       images.zip  82x26           intro_star[1]       load_opsnap_gif(key 0)
+                 (byte-identical in images.zip and images.radq)
+
+Menu / finish screens (transparent background, drawn as-is)
+selectcar.png    selectcar.gif    images.zip  158x16          menu_selectcar      load_menu_gif
+select.png       select.gif       images.zip  125x18          menu_select         load_menu_gif
+back.png         back.gif         images.zip  60x21           menu_back           load_menu_gif
+next.png         next.gif         images.zip  60x21           menu_next           load_menu_gif
+continue.png     continue.gif     images.zip  90x23           menu_contin         load_menu_gif
+                 (Extended's continue2.gif maps to this base continue.gif in the web too)
+congrad.png      congrad.gif      images.zip  269x38          menu_congrd         load_menu_gif
+gameov.png       gameov.gif       images.zip  170x33          menu_gameov         load_menu_gif
+gameh.png        gameh.gif        images.zip  196x22          menu_gameh          load_menu_gif
+paused.png       paused.gif       images.zip  237x188         menu_paused         load_menu_gif
+                 (spanishPauseBackground: frame kept, blue interior blanked; the Spanish
+                  menu text must be drawn on top by the port, as web/main.js does)
+
+Translated by the web but NOT loaded by the native port today (exported for completeness)
+wgame.png        wgame.gif        images.zip  179x22          (none)
+cmc.png          cmc.gif          images.zip  126x13          (none)  web/ext/cargroup.js "MIS AUTOS" button
+gac.png          gac.gif          images.zip  98x12 -> 132x12 (none)  "< AUTOS DEL JUEGO" -- WIDER than original
+ycmc.png         ycmc.gif         images.zip  126x13          (none)  Car Maker cars header
+
+--- ext/: Extended images.radq variants (only where Extended's bytes differ from the base's
+--- AND web/ext/sprites-es.js redraws Extended's own pixels). The native port does not load
+--- these from images.radq today; use them only if it starts drawing Extended's own art. ---
+ext/back.png     back.gif         images.radq 60x21
+ext/next.png     next.gif         images.radq 60x21
+ext/gameh.png    gameh.gif        images.radq 197x24
+
+Not exported, on purpose (web/ext/sprites-es.js):
+- Extended HUD labels (damage/power/position/speed/wasted/lap in images.radq): SKIP set --
+  Extended draws its HUD labels as text, not as these bitmaps.
+- Extended congrad.gif / gameov.gif / continue2.gif / madness.gif / d1.gif: the web swaps in
+  the base images.zip files (BASE map), so the base PNGs above cover them.
+
+--- Baked by this port's own tools (not the web's), in the menus' Adventure lettering ---
+op_play.png      options.png row "Play Game"          -> "Jugar"         tools/gen_menu_label.py (255,152,51)
+op_inst.png      options.png row "Game Instructions"  -> "Instrucciones" tools/gen_menu_label.py (168,148,34)
+op_credits.png   options.png row "Credits"            -> "Créditos"      tools/gen_menu_label.py (168,66,34)
+opsettings.png   data/port/opsettings.png "Settings"  -> "Ajustes"       tools/gen_menu_label.py (gold)
+freeplay_label.png options2.png row "Free Play"       -> "Juego libre"   tools/bake_menu_label.py
+career_label.png data/port/career_label.png "RPG Mode" -> "Modo RPG"     tools/bake_menu_label.py
+tournament_label.png data/port/tournament_label.png    -> "Torneo"       tools/bake_menu_label.py
+stunts.png       stunts.png "STUNTS:"                 -> "ACROBACIAS:"   tools/bake_inst_es.py
+ory.png          ory.gif "OR"                         -> "O"             tools/bake_inst_es.py
+special.png      data/port/special.png "SPECIAL"      -> "ESPECIAL"      tools/bake_special.py (Extended HUD bar)
+
+paused.png: its blanked interior (60,135,220) was made transparent again here, as paused.gif's is,
+so the pause backdrop shows through; the four rows and "– PAUSA –" are drawn as text over it.
+
+Left in English: racing.gif / wasting.gif (RACING / WASTING lettered across the photos).

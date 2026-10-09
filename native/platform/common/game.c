@@ -752,8 +752,36 @@ static void hud_set_ink(Graphics2D *g, int32_t r, int32_t gg, int32_t b) {
   gfx_set_color(g, r, gg, b);
 }
 
+/** In Spanish, the twin of images.zip's `name` (data/port/es/<name>.png, the
+ * web port's ui-sprites-es.js lettering: see that folder's MANIFEST.txt)
+ * decoded into *img; false in English or when there is none, and the caller
+ * decodes the original. The PNG keeps the GIF's own background and key
+ * pixels, so the caller's recolouring treats it as it would the GIF. */
+static bool load_es_png(const char *name, PngImage *img) {
+  if (i18n_lang() != I18N_LANG_ES) return false;
+  const char *dot = strrchr(name, '.');
+  char path[96];
+  snprintf(path, sizeof(path), "data/port/es/%.*s.png", dot ? (int)(dot - name) : (int)strlen(name), name);
+  int32_t len = 0;
+  uint8_t *bytes = vfs_read_bytes(path, &len);
+  if (!bytes) return false;
+  const bool ok = png_decode(bytes, (size_t)len, img);
+  vfs_free_bytes(bytes);
+  return ok;
+}
+
 static HudImg load_hud_gif(VfsZip *zip, const char *name, const int32_t snap[3], HudImg prev) {
   HudImg result = {-1, 0, 0};
+  PngImage es;
+  if (load_es_png(name, &es)) {
+    hud_recolor(es.rgba, es.width, es.height, snap);
+    if (g_hud_dark) hud_adapt_ink(es.rgba, es.width, es.height, g_hud_sky);
+    result.tex = upload_or_refill(prev, es.rgba, es.width, es.height);
+    result.w = es.width;
+    result.h = es.height;
+    png_free(&es);
+    return result;
+  }
   for (int32_t i = 0; i < zip->count; i++) {
     if (strcmp(zip->entries[i].name, name) != 0) continue;
     GifImage img;
@@ -795,8 +823,15 @@ static HudImg load_opsnap_gif(VfsZip *zip, const char *name, int32_t stage, int3
   HudImg r = {-1, 0, 0};
   for (int32_t i = 0; i < zip->count; i++) {
     if (strcmp(zip->entries[i].name, name) != 0) continue;
+    // The Spanish twin has the key pixel where the GIF has it (transparent).
+    PngImage es;
+    const bool spanish = load_es_png(name, &es);
     GifImage img;
-    if (!gif_decode(zip->entries[i].data, (size_t)zip->entries[i].len, &img)) {
+    if (spanish) {
+      img.rgba = es.rgba;
+      img.width = es.width;
+      img.height = es.height;
+    } else if (!gif_decode(zip->entries[i].data, (size_t)zip->entries[i].len, &img)) {
       fprintf(stderr, "data/images.zip: %s failed to decode (gif)\n", name);
       break;
     }
@@ -825,7 +860,8 @@ static HudImg load_opsnap_gif(VfsZip *zip, const char *name, int32_t stage, int3
     }
     r.tex = upload_or_refill(prev, img.rgba, img.width, img.height);
     r.w = img.width; r.h = img.height;
-    gif_free(&img);
+    if (spanish) png_free(&es);
+    else gif_free(&img);
     break;
   }
   return r;
@@ -1222,6 +1258,44 @@ static HudImg load_menu_gif(VfsZip *zip, const char *name) {
     break;
   }
   return r;
+}
+
+// The menu images with a Spanish twin under data/port/es/. Both are loaded at
+// boot (there is no texture-free call, and they are small) and
+// lang_imgs_sync() points each slot at the current language's, so a change
+// of the Language setting shows on the next frame.
+typedef struct { HudImg *slot; HudImg en, es; } LangImg;
+// The menus' lettered rows in Spanish, drawn instead of options.png's rows
+// (Play Game, Game Instructions, Credits) and options2.png's Free Play.
+static HudImg g_es_opti_rows[3] = {{-1, 0, 0}, {-1, 0, 0}, {-1, 0, 0}};
+static HudImg g_es_freeplay = {-1, 0, 0};
+static LangImg g_lang_imgs[32];
+static int32_t g_lang_img_count = 0, g_lang_imgs_lang = -1;
+
+/** Registers *slot (already loaded, the English) with its twin data/port/es/<es_name>.png. */
+static void lang_img_add(HudImg *slot, const char *es_name) {
+  if (g_lang_img_count >= (int32_t)(sizeof(g_lang_imgs) / sizeof(g_lang_imgs[0]))) return;
+  char path[96];
+  snprintf(path, sizeof(path), "data/port/es/%s.png", es_name);
+  g_lang_imgs_lang = -1;
+  LangImg *l = &g_lang_imgs[g_lang_img_count++];
+  l->slot = slot;
+  l->en = *slot;
+  for (int32_t i = 0; i < g_lang_img_count - 1; i++) {
+    if (g_lang_imgs[i].en.tex == slot->tex && slot->tex >= 0) {   // a copy of one already paired
+      l->es = g_lang_imgs[i].es;
+      return;
+    }
+  }
+  l->es = load_menu_png_file(path);
+  if (l->es.tex < 0) l->es = l->en;
+}
+
+static void lang_imgs_sync(void) {
+  if (g_lang_imgs_lang == i18n_lang()) return;
+  g_lang_imgs_lang = i18n_lang();
+  for (int32_t i = 0; i < g_lang_img_count; i++)
+    *g_lang_imgs[i].slot = g_lang_imgs_lang == I18N_LANG_ES ? g_lang_imgs[i].es : g_lang_imgs[i].en;
 }
 
 // A loose GIF from data/ (the loading screen's sign/hello/loadbar sit
@@ -3062,9 +3136,18 @@ static void draw_main_menu(Graphics2D *g,
     { 353, 351,  93, 200, 200,   0, 255, 128, 0 },  // Settings (this port's)
   };
 
+  // In Spanish the rows are their own labels (g_es_opti_rows), centred, and
+  // each rect is as wide as its label plus the originals' margin.
+  const bool es = i18n_lang() == I18N_LANG_ES && g_es_opti_rows[0].tex >= 0;
+  const HudImg es_rows[4] = {g_es_opti_rows[0], g_es_opti_rows[1], g_es_opti_rows[2], opsettings};
   for (int32_t i = 0; i < 4; i++) {
     const struct MenuOpt *o = &opts[i];
-    draw_menu_option_rect(g, o->x, o->y, o->w, 22, i == opselect,
+    int32_t x = o->x, w = o->w;
+    if (es && es_rows[i].tex >= 0) {
+      w = es_rows[i].w + 22;
+      x = 399 - w / 2;
+    }
+    draw_menu_option_rect(g, x, o->y, w, 22, i == opselect,
                            o->r_aflk, o->g_aflk, o->b_aflk,
                            o->r_solid, o->g_solid, o->b_solid, aflk_ptr);
   }
@@ -3077,7 +3160,13 @@ static void draw_main_menu(Graphics2D *g,
   //   row 2 (Instructions): src_y 60..90 -> dst (294, 295) height 30  (was 325 with the gap; now contiguous)
   //   row 3 (Credits):      src_y 90..105 -> dst (294, 325) height 15 (partial: image is only 105 tall)
   // Skip row 1 (Multiplayer, src_y 30..60) entirely.
-  if (opti.tex >= 0) {
+  if (es) {
+    for (int32_t i = 0; i < 3; i++) {
+      const HudImg r = es_rows[i];
+      // Bottom-aligned to the 15 px row: an accent makes a label taller.
+      if (r.tex >= 0) gfx_draw_image(g, r.tex, 400 - r.w / 2, 265 + 30 * i + 15 - r.h, r.w, r.h);
+    }
+  } else if (opti.tex >= 0) {
     gfx_draw_image_sub(g, opti.tex, 294, 265, opti.w, 30,
                         0, 0, opti.w, 30, opti.w, opti.h);
     gfx_draw_image_sub(g, opti.tex, 294, 295, opti.w, 30,
@@ -3159,9 +3248,17 @@ static void draw_gamemode_menu(Graphics2D *g,
     { 348, 374, 102, 200,  64,   0, 255, 128,  0 },  // Tournament: Extended's Premier Tournament
   };
 
+  // In Spanish, Free Play is its own label; a longer label widens its rect.
+  const bool es = i18n_lang() == I18N_LANG_ES && g_es_freeplay.tex >= 0;
+  const HudImg labels[5] = {{-1, 0, 0}, {-1, 0, 0}, g_es_freeplay, careerlabel, extlabel};
   for (int32_t i = 0; i < 5; i++) {
     const struct MenuOpt *o = &opts[i];
-    draw_menu_option_rect(g, o->x, o->y, o->w, 22, i == opselect,
+    int32_t x = o->x, w = o->w;
+    if (es && labels[i].tex >= 0 && labels[i].w + 12 > w) {
+      w = labels[i].w + 12;
+      x = 399 - w / 2;
+    }
+    draw_menu_option_rect(g, x, o->y, w, 22, i == opselect,
                            o->r_aflk, o->g_aflk, o->b_aflk,
                            o->r_solid, o->g_solid, o->b_solid, aflk_ptr);
   }
@@ -3191,8 +3288,9 @@ static void draw_gamemode_menu(Graphics2D *g,
                         0,  0, opti2.w, 16, opti2.w, opti2.h);
     gfx_draw_image_sub(g, opti2.tex, 346, 293, opti2.w, 16,
                         0, 28, opti2.w, 16, opti2.w, opti2.h);
-    gfx_draw_image_sub(g, opti2.tex, 346, 322, opti2.w, 15,
-                        0, 85, opti2.w, 15, opti2.w, opti2.h);
+    if (es) gfx_draw_image(g, g_es_freeplay.tex, 400 - g_es_freeplay.w / 2, 321, g_es_freeplay.w, g_es_freeplay.h);
+    else gfx_draw_image_sub(g, opti2.tex, 346, 322, opti2.w, 15,
+                             0, 85, opti2.w, 15, opti2.w, opti2.h);
   }
   if (careerlabel.tex >= 0)
     gfx_draw_image(g, careerlabel.tex, 400 - careerlabel.w / 2, 349, careerlabel.w, careerlabel.h);
@@ -5314,6 +5412,28 @@ int game_run(void) {
       menu_rpro = load_menu_gif(&images_zip, "rpro.gif");
       menu_paused = load_menu_gif(&images_zip, "paused.gif");
       vfs_free_zip(&images_zip);
+      // Their Spanish lettering (data/port/es/MANIFEST.txt).
+      lang_img_add(&menu_selectcar, "selectcar");
+      lang_img_add(&menu_select, "select");
+      lang_img_add(&menu_back, "back");
+      lang_img_add(&menu_next, "next");
+      lang_img_add(&menu_contin, "continue");
+      lang_img_add(&menu_congrd, "congrad");
+      lang_img_add(&menu_gameov, "gameov");
+      lang_img_add(&menu_gameh, "gameh");
+      lang_img_add(&menu_paused, "paused");
+      lang_img_add(&menu_opwr, "power");
+      lang_img_add(&menu_opsettings, "opsettings");
+      lang_img_add(&menu_careerlabel, "career_label");
+      lang_img_add(&menu_extlabel, "tournament_label");
+      lang_img_add(&menu_stunts, "stunts");   // tools/bake_inst_es.py
+      lang_img_add(&menu_ory, "ory");
+      for (int32_t i = 0; i < 3; i++) {
+        static const char *const kRows[3] = {"data/port/es/op_play.png", "data/port/es/op_inst.png",
+                                             "data/port/es/op_credits.png"};
+        g_es_opti_rows[i] = load_menu_png_file(kRows[i]);
+      }
+      g_es_freeplay = load_menu_png_file("data/port/es/freeplay_label.png");
     } else {
       fprintf(stderr, "could not load data/images.zip -- menus will draw without their art\n");
     }
@@ -5356,6 +5476,12 @@ int game_run(void) {
   inst_assets.km = menu_km;
   inst_assets.kn = menu_kn;
   inst_assets.ks = menu_ks;
+  lang_img_add(&inst_assets.opwr, "power");
+  lang_img_add(&inst_assets.back, "back");
+  lang_img_add(&inst_assets.next, "next");
+  lang_img_add(&inst_assets.contin, "continue");
+  lang_img_add(&inst_assets.stunts, "stunts");
+  lang_img_add(&inst_assets.ory, "ory");
 
   // Sound-effect assets (data/sounds.zip) -- loaded once, held for the
   // whole session. WavClip.samples==NULL (frame_count 0) on a missing/
@@ -6119,6 +6245,7 @@ int game_run(void) {
   int32_t prof_avg_tenths[4] = {0, 0, 0, 0}; // last window's per-frame mean, 0.1ms units
   while (running) {
     prof_frame_start = platform_ticks_us();
+    lang_imgs_sync();
     // Breadcrumbs for the freeze watchdog / crash handler (diag.h).
     if (frame == 0) diag_start_watchdog();
     g_diag.heartbeat++;
@@ -7211,7 +7338,8 @@ int game_run(void) {
             // colours and transparent -- hud_recolor() keys on the GIFs' grey
             // background, which this has not -- so only the dark-sky ink.
             int32_t len = 0;
-            uint8_t *bytes = vfs_read_bytes("data/port/special.png", &len);
+            uint8_t *bytes = vfs_read_bytes(i18n_lang() == I18N_LANG_ES ? "data/port/es/special.png"
+                                                                        : "data/port/special.png", &len);
             PngImage img;
             if (bytes && png_decode(bytes, (size_t)len, &img)) {
               if (g_hud_dark) hud_adapt_ink(img.rgba, img.width, img.height, g_hud_sky);
@@ -9044,7 +9172,9 @@ int game_run(void) {
           snprintf(hud, sizeof(hud), "- / %d", cp.nlaps);
         else if (cp.nlaps > 0) snprintf(hud, sizeof(hud), "%d / %d", mad[0].nlaps + 1, cp.nlaps);
         else snprintf(hud, sizeof(hud), "-");
-        font_draw(&g, hud, 51, 18);
+        // A wider lap label (Spanish VUELTAS:) moves the rest of the row over.
+        const int32_t lap_dx = hud_images.lap.w > 27 ? hud_images.lap.w - 27 : 0;
+        font_draw(&g, hud, 51 + lap_dx, 18);
         if (ext_career) {
           // careermode$m's experience bar (XT 9164-9196), bottom left:
           // "level N" over a 200-wide bar in 50 cells.
@@ -9169,11 +9299,11 @@ int game_run(void) {
           font_draw(&g, mine, 190, 426);
           font_set(FONT_BOLD, 12);
         }
-        draw_hud_img(&g, hud_images.was, 92, 7);
+        draw_hud_img(&g, hud_images.was, 92 + lap_dx, 7);
         hud_set_ink(&g, 0, 0, 100);
         // Java: checkPoints.wasted / (nplayers-1), less the career's undead (XT 4602)
         snprintf(hud, sizeof(hud), "%d / %d", cp.wasted, nplayers - 1 - (ext_career ? career_stage_undeadextra(&cstage) : 0));
-        font_draw(&g, hud, 150, 18);
+        font_draw(&g, hud, 150 + lap_dx, 18);
         draw_hud_img(&g, hud_images.pos, 42, 27);
         if (cp.pos[0] >= 0 && cp.pos[0] < 8) {
           draw_hud_img(&g, hud_images.rank[cp.pos[0]], 110, 28);
@@ -9764,10 +9894,19 @@ int game_run(void) {
       static const int32_t kPauseRow[4][3] = {
         {329, 45, 137}, {320, 73, 155}, {303, 99, 190}, {341, 125, 109},
       };
+      // In Spanish the panel is only its frame (data/port/es/paused.png) and
+      // the rows are text, drawn over it below; each highlight fits its row.
+      static const char *const kPauseLabel[4] = {"Resume Game", "Instant Replay", "Game Instructions", "Quit Game"};
+      const bool pause_text = i18n_lang() == I18N_LANG_ES;
+      font_set(FONT_BOLD, 15);
       if (pause_opselect >= 0 && pause_opselect < 4) {
         int32_t rx = kPauseRow[pause_opselect][0];
         int32_t ry = kPauseRow[pause_opselect][1];
         int32_t rw = kPauseRow[pause_opselect][2];
+        if (pause_text) {
+          rw = font_width(kPauseLabel[pause_opselect]) + 36;
+          rx = 400 - rw / 2;
+        }
         gfx_set_color(&g, 64, 143, 223);
         gfx_fill_round_rect(&g, rx, ry, rw, 22, 7, 20);
         gfx_set_color(&g, 0, 89, 223);
@@ -9776,6 +9915,14 @@ int game_run(void) {
       // :4761 -- the panel art itself, drawn OVER the highlight so its
       // labels read on top of the selected row's fill.
       draw_hud_img(&g, menu_paused, 281, 8);
+      if (pause_text) {
+        gfx_set_color(&g, 255, 255, 255);
+        for (int32_t i = 0; i < 4; i++) draw_centered(&g, kPauseLabel[i], 400, kPauseRow[i][1] + 16);
+        font_set(FONT_BOLD, 12);
+        gfx_set_color(&g, 150, 190, 250);
+        draw_centered(&g, "– PAUSED –", 400, 25);
+        draw_centered(&g, "– PAUSED –", 400, 187);
+      }
       // This port's fifth row, Settings, on its own plate under the panel.
       draw_pause_plate(&g, 320, 202, 160, 30);
       if (pause_opselect == 4) draw_pause_highlight(&g, 345, 206, 110, 22);
