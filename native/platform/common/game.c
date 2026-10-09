@@ -9493,6 +9493,16 @@ int game_run(void) {
           font_draw(&g, place, 112, 43);
           font_set(FONT_BOLD, 12);
         }
+        if (xt.extended) {
+          // Extended's speedometer under the position (XT 5189-5193; its
+          // fifawelcome face, Arial bold here).
+          char mph[16];
+          snprintf(mph, sizeof(mph), "%d MPH", (int)fabsf(mad[0].speed / 2.0f));
+          hud_set_ink(&g, 0, 0, 0);
+          font_set(FONT_BOLD, 17);
+          font_draw(&g, mph, 12, 70);
+          font_set(FONT_BOLD, 12);
+        }
 
         // Ports drawstat(maxmag, hitmag, newcar, power)'s own two
         // fillPolygon bars (damage bar top, power bar bottom) -- JS lines
