@@ -10844,9 +10844,11 @@ int game_run(void) {
         if (si.noexp)
           snprintf(il + len, sizeof(il) - (size_t)len, "NO XP (%s)", si.capped ? "level cap reached" : "no levels");
         else if (si.expmult < 1.0)
-          snprintf(il + len, sizeof(il) - (size_t)len, "Reduced XP (x%d%%): you outlevel it", (int)(si.expmult * 100.0 + 0.5));
+          snprintf(il + len, sizeof(il) - (size_t)len, "Reduced XP (x%d%%)%s", (int)(si.expmult * 100.0 + 0.5),
+                   si.nobsp ? "  -  no bonus stat points" : "");
         else
-          snprintf(il + len, sizeof(il) - (size_t)len, "Full XP%s", si.hard ? "  -  tough field: more bonus points" : "");
+          snprintf(il + len, sizeof(il) - (size_t)len, "Full XP%s",
+                   si.nobsp ? "  -  no bonus stat points" : si.hard ? "  -  tough field: more bonus points" : "");
         gfx_set_composite(&g, 0.6f);
         gfx_set_color(&g, 0, 0, 0);
         gfx_fill_rect(&g, 180, 300, 440, 22);

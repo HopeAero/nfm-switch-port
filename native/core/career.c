@@ -469,6 +469,8 @@ void career_stage_info(const CareerSave *s, int32_t me, int32_t stage, int32_t m
   }
   out->capped = stage == s->unlocked && s->unlocked > 1 && s->unlocked < CAREER_STAGES && my >= kMaxLevel[s->unlocked];
   out->noexp = out->capped;
+  out->nobsp = (stage < s->unlocked && s->unlocked >= 2 && my >= kMaxLevel[s->unlocked - 2] + 5) ||
+               (mode != 2 && my >= cap);
   out->hard = (mode == 1 || stage == s->unlocked) && my < out->level - 3;
 }
 

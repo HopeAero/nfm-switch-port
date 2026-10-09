@@ -214,6 +214,7 @@ typedef struct {
   int32_t level;
   double expmult;
   bool noexp, capped, hard;   // capped: no experience past the newest stage's cap
+  bool nobsp;                 // no bonus stat points: the car has outgrown the stage (XT 3493-3499)
 } CareerStageInfo;
 void career_stage_info(const CareerSave *s, int32_t me, int32_t stage, int32_t mode, CareerStageInfo *out);
 /** Every race tick: experience rate, full-power experience, level-ups.
