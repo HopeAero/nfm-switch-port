@@ -4748,6 +4748,13 @@ static void draw_career_panel(Graphics2D *g, const CareerSave *s, int32_t ec, in
     const int32_t r3 = row < 3 ? row : 0;
     draw_centered(g, kInfo[r3][0], 400, ry + 104);
     if (kInfo[r3][1]) draw_centered(g, kInfo[r3][1], 400, ry + 117);
+    // The running totals (killscn / winscn, kills / wins).
+    font_set(FONT_BOLD, 12);
+    gfx_set_color(g, 255, 196, 0);
+    snprintf(line, sizeof(line), "This car: %d wasted, %d cleared", (int)s->killscn[ec], (int)s->winscn[ec]);
+    draw_centered(g, line, 400, ry + 134);
+    snprintf(line, sizeof(line), "All cars: %d wasted, %d cleared", (int)s->kills, (int)s->wins);
+    draw_centered(g, line, 400, ry + 148);
   }
   char foot[128];
   if (page < 2)
@@ -5163,6 +5170,17 @@ int game_run(void) {
   // port's 16-38) from its models.radq.
 #define CAR_MODEL(cn) ((cn) >= NEW_CAR_FIRST ? &new_models[(cn) - NEW_CAR_FIRST] \
                       : (cn) < EXT_FIRST_CAR ? &base_models[(cn)] : &ext_models[(cn) - EXT_FIRST_CAR])
+  // A racer's model, for its start and every rebuild (a fix, the replays):
+  // the custom car's, a career beast's "B" model (GameSparker.loadstage,
+  // Extended's model sc + 78), else its car's. RACE_LOOK puts back what the
+  // copy resets: a shadow car is see-through (Plane.d, shadowtrans 80).
+#define RACE_MODEL(i, cn) ((i) == 0 && car_index == CUSTOM_CAR_INDEX ? &car_base                            : (ext_career && crace.beast[i]) ? &ext_models[EXT_MODEL_BEAST + crace.sc[i]] : CAR_MODEL(cn))
+#define RACE_LOOK(i) do {                                                                \
+    if (ext_career && crace.shadow[i]) co[i].fade = 255 - 80;                              \
+    /* and the stage's see-through on it (career_stage.c set_inv) */                       \
+    if (ext_career && cstage.started && 255 - cstage.car_inv[i] > co[i].fade)              \
+      co[i].fade = 255 - cstage.car_inv[i];                                                \
+  } while (0)
   if (!ext_models || !ext_loadbase(ext_models, &m, &t)) {
     fprintf(stderr, "could not load ext/data/models.radq\n");
   }
@@ -7605,10 +7623,7 @@ int game_run(void) {
       }
 
       for (int32_t i = 0; i < nplayers; i++) {
-        ContO *base = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : CAR_MODEL(sc[i]);
-        // A career beast races its car's "B" model (GameSparker.loadstage,
-        // Extended's model sc + 78).
-        if (ext_career && crace.beast[i]) base = &ext_models[EXT_MODEL_BEAST + crace.sc[i]];
+        ContO *base = RACE_MODEL(i, sc[i]);
         int32_t gx = kXstart[i], gy = 250 - base->grat, gz = kZstart[i];
         if (ext_career) {
           int32_t gfloor;
@@ -7621,8 +7636,7 @@ int game_run(void) {
           gz = (i / 3) * 760;
         }
         cont_o_recopy(&co[i], base, gx, gy, gz, 0);
-        // A shadow car is see-through, no outlines (Plane.d, shadowtrans 80).
-        if (ext_career && crace.shadow[i]) co[i].fade = 255 - 80;
+        RACE_LOOK(i);
         // Keyboard/pad input drives slot 0 -- see platform/<name>/input.h
         // for the exact keymap. Polled once per frame in the loop below,
         // after platform_poll() reads this frame's hardware state. Slots
@@ -9146,8 +9160,8 @@ int game_run(void) {
         for (int32_t i = 0; i < nplayers; i++) {
           if (mad[i].newcar) {
             int32_t saved_xz = co[i].xz, saved_xy = co[i].xy, saved_zy = co[i].zy;
-            ContO *pristine = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : CAR_MODEL(mad[i].cn);
-            cont_o_recopy(&co[i], pristine, co[i].x, co[i].y, co[i].z, 0);
+            cont_o_recopy(&co[i], RACE_MODEL(i, mad[i].cn), co[i].x, co[i].y, co[i].z, 0);
+            RACE_LOOK(i);
             co[i].xz = saved_xz;
             co[i].xy = saved_xy;
             co[i].zy = saved_zy;
@@ -9265,11 +9279,47 @@ int game_run(void) {
           }
           // stat$m's bonus stat point popups (XT 5631-5835), sliding in from
           // the left: the waste's in red, the checkpoint's under it in green.
-          // (The original's running totals beside them are left out.) Their
-          // shake is this frame's own, not the career's random stream.
+          // Their shake is this frame's own, not the career's random stream.
+          int32_t py = 218;
+          {
+            // stat$m's running totals (XT 5306-5535), above them: "N WASTES
+            // WITH car" on each waste, "N CLEARED IN TOTAL" every 4th
+            // checkpoint, "N CLEARED WITH car" every 2nd. Same slide, on ticks.
+            static int32_t cnt_prev[3] = {-1, -1, -1}, cnt_x[3], cnt_show[3];
+            static bool cnt_on[3], cnt_back[3];
+            const int32_t now_v[3] = {csave.killscn[me], csave.wins, csave.winscn[me]};
+            for (int32_t k = 0; k < 3; k++) {
+              if (starcnt > 0 || cnt_prev[k] < 0) {
+                cnt_on[k] = false;
+              } else if (now_v[k] > cnt_prev[k] && (k == 0 || now_v[k] % (k == 1 ? 4 : 2) == 0)) {
+                cnt_on[k] = true;
+                cnt_x[k] = -55;
+                cnt_show[k] = 0;
+                cnt_back[k] = false;
+              }
+              cnt_prev[k] = now_v[k];
+              if (!cnt_on[k]) continue;
+              if (race_ticked) {
+                if (cnt_x[k] < 15 && !cnt_back[k]) cnt_x[k] += 8;
+                if (cnt_x[k] >= 15) cnt_show[k]++;
+                cnt_back[k] = cnt_show[k] >= 30;
+                if (cnt_back[k]) cnt_x[k] -= 8;
+                if (cnt_x[k] <= -400) cnt_on[k] = false;
+              }
+              char cl[96];
+              if (k == 0) snprintf(cl, sizeof(cl), now_v[0] == 1 ? "%d WASTE WITH %s" : "%d WASTES WITH %s", (int)now_v[0], car_name(sc[0]));
+              else if (k == 1) snprintf(cl, sizeof(cl), "%d CLEARED IN TOTAL", (int)now_v[1]);
+              else snprintf(cl, sizeof(cl), "%d CLEARED WITH %s", (int)now_v[2], car_name(sc[0]));
+              font_set(FONT_BOLD, 16);
+              if (k == 0) gfx_set_color(&g, 130, 0, 0);
+              else if (k == 1) gfx_set_color(&g, 0, 70, 0);
+              else gfx_set_color(&g, 0, 110, 0);
+              font_draw(&g, cl, cnt_x[k], py);
+              py += 23;
+            }
+          }
           {
             static uint32_t shake = 12345u;
-            int32_t py = 218;
             for (int32_t i = 0; i < 2; i++) {
               const int32_t chance = i == 0 ? crun.killchance[1] : crun.winchance[1];
               if (chance > 1000 || crun.pop_amount[i] == 0) continue;
@@ -9644,8 +9694,8 @@ int game_run(void) {
           else co[i].fix = true;
         }
         if (co[i].fcnt == 7 || co[i].fcnt == 8) {
-          ContO *pristine = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : CAR_MODEL(mad[i].cn);
-          cont_o_recopy(&co[i], pristine, 0, 0, 0, 0);
+          cont_o_recopy(&co[i], RACE_MODEL(i, mad[i].cn), 0, 0, 0, 0);
+          RACE_LOOK(i);
           rpd.cntdest[i] = 0;
         }
         record_playh(&rpd, &co[i], &mad[i], i, replay_tick, xt.im);
@@ -9805,8 +9855,8 @@ int game_run(void) {
           else co[i].fix = true;
         }
         if (co[i].fcnt == 7 || co[i].fcnt == 8) {
-          ContO *pristine = (i == 0 && car_index == CUSTOM_CAR_INDEX) ? &car_base : CAR_MODEL(mad[i].cn);
-          cont_o_recopy(&co[i], pristine, 0, 0, 0, 0);
+          cont_o_recopy(&co[i], RACE_MODEL(i, mad[i].cn), 0, 0, 0, 0);
+          RACE_LOOK(i);
           rpd.cntdest[i] = 0;
         }
         if (pause_replay_tick == 299) {
