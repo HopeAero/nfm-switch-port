@@ -26,6 +26,25 @@ int main(void) {
   CHECK_TR("1st", "1\xc2\xba");                          // an alternative, expanded
   CHECK_TR("STAT POINTS:  -12", "PUNTOS DE STATS:  -12");
   CHECK_TR("Settings\nMenu", "Ajustes\nMen\xc3\xba");     // line by line
+  // The port's own dictionary (i18n_port_es.c): an entry, a format, a pattern
+  // with a translated capture ($t1), and its precedence over the web's order.
+  CHECK_TR("Reset RPG Mode", "Reiniciar modo RPG");
+  CHECK_TR("Drive your car using the %s and %s", "Maneja tu auto con %s y %s");
+  CHECK_TR("Reshuffles: 2   Transfers: 1", "Mezclas: 2   Pases: 1");
+  CHECK_TR("Press Enter to continue", "Presiona Enter para continuar");
+  CHECK_TR("< All Cars >", "< Todos los autos >");
+  CHECK_TR("Level 12    XP 30 / 400", "Nivel 12    XP 30 / 400");
+  CHECK_TR("Hamer has wasted all the cars!", "\xc2\xa1Hamer destruy\xc3\xb3 todos los autos!");
+  // The web's function patterns, as code: stunt calls (Extended's and the
+  // base game's), the arrow, counted nouns, car classes.
+  CHECK_TR("Breathtaking forward loop by 360!", "\xc2\xa1" "Asombrosa giro adelante por 360!");
+  CHECK_TR("Wicked Forward loop with Rollspin by 180 and beyond!!",
+           "\xc2\xa1" "Brutal Giro adelante con Giro de lado por 180 y m\xc3\xa1s all\xc3\xa1!!");
+  CHECK_TR("Nice job!", "Nice job!");   // not the stunt grammar
+  CHECK_TR("Arrow now pointing at > CARS", "La flecha apunta a los autos");
+  CHECK_TR("1 car", "1 auto");
+  CHECK_TR("12 cars", "12 autos");
+  CHECK_TR("Class A & B", "Clase A & B");
   s = "Radical One";
   CHECK(tr(s) == s, "a car name passes through");
   CHECK(tr(s) == s, "...and again, from the miss cache");

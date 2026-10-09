@@ -41,7 +41,8 @@ const char *tr(const char *s);
 typedef struct { const char *en, *es; } I18nEntry;
 
 /** A pattern is literal UTF-8 text and these token bytes, anchored at both
- * ends; the replacement says $1..$9 for the captures, in order. */
+ * ends; the replacement says $1..$9 for the captures, in order, and $t1..$t9
+ * for a capture translated in turn (a key name, a value). */
 enum {
   I18N_T_ANY = 1,      // (.*)    captured, greedy
   I18N_T_LAZY = 2,     // (.*?)   captured, shortest first
@@ -63,6 +64,16 @@ extern const I18nEntry I18N_ES[];
 extern const int32_t I18N_ES_COUNT;
 extern const I18nPattern I18N_ES_PATTERNS[];
 extern const int32_t I18N_ES_PATTERN_COUNT;
+
+// ---- the port's own text (i18n_port_es.c, hand-written) ----
+// What only this port draws (its settings, the career panel, the original's
+// instructions and stage cards the web port never shows...). Looked up
+// before the generated tables, so an entry here also overrides the web's;
+// the port's patterns likewise run first. Entries need not be sorted.
+extern const I18nEntry I18N_PORT_ES[];
+extern const int32_t I18N_PORT_ES_COUNT;
+extern const I18nPattern I18N_PORT_ES_PATTERNS[];
+extern const int32_t I18N_PORT_ES_PATTERN_COUNT;
 
 #ifdef __cplusplus
 }

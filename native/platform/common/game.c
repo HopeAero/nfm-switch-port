@@ -500,17 +500,17 @@ typedef enum {
 // arrow keys on desktop, the left stick on the Vita (snapped to four
 // directions, platform/vita/input.c), where driving is triggers + stick.
 #ifdef NFM_TARGET_VITA
-#define KEY_STEER    "L/R and Left Stick"
-#define KEY_STUNT    "Left Stick"
-#define KEY_HANDB    "Cross"
-#define KEY_ARRACE   "press Up on the D-pad"
+#define KEY_STEER    tr("L/R and Left Stick")
+#define KEY_STUNT    tr("Left Stick")
+#define KEY_HANDB    tr("Cross")
+#define KEY_ARRACE   tr("press Up on the D-pad")
 #define KEY_CONTINUE "Cross"
 #define KEY_BACK     "Circle"
 // clicknow()'s prompt; the original asks for a mouse click.
 #define KEY_START_PROMPT "Press Cross to Start"
-#define KEY_ARRACE_HINT  "Press Up on the D-pad"
+#define KEY_ARRACE_HINT  tr("Press Up on the D-pad")
 #define KEY_SPECIAL "R"
-#define KEY_VIEW "Triangle"
+#define KEY_VIEW tr("Triangle")
 #define KEY_LISTBARS "L"
 #elif defined(NFM_TARGET_SWITCH)
 // The Switch's buttons as platform/switch/{platform,input}.c bind them: the
@@ -530,15 +530,15 @@ typedef enum {
 #define KEY_VIEW     kPadIcons[key_settings()->bind[BIND_VIEW]]
 #define KEY_LISTBARS kPadIcons[key_settings()->bind[BIND_LISTBARS]]
 #else
-#define KEY_STEER    "Arrow Keys"
-#define KEY_STUNT    "Arrow Keys"
-#define KEY_HANDB    "Spacebar"
-#define KEY_ARRACE   "press [ A ]"
+#define KEY_STEER    tr("Arrow Keys")
+#define KEY_STUNT    tr("Arrow Keys")
+#define KEY_HANDB    tr("Spacebar")
+#define KEY_ARRACE   tr("press [ A ]")
 #define KEY_CONTINUE "Enter"
 #define KEY_BACK     "Esc"
 #define KEY_START_PROMPT "Click here to Start"
 // The stage cards' hint (stages 3 and 14), in their own sentence case.
-#define KEY_ARRACE_HINT  "Press [ A ]"
+#define KEY_ARRACE_HINT  tr("Press [ A ]")
 #define KEY_SPECIAL "Q"
 #define KEY_VIEW "V"
 #define KEY_LISTBARS "D"
@@ -659,24 +659,26 @@ static const GameSettings *key_settings(void) {
 static const char *key_steer(void) {
   static char buf[64];
   const GameSettings *s = key_settings();
-  snprintf(buf, sizeof(buf), "%s/%s and %s", kPadIcons[s->bind[BIND_ACCEL]], kPadIcons[s->bind[BIND_BRAKE]],
+  snprintf(buf, sizeof(buf), tr("%s/%s and %s"), kPadIcons[s->bind[BIND_ACCEL]], kPadIcons[s->bind[BIND_BRAKE]],
            s->steer_dpad ? ICON_DPAD : ICON_LSTICK);
   return buf;
 }
 static const char *key_arrace(const char *verb) {
   static char buf[2][48];
   char *b = buf[verb[0] == 'P'];
-  snprintf(b, sizeof(buf[0]), "%s %s", verb, kPadIcons[key_settings()->bind[BIND_ARRACE]]);
+  snprintf(b, sizeof(buf[0]), "%s %s", tr(verb), kPadIcons[key_settings()->bind[BIND_ARRACE]]);
   return b;
 }
 #endif
 
-/** font_draw of a printf-formatted line (the help text's key names). */
+/** font_draw of a printf-formatted line (the help text's key names). The
+ * format is translated before it is filled in (i18n_port_es.c has these
+ * lines as formats), so the key names land where the language puts them. */
 static void font_drawf(Graphics2D *g, int32_t x, int32_t y, const char *fmt, ...) {
   char buf[160];
   va_list ap;
   va_start(ap, fmt);
-  vsnprintf(buf, sizeof(buf), fmt, ap);
+  vsnprintf(buf, sizeof(buf), tr(fmt), ap);
   va_end(ap);
   font_draw(g, buf, x, y);
 }
@@ -3648,11 +3650,19 @@ static void draw_extra_credits(Graphics2D *g, int32_t page, HudImg next, HudImg 
 #define GUIDE_PAGES 6
 #define GUIDE_FLIPO 99   // inst_flipo while the guide shows: draw_instructions draws only the backdrop
 
+/** One line of the guide: its format translated (i18n_port_es.c), then filled in. */
+static void guide_line(char *dst, size_t n, const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(dst, n, tr(fmt), ap);
+  va_end(ap);
+}
+
 static void draw_ext_guide(Graphics2D *g, const InstAssets *ia, int32_t page) {
   char l[12][96];
   int32_t n = 0;
   const char *title = "";
-#define GL(...) snprintf(l[n++], sizeof(l[0]), __VA_ARGS__)
+#define GL(...) guide_line(l[n++], sizeof(l[0]), __VA_ARGS__)
   switch (page) {
     case 0:
       title = "Extended:  special attacks";
@@ -4223,7 +4233,7 @@ static void settings_screen_draw(Graphics2D *g, const SettingsUi *ui, const Game
       const char *name = row->names ? row->names[i] : (snprintf(num, sizeof(num), "%d", (int)v), num);
       char with_icon[40];
       if (row->names == kPadNames) {
-        snprintf(with_icon, sizeof(with_icon), "%s %s", kPadIcons[i], name);
+        snprintf(with_icon, sizeof(with_icon), "%s %s", kPadIcons[i], tr(name));
         name = with_icon;
       }
       const int32_t tw = font_width(name);
@@ -4546,7 +4556,7 @@ static void draw_specials_hud(Graphics2D *g, Medium *m, const Specials *sp, cons
     gfx_fill_polygon(g, xs, ys, 6);
     gfx_set_composite(g, 1.0f);
     char tab[32];
-    snprintf(tab, sizeof(tab), "%s %d%% %s", mod < 100.0 ? "-" : "+", diff, kStat[k]);
+    snprintf(tab, sizeof(tab), "%s %d%% %s", mod < 100.0 ? "-" : "+", diff, tr(kStat[k]));
     gfx_set_color(g, 255, 255, 255);
     font_set(FONT_BOLD, 11);
     font_draw(g, tab, 28, y + 13);
@@ -4645,7 +4655,7 @@ static void draw_career_panel(Graphics2D *g, const CareerSave *s, int32_t ec, in
       const bool sel = r == row;
       const int32_t yy = ry + r * 20;
       gfx_set_color(g, sel ? 255 : 210, sel ? 196 : 210, sel ? 0 : 210);
-      snprintf(line, sizeof(line), "%s%s", sel ? "> " : "", career_perk_name[p]);
+      snprintf(line, sizeof(line), "%s%s", sel ? "> " : "", tr(career_perk_name[p]));
       font_draw(g, line, x0 + 30, yy);
       // Its points, 0-20, as a bar.
       gfx_set_color(g, 60, 60, 80);
@@ -5050,6 +5060,16 @@ int game_run(void) {
 
   // loading() -- sign.gif, hello.gif (the Radicalplay logo) and loadbar.gif
   // live loose in data/, and the bar fills by the size of what has loaded.
+  // The loading screen already speaks the saved language (the Settings
+  // load in full, and apply, further down).
+  {
+    char path[1024];
+    if (platform_progress_path(path, sizeof(path))) {
+      GameSettings early = game_settings_defaults(NFM_DEFAULT_GRAPHICS);
+      game_settings_load(path, &early);
+      i18n_set_lang(early.language);
+    }
+  }
   BootImages boot_images;
   boot_images.sign = load_data_gif("data/sign.gif");
   boot_images.hello = load_data_gif("data/hello.gif");
@@ -5840,6 +5860,7 @@ int game_run(void) {
   // Headless: NFM_GUIDE_PAGE=n opens the instructions on the guide's page n,
   // NFM_CREDITS_PAGE=n the credits on page n.
   if (getenv("NFM_GUIDE_PAGE")) inst_flipo = GUIDE_FLIPO, guide_page = atoi(getenv("NFM_GUIDE_PAGE"));
+  if (getenv("NFM_INST_PAGE")) inst_flipo = atoi(getenv("NFM_INST_PAGE"));   // headless: an instructions page (1, 3 .. 15, 16)
   if (getenv("NFM_CREDITS_PAGE")) credits_page = atoi(getenv("NFM_CREDITS_PAGE"));
   int32_t inst_dudo = 0;
   int32_t inst_duds = 0;
@@ -11021,11 +11042,13 @@ int game_run(void) {
         static const char *const kTierShort[5] = {"Any cars", "Classic", "Extended", "R&R", "Custom"};
         static const char *const kWinShort[3] = {"Race or Waste", "Waste only", "Race only"};
         char sl[128];
-        int32_t len = snprintf(sl, sizeof(sl), "%d rivals: %s  -  %s", (int)settings.fp_opponents + 1,
-                               settings.fp_pick ? "Manual" : kTierShort[settings.fp_tier], kWinShort[settings.fp_win]);
-        if (settings.fp_laps > 0) len += snprintf(sl + len, sizeof(sl) - (size_t)len, "  -  %d laps", (int)settings.fp_laps);
-        if (!settings.fp_arrow) len += snprintf(sl + len, sizeof(sl) - (size_t)len, "  -  no arrow");
-        if (!settings.fp_specials) snprintf(sl + len, sizeof(sl) - (size_t)len, "  -  no specials");
+        // Built from parts, each translated (its format too: i18n_port_es.c).
+        int32_t len = snprintf(sl, sizeof(sl), tr(settings.fp_opponents == 0 ? "%d rival: %s  -  %s" : "%d rivals: %s  -  %s"),
+                               (int)settings.fp_opponents + 1,
+                               tr(settings.fp_pick ? "Manual" : kTierShort[settings.fp_tier]), tr(kWinShort[settings.fp_win]));
+        if (settings.fp_laps > 0) len += snprintf(sl + len, sizeof(sl) - (size_t)len, tr("  -  %d laps"), (int)settings.fp_laps);
+        if (!settings.fp_arrow) len += snprintf(sl + len, sizeof(sl) - (size_t)len, "%s", tr("  -  no arrow"));
+        if (!settings.fp_specials) snprintf(sl + len, sizeof(sl) - (size_t)len, "%s", tr("  -  no specials"));
         gfx_set_composite(&g, 0.6f);
         gfx_set_color(&g, 0, 0, 0);
         gfx_fill_rect(&g, 180, 326, 440, 40);
@@ -11047,16 +11070,17 @@ int game_run(void) {
         const bool modes_ok = stage_num < csave.unlocked && csave.unlocked >= 3;
         career_stage_info(&csave, ext_car_of(car_index), stage_num, modes_ok ? career_mode : 0, &si);
         char il[128];
-        int32_t len = snprintf(il, sizeof(il), "Stage level %d (you %d)  -  ", (int)si.level,
+        // Built from parts, each translated (its format too: i18n_port_es.c).
+        int32_t len = snprintf(il, sizeof(il), tr("Stage level %d (you %d)  -  "), (int)si.level,
                                (int)csave.level[ext_car_of(car_index)]);
         if (si.noexp)
-          snprintf(il + len, sizeof(il) - (size_t)len, "NO XP (%s)", si.capped ? "level cap reached" : "no levels");
+          snprintf(il + len, sizeof(il) - (size_t)len, tr("NO XP (%s)"), tr(si.capped ? "level cap reached" : "no levels"));
         else if (si.expmult < 1.0)
-          snprintf(il + len, sizeof(il) - (size_t)len, "XP -%d%% (car too strong)%s", (int)((1.0 - si.expmult) * 100.0 + 0.5),
-                   si.nobsp ? "  -  no bonus stat points" : "");
+          snprintf(il + len, sizeof(il) - (size_t)len, tr("XP -%d%% (car too strong)%s"), (int)((1.0 - si.expmult) * 100.0 + 0.5),
+                   si.nobsp ? tr("  -  no bonus stat points") : "");
         else
-          snprintf(il + len, sizeof(il) - (size_t)len, "Full XP%s",
-                   si.nobsp ? "  -  no bonus stat points" : si.hard ? "  -  tough field: more bonus points" : "");
+          snprintf(il + len, sizeof(il) - (size_t)len, tr("Full XP%s"),
+                   si.nobsp ? tr("  -  no bonus stat points") : si.hard ? tr("  -  tough field: more bonus points") : "");
         gfx_set_composite(&g, 0.6f);
         gfx_set_color(&g, 0, 0, 0);
         gfx_fill_rect(&g, 180, 300, 440, 22);

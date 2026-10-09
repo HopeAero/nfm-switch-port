@@ -79,6 +79,7 @@ add_library(nfm_core STATIC
   core/font_data.c
   core/i18n.c
   core/i18n_es.c
+  core/i18n_port_es.c
   core/gif_decode.c
   core/png_decode.c
   core/jpeg_decode.c

@@ -43,6 +43,7 @@ add_executable(font_test
   ../core/font_data.c
   ../core/i18n.c
   ../core/i18n_es.c
+  ../core/i18n_port_es.c
   ../core/gfx.c
 )
 target_link_libraries(font_test m)
@@ -53,6 +54,7 @@ add_executable(i18n_test
   ../core/font_data.c
   ../core/i18n.c
   ../core/i18n_es.c
+  ../core/i18n_port_es.c
   ../core/gfx.c
 )
 target_link_libraries(i18n_test m)
