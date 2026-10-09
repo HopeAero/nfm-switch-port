@@ -1545,6 +1545,11 @@ static const bool *g_arrow_skip = NULL;
 static const bool *g_board_skip = NULL;
 // The career's levels by slot, for the car the arrow points at. NULL outside it.
 static const int32_t *g_arrow_levels = NULL;
+// Extended's cars, specials and list-bars toggle (control.swap), for the
+// locked car's bars beside its name (XT 1534-1627). NULL outside Extended.
+static const Mad *g_arrow_mads = NULL;
+static const Specials *g_arrow_specials = NULL;
+static const bool *g_arrow_swap = NULL;
 
 /**
  * Ports the !arrace branch of XtGraphics.js's arrow(n, n2, checkPoints, b)
@@ -1665,8 +1670,60 @@ static void draw_checkpoint_arrow(Graphics2D *g, Medium *m, XtGraphicsStub *xt,
     // bold 11 (Extended's XT 1469-1471: "[" + 36 spaces + "]"); without its
     // own font it took whatever the frame drew last.
     font_set(FONT_BOLD, 11);
-    hud_say_draw(g, m, 13, "[                                    ]", 76, 67, 240, 0);
-    if (target >= 0 && target < NFM_MAX_CARS && sc[target] >= 0 && sc[target] < CAR_COUNT) {
+    if (g_arrow_mads) {
+      // Round the name at 435, the bars clear of it on the left.
+      static const char kBracket[] = "[                                    ]";
+      gfx_set_color(g, hud_tint(76.0, m->snap[0]), hud_tint(67.0, m->snap[1]), hud_tint(240.0, m->snap[2]));
+      font_draw(g, kBracket, 435 - font_width(kBracket) / 2, 13);
+    } else {
+      hud_say_draw(g, m, 13, "[                                    ]", 76, 67, 240, 0);
+    }
+    const bool valid = target >= 0 && target < NFM_MAX_CARS && sc[target] >= 0 && sc[target] < CAR_COUNT;
+    if (valid && g_arrow_mads && target > 0) {
+      // Extended (XT 1471-1508): the name at x 435, coloured by what is on
+      // the car (a running special red, frozen blue, weakened orange,
+      // leeched brown, swapped green).
+      const Mad *t = &g_arrow_mads[target];
+      const bool fixsp = g_arrow_specials && g_arrow_specials->fixspecials[target];
+      int32_t nr = 0, ng = 0, nb = 0;
+      if (t->strswap) ng = 200;
+      else if (t->leech) nr = 140, ng = 105;
+      else if (t->redstr) nr = 220, ng = 110;
+      else if (t->frozen) nb = 220;
+      else if (fixsp) nr = 200;
+      const char *nm = car_name(sc[target]);
+      gfx_set_color(g, nr, ng, nb);
+      font_draw(g, nm, 435 - font_width(nm) / 2, 13);
+      // Its damage bar (or, with the list bars on specials, its special's
+      // charge), then its power, 60 wide at x 300 (XT 1534-1627).
+      int32_t fill, r, gg, b;
+      if (!(g_arrow_swap && *g_arrow_swap)) {
+        fill = (int32_t)(60.0f * ((float)t->hitmag / (float)t->cd->maxmag[t->cn]));
+        r = 244; gg = 244; b = 11;
+        if (fill > 20) gg = (int32_t)(244.0f - 233.0f * ((float)(fill - 20) / 40.0f));
+        if (fill > 60) fill = 60;
+        r = hud_tint((double)r, m->snap[0]);
+        gg = hud_tint((double)gg, m->snap[1]);
+        b = hud_tint((double)b, m->snap[2]);
+      } else {
+        fill = (int32_t)(60.0f * ((fixsp ? t->speclast : t->spatk) / 120.0f));
+        r = hud_tint(fixsp ? 85.0 : 220.0, m->snap[0]);
+        gg = b = 0;
+      }
+      if (fill < 0) fill = 0;
+      gfx_set_color(g, r, gg, b);
+      gfx_fill_rect(g, 300, 5, fill, 6);
+      gfx_set_color(g, 0, 0, 0);
+      gfx_draw_rect(g, 300, 5, 60, 6);
+      fill = (int32_t)(60.0f * (t->power / 98.0f));
+      if (fill > 60) fill = 60;
+      if (fill < 0) fill = 0;
+      gfx_set_color(g, hud_tint(t->power == 98.0f ? 64.0 : 128.0, m->snap[0]), hud_tint(244.0, m->snap[1]),
+                    hud_tint(244.0, m->snap[2]));
+      gfx_fill_rect(g, 300, 16, fill, 6);
+      gfx_set_color(g, 0, 0, 0);
+      gfx_draw_rect(g, 300, 16, 60, 6);
+    } else if (valid) {
       hud_say_draw(g, m, 13, car_name(sc[target]), 0, 0, 0, 0);
     }
     if (g_arrow_levels && target > 0) {
@@ -1677,7 +1734,7 @@ static void draw_checkpoint_arrow(Graphics2D *g, Medium *m, XtGraphicsStub *xt,
       font_set(FONT_BOLD, 15);
       if (g_arrow_levels[target] > g_arrow_levels[0] + 5) gfx_set_color(g, 150, 0, 0);
       else gfx_set_color(g, 0, 60, 0);
-      font_draw(g, lv, 488, 15);
+      font_draw(g, lv, g_arrow_mads ? 523 : 488, 15);   // Extended: beside the name at 435
     }
     return;
   }
@@ -7795,6 +7852,9 @@ int game_run(void) {
       }
       g_arrow_skip = ext_career ? cstage_arrow_skip : NULL;
       g_arrow_levels = ext_career ? crace.level : NULL;
+      g_arrow_mads = xt.extended ? mad : NULL;
+      g_arrow_specials = xt.extended ? &specials : NULL;
+      g_arrow_swap = &ext_listbars;
       g_board_skip = ext_career ? cstage_board_skip : NULL;
       for (int32_t k = 0; k < NFM_MAX_CARS; k++) cstage_arrow_skip[k] = cstage_board_skip[k] = false;
       m.polyoutline_on = false;
