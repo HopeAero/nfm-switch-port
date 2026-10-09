@@ -627,13 +627,17 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
   int32_t maxRSq2 = contO2->maxR * contO2->maxR;
   float sqSum = (float)maxRSq + (float)maxRSq2;
   float threshold = sqSum * 1.5f;
+  // The other car's strength is its own table's (Madness.java 764-772, 859,
+  // 910: madness.moment[madness.cn]) -- with its career points and special
+  // in, not the hitter's copy of its base value. Each car races on its own
+  // tables (game.c live_cd); NFM 2's are all the same.
   if (mad_rpy((float)contO->x, (float)contO2->x, (float)contO->y, (float)contO2->y, (float)contO->z, (float)contO2->z) < threshold) {
     if (!mad->caught[mad2->im] && (mad->speed != 0.0f || mad2->speed != 0.0f)) {
       float myForce = (mad->power * mad->speed) * cd->moment[mad->cn];
-      float otherForce = (mad2->power * mad2->speed) * cd->moment[mad2->cn];
+      float otherForce = (mad2->power * mad2->speed) * mad2->cd->moment[mad2->cn];
       if (fabsf(myForce) != fabsf(otherForce)) {
         mad->dominate[mad2->im] = fabsf(myForce) > fabsf(otherForce);
-      } else if (cd->moment[mad->cn] > cd->moment[mad2->cn]) {
+      } else if (cd->moment[mad->cn] > mad2->cd->moment[mad2->cn]) {
         mad->dominate[mad2->im] = true;
       } else {
         mad->dominate[mad2->im] = false;
@@ -684,7 +688,7 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
           if (mad->perks)
             career_perk_hit(mad->perks, mad->im, mad2->im, mad2->capsized, mad2->wtouch, mad->speed, mad2->speed,
                             mad2->power, ph);
-          if (fabsf(mad->scx[j] * cd->moment[mad->cn]) > fabsf(mad2->scx[k] * cd->moment[mad2->cn])) {
+          if (fabsf(mad->scx[j] * cd->moment[mad->cn]) > fabsf(mad2->scx[k] * mad2->cd->moment[mad2->cn])) {
             float n6 = mad2->scx[k] * cd->revpush[mad->cn];
             if (n6 > 300.0f) n6 = 300.0f;
             if (n6 < -300.0f) n6 = -300.0f;
@@ -709,7 +713,7 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2) {
                           (mad2->scx[k] + mad->scx[j]) / 4.0f, (mad2->scy[k] + mad->scy[j]) / 4.0f, (mad2->scz[k] + mad->scz[j]) / 4.0f, 2);
             }
           }
-          if (fabsf(mad->scz[j] * cd->moment[mad->cn]) > fabsf(mad2->scz[k] * cd->moment[mad2->cn])) {
+          if (fabsf(mad->scz[j] * cd->moment[mad->cn]) > fabsf(mad2->scz[k] * mad2->cd->moment[mad2->cn])) {
             float n12 = mad2->scz[k] * cd->revpush[mad->cn];
             if (n12 > 300.0f) n12 = 300.0f;
             if (n12 < -300.0f) n12 = -300.0f;
