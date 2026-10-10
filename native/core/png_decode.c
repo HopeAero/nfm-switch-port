@@ -67,6 +67,7 @@ bool png_decode(const uint8_t *data, size_t len, PngImage *out) {
   if (len < 8 || memcmp(data, SIGNATURE, 8) != 0) return false;
 
   int32_t width = 0, height = 0;
+  uint8_t color_type = 6;
   bool have_ihdr = false;
   uint8_t *idat = NULL;
   size_t idat_len = 0, idat_cap = 0;
@@ -84,9 +85,10 @@ bool png_decode(const uint8_t *data, size_t len, PngImage *out) {
       width = (int32_t)read_u32be(chunk_data);
       height = (int32_t)read_u32be(chunk_data + 4);
       uint8_t bit_depth = chunk_data[8];
-      uint8_t color_type = chunk_data[9];
+      color_type = chunk_data[9];
       uint8_t interlace = chunk_data[12];
-      if (bit_depth != 8 || color_type != 6 || interlace != 0 || width <= 0 || height <= 0) {
+      // RGBA (6), and RGB (2): the photo mode's own (png_write.c).
+      if (bit_depth != 8 || (color_type != 6 && color_type != 2) || interlace != 0 || width <= 0 || height <= 0) {
         ok = false; // unsupported variant -- see this file's header scope note
         break;
       }
@@ -109,7 +111,7 @@ bool png_decode(const uint8_t *data, size_t len, PngImage *out) {
 
   if (!ok || !have_ihdr || !idat) { free(idat); return false; }
 
-  int32_t bpp = 4; // colour type 6, bit depth 8 -- see this file's header scope note
+  int32_t bpp = color_type == 2 ? 3 : 4; // bit depth 8 -- see this file's header scope note
   int32_t stride = width * bpp;
   size_t raw_len = (size_t)(stride + 1) * (size_t)height;
   uint8_t *raw = malloc(raw_len);
@@ -121,7 +123,18 @@ bool png_decode(const uint8_t *data, size_t len, PngImage *out) {
 
   uint8_t *rgba = malloc((size_t)width * (size_t)height * 4);
   for (int32_t y = 0; y < height; y++) {
-    memcpy(rgba + (size_t)y * stride, raw + (size_t)y * (stride + 1) + 1, (size_t)stride);
+    const uint8_t *row = raw + (size_t)y * (stride + 1) + 1;
+    if (bpp == 4) {
+      memcpy(rgba + (size_t)y * stride, row, (size_t)stride);
+      continue;
+    }
+    uint8_t *o = rgba + (size_t)y * width * 4;
+    for (int32_t x = 0; x < width; x++) {
+      o[x * 4] = row[x * 3];
+      o[x * 4 + 1] = row[x * 3 + 1];
+      o[x * 4 + 2] = row[x * 3 + 2];
+      o[x * 4 + 3] = 255;
+    }
   }
   free(raw);
 

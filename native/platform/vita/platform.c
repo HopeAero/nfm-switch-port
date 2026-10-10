@@ -240,6 +240,12 @@ bool platform_pointer(int32_t *x, int32_t *y) {
   return false;
 }
 
+bool platform_pad_axes(PadAxes *out) {
+  // ponytail: no free camera on the Vita yet; sceCtrl's sticks when it is wanted.
+  *out = (PadAxes){0};
+  return false;
+}
+
 bool platform_take_focus_lost(void) {
   return false;
 }

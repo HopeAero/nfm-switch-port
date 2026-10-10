@@ -191,6 +191,31 @@ void platform_rumble(float strength, uint32_t ms) {
 
 extern uint64_t g_bind[BIND_COUNT];   // input.c
 
+static float stick_axis(s32 v) {
+  const s32 kDead = 4000;
+  if (v > -kDead && v < kDead) return 0.0f;
+  const float f = (float)(v > 0 ? v - kDead : v + kDead) / (float)(32767 - kDead);
+  return f > 1.0f ? 1.0f : f < -1.0f ? -1.0f : f;
+}
+
+bool platform_pad_axes(PadAxes *out) {
+  const u64 b = padGetButtons(&g_pad);
+  const HidAnalogStickState ls = padGetStickPos(&g_pad, 0), rs = padGetStickPos(&g_pad, 1);
+  out->lx = stick_axis(ls.x);
+  out->ly = stick_axis(ls.y);
+  out->rx = stick_axis(rs.x);
+  out->ry = stick_axis(rs.y);
+  static const struct { u64 hid; uint32_t pad; } kMap[] = {
+      {HidNpadButton_A, PAD_A}, {HidNpadButton_B, PAD_B}, {HidNpadButton_X, PAD_X}, {HidNpadButton_Y, PAD_Y},
+      {HidNpadButton_L, PAD_L}, {HidNpadButton_R, PAD_R}, {HidNpadButton_ZL, PAD_ZL}, {HidNpadButton_ZR, PAD_ZR},
+      {HidNpadButton_Up, PAD_UP}, {HidNpadButton_Down, PAD_DOWN}, {HidNpadButton_Left, PAD_LEFT},
+      {HidNpadButton_Right, PAD_RIGHT}, {HidNpadButton_Plus, PAD_PLUS}, {HidNpadButton_Minus, PAD_MINUS}};
+  out->buttons = 0;
+  for (size_t i = 0; i < sizeof(kMap) / sizeof(kMap[0]); i++)
+    if (b & kMap[i].hid) out->buttons |= kMap[i].pad;
+  return true;
+}
+
 bool platform_poll(bool held[BTN_COUNT]) {
   static bool hooked;
   if (!hooked) {

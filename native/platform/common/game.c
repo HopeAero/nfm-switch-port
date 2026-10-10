@@ -85,6 +85,8 @@
 #include "wav_decode.h"
 #include "radical_mod.h"
 #include "car_facts.h"
+#include "png_write.h"
+#include <time.h>
 #include "bots.h"
 #include "nfm_limits.h"
 #include "specials.h"
@@ -488,6 +490,7 @@ typedef enum {
   STATE_GALLERY_CARS,    //   the car list,
   STATE_GALLERY_CAR,     //   one car on the stand,
   STATE_GALLERY_MUSIC,   //   and the music
+  STATE_PHOTO,           // this port's photo mode (photo.inc), from the pause menu
 } GameState;
 #define STATE_IS_GALLERY(s) ((s) >= STATE_GALLERY && (s) <= STATE_GALLERY_MUSIC)
 
@@ -5170,6 +5173,7 @@ static void draw_ext_board(Graphics2D *g, const Medium *m, const CheckPoints *cp
   }
 }
 
+#include "photo.inc"
 #include "gallery.inc"
 
 int game_run(void) {
@@ -6537,9 +6541,10 @@ int game_run(void) {
         } else if (state == STATE_POST_RACE) {
           if (OVER(menu_contin, 355, 380)) HIT(NULL, 0, BTN_CONFIRM);
         } else if (state == STATE_PAUSED) {
-          static const int32_t kRows[6][4] = {{329, 45, 137, 22}, {320, 73, 155, 22}, {303, 99, 190, 22},
-                                              {341, 125, 109, 22}, {320, 202, 160, 30}, {320, 236, 160, 30}};
-          for (int32_t i = 0; i < 6; i++)
+          static const int32_t kRows[7][4] = {{329, 45, 137, 22}, {320, 73, 155, 22}, {303, 99, 190, 22},
+                                              {341, 125, 109, 22}, {320, 202, 160, 30}, {320, 236, 160, 30},
+                                              {320, 270, 160, 30}};
+          for (int32_t i = 0; i < 7; i++)
             if (OVERON(kRows[i][0], kRows[i][1], kRows[i][2], kRows[i][3])) HIT(&pause_opselect, i, BTN_CONFIRM);
         } else if (state == STATE_SETTINGS) {
           const int32_t r = (tx > 120 && tx < 680) ? settings_row_at(&settings_ui, &settings, platform_has_rumble(), ty) : -1;
@@ -6573,6 +6578,20 @@ int game_run(void) {
 #define KEY_EDGE(b) (held[(b)] && !previous_held[(b)])
 
     if (STATE_IS_GALLERY(state)) state = gallery_hook(&galctx, screenshot_menu, frame, state);
+    // NFM_SCREENSHOT_MENU=photo: the photo mode, headless, a few frames before
+    // the screenshot -- NFM_PHOTO_CAR jumps to a car, NFM_PHOTO_ZOOM and
+    // NFM_PHOTO_PITCH set the lens and the tilt, NFM_PHOTO_SAVE=1 takes one.
+    if (screenshot_menu && strcmp(screenshot_menu, "photo") == 0 && state == STATE_RACING &&
+        frame == screenshot_frame - 6) {
+      photo_enter(&m);
+      const char *e;
+      if ((e = getenv("NFM_PHOTO_CAR")) && atoi(e) < nplayers) photo_to_car(&co[photo.car = atoi(e)]);
+      if ((e = getenv("NFM_PHOTO_ZOOM"))) photo.zoom = (float)atof(e);
+      if ((e = getenv("NFM_PHOTO_PITCH"))) photo.pitch = (float)atof(e);
+      state = STATE_PHOTO;
+    }
+    if (state == STATE_PHOTO && screenshot_menu && frame == screenshot_frame - 3 && getenv("NFM_PHOTO_SAVE"))
+      photo.capture = true;
     if (state == STATE_BOOT_CLICK) {
       // fase 111 (GameSparker.java:263-279): a click -- here the confirm
       // button -- ends the prompt; so do 800 iterations (the draw counts).
@@ -7210,13 +7229,14 @@ int game_run(void) {
       // that (Return and Space).
       // Six rows: the original's four, plus this port's Settings (4) and
       // Restart Race (5).
+      // A seventh, Photo Mode (6), under Restart Race.
       if (KEY_EDGE(BTN_UP)) {
         pause_opselect--;
-        if (pause_opselect == -1) pause_opselect = 5;
+        if (pause_opselect == -1) pause_opselect = 6;
       }
       if (KEY_EDGE(BTN_DOWN)) {
         pause_opselect++;
-        if (pause_opselect == 6) pause_opselect = 0;
+        if (pause_opselect == 7) pause_opselect = 0;
       }
       // NFM_SCREENSHOT_MENU=pausereplay: headless stand-in for picking
       // Instant Replay (see the matching pause trigger in the race block).
@@ -7254,6 +7274,10 @@ int game_run(void) {
             cantreply_cnt = 0;
             state = STATE_CANTREPLY;
           }
+        } else if (pause_opselect == 6) {
+          photo_enter(&m);
+          photo.car = 0;
+          state = STATE_PHOTO;
         } else if (pause_opselect == 4) {
           settings_ui = (SettingsUi){.page = SET_MAIN};
           settings_return = STATE_PAUSED;
@@ -7343,6 +7367,11 @@ int game_run(void) {
     } else if (STATE_IS_GALLERY(state)) {
       galctx.held = held;
       state = gallery_input(state, &galctx);
+    } else if (state == STATE_PHOTO) {
+      if (photo_input(co, nplayers, held, previous_held)) {
+        photo_leave(&m);
+        state = STATE_PAUSED;
+      }
     }
 
     // The Performance Test: Free Play on a fixed stage and car, from a fixed
@@ -8989,7 +9018,7 @@ int game_run(void) {
                              render_state != STATE_PAUSED && render_state != STATE_PAUSE_REPLAY &&
                              render_state != STATE_CANTREPLY && render_state != STATE_BOOT_CLICK &&
                              render_state != STATE_SETTINGS && render_state != STATE_BENCH_RESULT &&
-                             !STATE_IS_GALLERY(render_state);
+                             !STATE_IS_GALLERY(render_state) && render_state != STATE_PHOTO;
     const bool use_rt = motion_blur_ok &&
                         (render_state == STATE_RACING || render_state == STATE_REPLAY ||
                          render_state == STATE_PAUSE_REPLAY || render_state == STATE_CAR_SELECT ||
@@ -10148,6 +10177,10 @@ int game_run(void) {
       bench_result_draw(&g, &bench);
     } else if (STATE_IS_GALLERY(state)) {
       gallery_draw(state, &galctx);
+    } else if (state == STATE_PHOTO) {
+      photo_apply(&m);
+      draw_race_scene(&g, &m, all_objs, total_objs, visible_idx, rank, order);
+      photo_draw_ui(&g, car_name(sc[photo.car]), false);
     } else if (state == STATE_PAUSED || state == STATE_CANTREPLY) {
       // PAUSE MENU -- fase -7, pausedgame() (xtGraphics.java:4695-4807),
       // and the fase -8 banner that sits on top of it.
@@ -10204,10 +10237,13 @@ int game_run(void) {
       if (pause_opselect == 4) draw_pause_highlight(&g, 345, 206, 110, 22);
       draw_pause_plate(&g, 320, 236, 160, 30);
       if (pause_opselect == 5) draw_pause_highlight(&g, 345, 240, 110, 22);
+      draw_pause_plate(&g, 320, 270, 160, 30);
+      if (pause_opselect == 6) draw_pause_highlight(&g, 345, 274, 110, 22);
       gfx_set_color(&g, 255, 255, 255);
       font_set(FONT_BOLD, 13);
       draw_centered(&g, "Settings", 400, 221);
       draw_centered(&g, "Restart Race", 400, 255);
+      draw_centered(&g, "Photo Mode", 400, 289);
       font_set(FONT_BOLD, 12);
 
       if (state == STATE_CANTREPLY) {
@@ -11843,7 +11879,7 @@ int game_run(void) {
         fps_worst = 0; // spike window resets with the average it sits next to
       }
 
-      if (settings.show_fps == 1) {
+      if (settings.show_fps == 1 && !photo.capture) {
         // The frame rate alone, top right, clear of the race HUD's panels.
         int32_t fps_dw, fps_dh;
         platform_display_size(&fps_dw, &fps_dh);
@@ -11858,7 +11894,7 @@ int game_run(void) {
         gfx_set_color(&g, 255, 255, 0);
         font_draw(&g, fps_txt, 800 - tw - 12, 442);
         gfx_submit_gl(&g);
-      } else if (settings.show_fps == 2) {
+      } else if (settings.show_fps == 2 && !photo.capture) {
       // Same viewport the composite blit uses, so the overlay lands in
       // the same place whether or not the blur path ran this frame.
       int32_t fps_dw, fps_dh;
@@ -11890,6 +11926,9 @@ int game_run(void) {
       gfx_submit_gl(&g);
       }
     }
+
+    // The photo mode's photo: this frame, drawn without its help.
+    if (render_state == STATE_PHOTO && photo.capture) photo_save_frame();
 
     // The headless screenshot hook, after every overlay so the dump is what
     // the screen shows.

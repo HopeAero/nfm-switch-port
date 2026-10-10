@@ -155,7 +155,7 @@ void game_progress_finish_stage(GameProgress *p, GameMode gmode, int32_t stage_n
 // Best-effort mkdir -p for the directory portion of `path`. Ignores
 // EEXIST; other errors are silently swallowed since the subsequent
 // fopen() will surface any real problem.
-static void ensure_parent_dir(const char *path) {
+void progress_ensure_dir(const char *path) {
   char copy[1024];
   size_t n = strlen(path);
   if (n >= sizeof(copy)) return;
@@ -177,7 +177,7 @@ static void ensure_parent_dir(const char *path) {
 }
 
 bool game_progress_save_to_disk(const GameProgress *p, const char *path) {
-  ensure_parent_dir(path);
+  progress_ensure_dir(path);
   FILE *f = fopen(path, "wb");
   if (!f) return false;
   uint8_t buf[24];
@@ -319,7 +319,7 @@ void game_settings_load(const char *progress_path, GameSettings *s) {
 bool game_settings_save(const char *progress_path, const GameSettings *s) {
   char path[1024];
   settings_path_for(progress_path, path, sizeof(path));
-  ensure_parent_dir(path);
+  progress_ensure_dir(path);
   FILE *f = fopen(path, "w");
   if (!f) return false;
   for (size_t k = 0; k < sizeof(kSettingKeys) / sizeof(kSettingKeys[0]); k++) {

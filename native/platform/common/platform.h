@@ -85,6 +85,21 @@ bool platform_take_focus_lost(void);
  * with the point in the 800x450 game space; false where there is none. */
 bool platform_pointer(int32_t *x, int32_t *y);
 
+/** The pad as it is, for the photo mode's free camera: both sticks (-1..1,
+ * up and right positive, deadzone removed) and the raw buttons (PAD_*),
+ * none of them remapped by Settings > Controls. False where there is no
+ * pad; the keyboard stands in on desktop. */
+enum {
+  PAD_A = 1 << 0, PAD_B = 1 << 1, PAD_X = 1 << 2, PAD_Y = 1 << 3, PAD_L = 1 << 4, PAD_R = 1 << 5,
+  PAD_ZL = 1 << 6, PAD_ZR = 1 << 7, PAD_UP = 1 << 8, PAD_DOWN = 1 << 9, PAD_LEFT = 1 << 10,
+  PAD_RIGHT = 1 << 11, PAD_PLUS = 1 << 12, PAD_MINUS = 1 << 13,
+};
+typedef struct {
+  float lx, ly, rx, ry;
+  uint32_t buttons;
+} PadAxes;
+bool platform_pad_axes(PadAxes *out);
+
 /** Prefix game.c passes straight to vfs_set_fpath() (core/vfs.h) before
  * reading any asset, so every "data/images.zip"/"stages/N.txt"/
  * "music/stageN.zip" literal in game.c stays platform-neutral: "" on

@@ -107,6 +107,8 @@ add_library(nfm_core STATIC
   core/career_stage.c
   core/car_identity.c
   core/car_facts.c
+  core/png_write.c
+  core/replay_file.c
   core/progress.c
   core/wav_decode.c
   core/audio_mixer.c

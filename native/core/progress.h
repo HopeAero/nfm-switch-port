@@ -153,6 +153,8 @@ void game_progress_finish_stage(GameProgress *p, GameMode gmode, int32_t stage_n
 // read older saves. Returns true on success, false if the file couldn't
 // be opened / short-written (the caller keeps the in-memory value either
 // way; missing progression on next boot is a soft failure, not a crash).
+/** Best-effort mkdir -p of the folders `path` (a file's) sits in. */
+void progress_ensure_dir(const char *path);
 bool game_progress_save_to_disk(const GameProgress *p, const char *path);
 
 // Read the persisted progress from `path` (see game_progress_save_to_disk

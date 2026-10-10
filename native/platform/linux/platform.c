@@ -130,6 +130,22 @@ bool platform_poll(bool held[BTN_COUNT]) {
   return running;
 }
 
+// The keyboard as a pad: WASD the left stick, IJKL the right one, Q/E the
+// shoulders, Z/C the triggers, Return A, Backspace B, X and Y themselves.
+bool platform_pad_axes(PadAxes *out) {
+  const Uint8 *k = SDL_GetKeyboardState(NULL);
+  out->lx = (float)(k[SDL_SCANCODE_D] - k[SDL_SCANCODE_A]);
+  out->ly = (float)(k[SDL_SCANCODE_W] - k[SDL_SCANCODE_S]);
+  out->rx = (float)(k[SDL_SCANCODE_L] - k[SDL_SCANCODE_J]);
+  out->ry = (float)(k[SDL_SCANCODE_I] - k[SDL_SCANCODE_K]);
+  out->buttons = (k[SDL_SCANCODE_RETURN] ? PAD_A : 0) | (k[SDL_SCANCODE_BACKSPACE] ? PAD_B : 0) |
+                 (k[SDL_SCANCODE_X] ? PAD_X : 0) | (k[SDL_SCANCODE_Y] ? PAD_Y : 0) | (k[SDL_SCANCODE_Q] ? PAD_L : 0) |
+                 (k[SDL_SCANCODE_E] ? PAD_R : 0) | (k[SDL_SCANCODE_Z] ? PAD_ZL : 0) | (k[SDL_SCANCODE_C] ? PAD_ZR : 0) |
+                 (k[SDL_SCANCODE_UP] ? PAD_UP : 0) | (k[SDL_SCANCODE_DOWN] ? PAD_DOWN : 0) |
+                 (k[SDL_SCANCODE_LEFT] ? PAD_LEFT : 0) | (k[SDL_SCANCODE_RIGHT] ? PAD_RIGHT : 0);
+  return true;
+}
+
 // No controller vibration on this target (see common/platform.h).
 bool platform_pointer(int32_t *x, int32_t *y) {
   int mx, my, w, h;

@@ -6,8 +6,10 @@
 // `Image.open(...).convert('RGBA')` over the actual files and sampling
 // a handful of (x,y) points per file (corners, center, off-center).
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "../core/png_decode.h"
+#include "../core/png_write.h"
 #include "../core/vfs.h"
 
 static int failures = 0;
@@ -50,6 +52,23 @@ static void check_png(VfsZip *zip, const char *name, int32_t want_w, int32_t wan
 }
 
 int main(void) {
+  {
+    // png_write's photos read back as written (the Gallery shows them).
+    uint8_t rgb[5 * 3 * 3];
+    for (int i = 0; i < (int)sizeof(rgb); i++) rgb[i] = (uint8_t)(i * 37);
+    size_t len = 0;
+    uint8_t *png = png_encode_rgb(rgb, 5, 3, &len);
+    PngImage img;
+    CHECK(png && png_decode(png, len, &img), "png_write: a written PNG decodes");
+    if (png && img.rgba) {
+      bool same = img.width == 5 && img.height == 3;
+      for (int i = 0; same && i < 15; i++)
+        same = img.rgba[i * 4] == rgb[i * 3] && img.rgba[i * 4 + 1] == rgb[i * 3 + 1] && img.rgba[i * 4 + 2] == rgb[i * 3 + 2];
+      CHECK(same, "png_write: its pixels come back the same");
+      png_free(&img);
+    }
+    free(png);
+  }
   VfsZip zip;
   vfs_set_fpath("../../../");
   bool loaded = vfs_read_zip("data/images.zip", &zip);

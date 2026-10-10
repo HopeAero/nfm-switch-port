@@ -75,6 +75,7 @@ target_link_libraries(gif_decode_test ZLIB::ZLIB)
 add_executable(png_decode_test
   png_decode_test.c
   ../core/png_decode.c
+  ../core/png_write.c
   ../core/vfs.c
 )
 target_link_libraries(png_decode_test ZLIB::ZLIB)
@@ -238,6 +239,11 @@ add_executable(control_career_test
   ../core/vfs.c
 )
 target_link_libraries(control_career_test m ZLIB::ZLIB)
+
+add_executable(replay_file_test
+  replay_file_test.c
+  ../core/replay_file.c
+)
 
 add_executable(car_facts_test
   car_facts_test.c
@@ -432,6 +438,7 @@ target_link_libraries(mad_test m ZLIB::ZLIB)
 enable_testing()
 add_test(NAME java_compat_test COMMAND java_compat_test)
 add_test(NAME car_facts_test COMMAND car_facts_test)
+add_test(NAME replay_file_test COMMAND replay_file_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_test(NAME trackers_test COMMAND trackers_test)
 add_test(NAME medium_test COMMAND medium_test)
 add_test(NAME gfx_test COMMAND gfx_test)
