@@ -387,22 +387,26 @@ typedef struct {
   double healthpc, dmgpc;
 } Dent;
 
-static void dent_init(const Mad *mad, Dent *d) {
+int32_t mad_dent_limit(int32_t ident, float *dmgby) {
   // Madness.java 434, by Extended's numbers (NFM 2's cars are its 23-38).
   static const int32_t kHealthReset[39] = {
       6000,   4200, 6000,  9500, 6000,   9100,   11000,  7500,  11500,  12000, 18000, 100000, 18000,
       110000, 5800, 18000, 11000, 6700, 100000, 130000, 115000, 20000, 360000, 6000, 4200,  7200,
       6000,   6000, 9100,  14000, 12000, 12000, 9700,   13000,  10700, 13000,  63000, 5800,  18000};
-  d->on = mad->xt->extended;
-  if (!d->on) return;
-  const int32_t ident = car_identity(mad->cn);   // a new car counts as its donor
   const int32_t e = ident < 16 ? ident + 23 : ident - 16;
-  d->reset = (e >= 0 && e < 39) ? kHealthReset[e] : 12000;
-  d->dmgby = e == 2                                          ? 10.0f
+  if (dmgby)
+    *dmgby = e == 2                                          ? 10.0f
              : (e == 11 || e == 13 || e == 18 || e == 36) ? 50.0f
              : (e == 19 || e == 22)                         ? 80.0f
              : e == 20                                      ? 40.0f
                                                             : 20.0f;
+  return (e >= 0 && e < 39) ? kHealthReset[e] : 12000;
+}
+
+static void dent_init(const Mad *mad, Dent *d) {
+  d->on = mad->xt->extended;
+  if (!d->on) return;
+  d->reset = mad_dent_limit(car_identity(mad->cn), &d->dmgby);   // a new car counts as its donor
 }
 
 /** Each plane reads the car's damage and dent as it starts. */

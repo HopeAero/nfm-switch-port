@@ -182,6 +182,9 @@ void mad_colide(Mad *mad, ContO *contO, Mad *mad2, ContO *contO2);
 // regy/regx/regz/rot/rpy/py) ---
 
 void mad_distruct(Mad *mad, ContO *contO);
+/** Extended's dent model (mad.c): how far car `ident`'s model may dent
+ * (healthreset) and, into *dmgby when not NULL, its dent divisor. */
+int32_t mad_dent_limit(int32_t ident, float *dmgby);
 int32_t mad_regy(Mad *mad, int32_t n, float a, ContO *contO);
 int32_t mad_regx(Mad *mad, int32_t n, float n2, ContO *contO);
 int32_t mad_regz(Mad *mad, int32_t n, float n2, ContO *contO);
