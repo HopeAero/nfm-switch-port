@@ -98,6 +98,7 @@ void mad_reseto(Mad *mad, int32_t cn, ContO *contO, CheckPoints *checkPoints) {
   mad->squash = 0;
   mad->nbsq = 0;
   mad->hitmag = 0;
+  mad->dmgmag = 0.0f;
   mad->cntdest = 0;
   mad->dest = false;
   mad->newcar = false;
@@ -333,6 +334,58 @@ static void mad_recolor_plane(Plane *p) {
   p->c[2] = rgb & 255;
 }
 
+// Extended's dent model, its fix of NFM 2's (Madness.java 241-316, 593-665, 1198-1270): a hit's
+// damage (f / 20) and its dent (f / dmgby) are apart, and the dent stops once
+// the car is as dented as it is damaged (dmgmag against healthreset, in per
+// cent) or fully dented. NFM 2 dents by the damage itself: a car with more
+// health than its model allows (Kool Kat, High Rider, Mighty Eight...) dented its points
+// out of clrad and took no more hits until it was fixed.
+typedef struct {
+  bool on;
+  float dmgby;
+  int32_t reset;
+  double healthpc, dmgpc;
+} Dent;
+
+static void dent_init(const Mad *mad, Dent *d) {
+  // Extended's healthreset for NFM 2's sixteen cars (Madness.java 434, its
+  // 23-38): how far each model may dent. A car past them (a new car) dents
+  // as far as its health goes.
+  static const int32_t kHealthReset[16] = {6000,  4200, 7200,  6000,  6000,  9100,  14000, 12000,
+                                           12000, 9700, 13000, 10700, 13000, 63000, 5800,  18000};
+  d->on = true;
+  d->reset = mad->cn >= 0 && mad->cn < 16 ? kHealthReset[mad->cn] : mad->cd->maxmag[mad->cn];
+  d->dmgby = mad->cn == 13 ? 50.0f : 20.0f;   // M A S H E E N dents less
+}
+
+/** Each plane reads the car's damage and dent as it starts. */
+static void dent_plane(const Mad *mad, Dent *d) {
+  if (!d->on) return;
+  d->healthpc = (double)mad->hitmag * 100.0 / (double)mad->cd->maxmag[mad->cn];
+  d->dmgpc = (double)mad->dmgmag * 100.0 / (double)d->reset;
+}
+
+/** The dent at one point: `hit` (the damage) itself outside Extended. */
+static float dent_point(const Dent *d, float f, float dale, float hit) {
+  if (!d->on) return hit;
+  if (d->dmgpc >= d->healthpc) return 0.0f;
+  float f2 = f / d->dmgby * dale;
+  if (fabsf(f2) > 5000.0f) f2 = 5000.0f;   // sic: positive, as Madness.java has it
+  return f2;
+}
+
+/** After the point: the dent counts, and a fully dented car stops. */
+static void dent_count(Mad *mad, const Dent *d, float *f2) {
+  if (!d->on) return;
+  mad->dmgmag += fabsf(*f2) * (d->dmgby / 20.0f);
+  if (mad->dmgmag > (float)d->reset) *f2 = 0.0f;
+}
+
+/** Whether the plane chips and darkens. */
+static bool dent_shows(const Dent *d, float f2) {
+  return f2 != 0.0f && (!d->on || d->dmgpc < d->healthpc);
+}
+
 int32_t mad_regy(Mad *mad, int32_t n, float a, ContO *contO) {
   CarDefine *cd = mad->cd;
   Medium *m = mad->m;
@@ -360,30 +413,36 @@ int32_t mad_regy(Mad *mad, int32_t n, float a, ContO *contO) {
       xt_graphics_stub_crash(mad->xt, a, n4 * n3);
     }
     if (n4 * n3 == 0 || mad->mtouch) {
+      Dent dt;
+      dent_init(mad, &dt);
       for (int32_t k = 0; k < contO->npl; k++) {
-        float n5 = 0.0f;
+        float n5 = 0.0f, d5 = 0.0f;
+        dent_plane(mad, &dt);
         for (int32_t l = 0; l < contO->p[k].n; l++) {
           if (contO->p[k].wz == 0 && mad_py(contO->keyx[n], contO->p[k].ox[l], contO->keyz[n], contO->p[k].oz[l]) < cd->clrad[mad->cn]) {
-            n5 = (a / 20.0f) * medium_random(m);
-            contO->p[k].oz[l] = jtrunc((float)contO->p[k].oz[l] + n5 * medium_sin(m, (float)i));
-            contO->p[k].ox[l] = jtrunc((float)contO->p[k].ox[l] - n5 * medium_sin(m, (float)j));
+            const float dale = medium_random(m);
+            n5 = (a / 20.0f) * dale;
+            d5 = dent_point(&dt, a, dale, n5);
+            contO->p[k].oz[l] = jtrunc((float)contO->p[k].oz[l] + d5 * medium_sin(m, (float)i));
+            contO->p[k].ox[l] = jtrunc((float)contO->p[k].ox[l] - d5 * medium_sin(m, (float)j));
             if (b) {
               mad->hitmag = jtrunc((float)mad->hitmag + fabsf(n5));
               n2 = jtrunc((float)n2 + fabsf(n5));
             }
+            dent_count(mad, &dt, &d5);
           }
         }
-        if (n5 != 0.0f) {
-          if (fabsf(n5) >= 1.0f) {
+        if (dent_shows(&dt, d5)) {
+          if (fabsf(d5) >= 1.0f) {
             contO->p[k].chip = 1;
-            contO->p[k].ctmag = n5;
+            contO->p[k].ctmag = d5;
           }
           if (!contO->p[k].nocol && contO->p[k].glass != 1) {
-            contO->p[k].bfase = jtrunc((float)contO->p[k].bfase + n5);
+            contO->p[k].bfase = jtrunc((float)contO->p[k].bfase + d5);
             mad_recolor_plane(&contO->p[k]);
           }
           if (contO->p[k].glass == 1) {
-            contO->p[k].gr = jtrunc_d((double)contO->p[k].gr + fabs((double)n5 * 1.5));
+            contO->p[k].gr = jtrunc_d((double)contO->p[k].gr + fabs((double)d5 * 1.5));
           }
         }
       }
@@ -445,30 +504,36 @@ int32_t mad_regx(Mad *mad, int32_t n, float n2, ContO *contO) {
     if (n2 < -100.0f) n2 = n2 + 100.0f;
     mad->shakedam = jtrunc((fabsf(n2) + (float)mad->shakedam) / 2.0f);
     if (mad->im == mad->xt->im || mad->colidim) xt_graphics_stub_crash(mad->xt, n2, 0);
+    Dent dt;
+    dent_init(mad, &dt);
     for (int32_t i = 0; i < contO->npl; i++) {
-      float a = 0.0f;
+      float a = 0.0f, d = 0.0f;
+      dent_plane(mad, &dt);
       for (int32_t j = 0; j < contO->p[i].n; j++) {
         if (contO->p[i].wz == 0 && mad_py(contO->keyx[n], contO->p[i].ox[j], contO->keyz[n], contO->p[i].oz[j]) < cd->clrad[mad->cn]) {
-          a = (n2 / 20.0f) * medium_random(m);
-          contO->p[i].oz[j] = jtrunc((float)contO->p[i].oz[j] - (a * medium_sin(m, (float)contO->xz)) * medium_cos(m, (float)contO->zy));
-          contO->p[i].ox[j] = jtrunc((float)contO->p[i].ox[j] + (a * medium_cos(m, (float)contO->xz)) * medium_cos(m, (float)contO->xy));
+          const float dale = medium_random(m);
+          a = (n2 / 20.0f) * dale;
+          d = dent_point(&dt, n2, dale, a);
+          contO->p[i].oz[j] = jtrunc((float)contO->p[i].oz[j] - (d * medium_sin(m, (float)contO->xz)) * medium_cos(m, (float)contO->zy));
+          contO->p[i].ox[j] = jtrunc((float)contO->p[i].ox[j] + (d * medium_cos(m, (float)contO->xz)) * medium_cos(m, (float)contO->xy));
           if (b) {
             mad->hitmag = jtrunc((float)mad->hitmag + fabsf(a));
             n3 = jtrunc((float)n3 + fabsf(a));
           }
+          dent_count(mad, &dt, &d);
         }
       }
-      if (a != 0.0f) {
-        if (fabsf(a) >= 1.0f) {
+      if (dent_shows(&dt, d)) {
+        if (fabsf(d) >= 1.0f) {
           contO->p[i].chip = 1;
-          contO->p[i].ctmag = a;
+          contO->p[i].ctmag = d;
         }
         if (!contO->p[i].nocol && contO->p[i].glass != 1) {
-          contO->p[i].bfase = jtrunc((float)contO->p[i].bfase + fabsf(a));
+          contO->p[i].bfase = jtrunc((float)contO->p[i].bfase + fabsf(d));
           mad_recolor_plane(&contO->p[i]);
         }
         if (contO->p[i].glass == 1) {
-          contO->p[i].gr = jtrunc_d((double)contO->p[i].gr + fabs((double)a * 1.5));
+          contO->p[i].gr = jtrunc_d((double)contO->p[i].gr + fabs((double)d * 1.5));
         }
       }
     }
@@ -491,30 +556,36 @@ int32_t mad_regz(Mad *mad, int32_t n, float n2, ContO *contO) {
     if (n2 < -100.0f) n2 = n2 + 100.0f;
     mad->shakedam = jtrunc((fabsf(n2) + (float)mad->shakedam) / 2.0f);
     if (mad->im == mad->xt->im || mad->colidim) xt_graphics_stub_crash(mad->xt, n2, 0);
+    Dent dt;
+    dent_init(mad, &dt);
     for (int32_t i = 0; i < contO->npl; i++) {
-      float a = 0.0f;
+      float a = 0.0f, d = 0.0f;
+      dent_plane(mad, &dt);
       for (int32_t j = 0; j < contO->p[i].n; j++) {
         if (contO->p[i].wz == 0 && mad_py(contO->keyx[n], contO->p[i].ox[j], contO->keyz[n], contO->p[i].oz[j]) < cd->clrad[mad->cn]) {
-          a = (n2 / 20.0f) * medium_random(m);
-          contO->p[i].oz[j] = jtrunc((float)contO->p[i].oz[j] + (a * medium_cos(m, (float)contO->xz)) * medium_cos(m, (float)contO->zy));
-          contO->p[i].ox[j] = jtrunc((float)contO->p[i].ox[j] + (a * medium_sin(m, (float)contO->xz)) * medium_cos(m, (float)contO->xy));
+          const float dale = medium_random(m);
+          a = (n2 / 20.0f) * dale;
+          d = dent_point(&dt, n2, dale, a);
+          contO->p[i].oz[j] = jtrunc((float)contO->p[i].oz[j] + (d * medium_cos(m, (float)contO->xz)) * medium_cos(m, (float)contO->zy));
+          contO->p[i].ox[j] = jtrunc((float)contO->p[i].ox[j] + (d * medium_sin(m, (float)contO->xz)) * medium_cos(m, (float)contO->xy));
           if (b) {
             mad->hitmag = jtrunc((float)mad->hitmag + fabsf(a));
             n3 = jtrunc((float)n3 + fabsf(a));
           }
+          dent_count(mad, &dt, &d);
         }
       }
-      if (a != 0.0f) {
-        if (fabsf(a) >= 1.0f) {
+      if (dent_shows(&dt, d)) {
+        if (fabsf(d) >= 1.0f) {
           contO->p[i].chip = 1;
-          contO->p[i].ctmag = a;
+          contO->p[i].ctmag = d;
         }
         if (!contO->p[i].nocol && contO->p[i].glass != 1) {
-          contO->p[i].bfase = jtrunc((float)contO->p[i].bfase + fabsf(a));
+          contO->p[i].bfase = jtrunc((float)contO->p[i].bfase + fabsf(d));
           mad_recolor_plane(&contO->p[i]);
         }
         if (contO->p[i].glass == 1) {
-          contO->p[i].gr = jtrunc_d((double)contO->p[i].gr + fabs((double)a * 1.5));
+          contO->p[i].gr = jtrunc_d((double)contO->p[i].gr + fabs((double)d * 1.5));
         }
       }
     }
@@ -1762,7 +1833,7 @@ void mad_drive(Mad *mad, Control *control, ContO *contO, Trackers *trackers, Che
   }
 
   if (contO->fcnt == 7 || contO->fcnt == 8) {
-    mad->squash = 0; mad->nbsq = 0; mad->hitmag = 0; mad->cntdest = 0; mad->dest = false; mad->newcar = true;
+    mad->squash = 0; mad->nbsq = 0; mad->hitmag = 0; mad->dmgmag = 0.0f; mad->cntdest = 0; mad->dest = false; mad->newcar = true;
     mad->just_fixed = true; // see mad.h's own doc comment on this field
     contO->fcnt = 9;
     if (mad->fixes > 0) mad->fixes--;

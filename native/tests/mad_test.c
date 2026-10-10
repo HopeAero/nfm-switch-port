@@ -1358,7 +1358,46 @@ static void drive_wall_scenario(int32_t nticks, const char *label) {
   trackers_free_sect(&t);
 }
 
+// High Rider (18000 health, its model dents to 12000) hammered in one spot
+// until the dented points leave clrad and the hits stop counting. NFM 2
+// dented by the damage itself and stopped at 2163; with the dent following
+// the car's health it goes 18000 / 12000 times as far (mad.c Dent).
+static void dent_scenario(void) {
+  nfm_set_seed(77);
+  Medium m; medium_init(&m);
+  Trackers t; trackers_init(&t);
+  CarDefine cd; car_define_init(&cd);
+  for (int i = 0; i < CAR_DEFINE_NUM_CARS; i++) {
+    cd.maxmag[i] = 18000; cd.clrad[i] = 3000; cd.dammult[i] = 1.0f; cd.msquash[i] = 10;
+  }
+  static Record rpd; record_init(&rpd);
+  vfs_set_fpath("../../../");
+  VfsZip zip;
+  CHECK(vfs_read_zip("data/models.zip", &zip), "dent: data/models.zip readable");
+  if (!zip.count) { medium_free(&m); return; }
+  char *text = NULL;
+  for (int32_t i = 0; i < zip.count; i++)
+    if (strcmp(zip.entries[i].name, "formula7.rad") == 0) text = vfs_entry_text(&zip.entries[i]);
+  CHECK(text != NULL, "dent: formula7.rad present");
+  if (!text) { vfs_free_zip(&zip); medium_free(&m); return; }
+  m.loadnew = true;
+  ContO base; cont_o_init_buf(&base, text, &m, &t);
+  m.loadnew = false; free(text);
+  ContO contO; cont_o_init_copy(&contO, &base, 0, 0, 0, 0);
+  XtGraphicsStub xt; xt_graphics_stub_init(&xt); xt.im = 0;
+  Mad mad; mad_init(&mad, &cd, &m, &rpd, &xt, 1);
+  mad.cn = 8;   // High Rider
+  for (int32_t k = 0; k < 2000; k++) mad_regx(&mad, 0, 2000.0f, &contO);
+  printf("dent: %d damage before the dents run out (NFM 2's own: 2163)\n", mad.hitmag);
+  CHECK(mad.hitmag > 2163 * 3 / 2, "dent: the dent follows the car's health, not its damage");
+  cont_o_free(&contO);
+  cont_o_free(&base);
+  vfs_free_zip(&zip);
+  medium_free(&m);
+}
+
 int main(void) {
+  dent_scenario();
   handb_grounded_scenario();
   int32_t expectFixes[6] = {-1, 4, 3, 2, 1, -1};
   for (int32_t nfix = 0; nfix <= 5; nfix++) {
