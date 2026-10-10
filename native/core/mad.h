@@ -83,6 +83,7 @@ typedef struct Mad {
   int32_t squash;
   int32_t nbsq;
   int32_t hitmag;
+  float dmgmag;   // Extended's dent so far (mad.c dent_count); 0 on a fresh model
   int32_t cntdest;
   bool dest;
   bool newcar;

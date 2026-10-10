@@ -9238,6 +9238,7 @@ int game_run(void) {
             co[i].xy = saved_xy;
             co[i].zy = saved_zy;
             mad[i].newcar = false;
+            mad[i].dmgmag = 0.0f;   // a fresh model: no dents (Madness.java 3423, 3686)
           }
         }
 

@@ -1379,6 +1379,55 @@ static void drive_wall_scenario(int32_t nticks, const char *label) {
   trackers_free_sect(&t);
 }
 
+// A car with far more health than its model (the career's endurance points)
+// hit again and again in one spot. NFM 2 dents by the damage, so the points
+// leave clrad and the hits stop counting; Extended's dent stops instead and
+// every hit keeps counting (mad.c dent_count).
+static int32_t hits_after(int32_t nhits) {
+  nfm_set_seed(77);
+  Medium m; medium_init(&m);
+  Trackers t; trackers_init(&t);
+  CarDefine cd; car_define_init(&cd);
+  for (int i = 0; i < CAR_DEFINE_NUM_CARS; i++) {
+    cd.maxmag[i] = 1000000; cd.clrad[i] = 3000; cd.dammult[i] = 1.0f; cd.msquash[i] = 10;
+  }
+  static Record rpd; record_init(&rpd);
+  vfs_set_fpath("../../../");
+  VfsZip zip;
+  if (!vfs_read_zip("data/models.zip", &zip)) return -1;
+  char *text = NULL;
+  for (int32_t i = 0; i < zip.count; i++)
+    if (strcmp(zip.entries[i].name, "formula7.rad") == 0) text = vfs_entry_text(&zip.entries[i]);
+  if (!text) { vfs_free_zip(&zip); return -1; }
+  m.loadnew = true;
+  ContO base; cont_o_init_buf(&base, text, &m, &t);
+  m.loadnew = false; free(text);
+  ContO contO; cont_o_init_copy(&contO, &base, 0, 0, 0, 0);
+  XtGraphicsStub xt; xt_graphics_stub_init(&xt); xt.im = 0; xt.extended = g_ext;
+  Mad mad; mad_init(&mad, &cd, &m, &rpd, &xt, 1);
+  for (int32_t k = 0; k < nhits; k++) mad_regx(&mad, 0, 2000.0f, &contO);
+  const int32_t hitmag = mad.hitmag;
+  cont_o_free(&contO);
+  cont_o_free(&base);
+  vfs_free_zip(&zip);
+  medium_free(&m);
+  return hitmag;
+}
+
+static void dent_scenario(void) {
+  const bool ext = g_ext;
+  g_ext = false;
+  const int32_t nfm2 = hits_after(1000);
+  g_ext = true;
+  const int32_t extd = hits_after(1000);
+  g_ext = ext;
+  printf("dent: %d damage before the dents run out (NFM 2), %d (Extended)\n", nfm2, extd);
+  CHECK(nfm2 > 0, "dent: the hits count");
+  // The car has ~170 times the health its model's dents allow (1000000
+  // against healthreset 6000): Extended keeps counting about that far.
+  CHECK(extd > 100 * nfm2, "dent: Extended's dents follow the car's health, not its damage");
+}
+
 int main(void) {
   handb_grounded_scenario();
   int32_t expectFixes[6] = {-1, 4, 3, 2, 1, -1};
@@ -1405,6 +1454,7 @@ int main(void) {
   g_ext = true;
   scenario(0, true, -1);
   handb_grounded_scenario();
+  dent_scenario();
   g_ext = false;
   if (failures == 0) {
     printf("all tests passed\n");
