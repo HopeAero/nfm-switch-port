@@ -428,6 +428,16 @@ static void dent_count(Mad *mad, const Dent *d, float *f2) {
   if (mad->dmgmag > (float)d->reset) *f2 = 0.0f;
 }
 
+/** This port's guard: a point inside clrad stays inside, so a hit there
+ * always counts. Extended's dent only slows the drift out -- hammered in one
+ * spot a car still went past its points and took no more damage. */
+static void dent_keep(ContO *co, int32_t pl, int32_t pt, int32_t n, int32_t clrad, int32_t ox0, int32_t oz0) {
+  if (mad_py(co->keyx[n], co->p[pl].ox[pt], co->keyz[n], co->p[pl].oz[pt]) >= clrad) {
+    co->p[pl].ox[pt] = ox0;
+    co->p[pl].oz[pt] = oz0;
+  }
+}
+
 /** Whether the plane chips and darkens. */
 static bool dent_shows(const Dent *d, float f2) {
   return f2 != 0.0f && (!d->on || d->dmgpc < d->healthpc);
@@ -485,8 +495,10 @@ static int32_t regy_by(Mad *mad, int32_t n, float a, ContO *contO, int32_t attac
             const float dale = medium_random(m);
             n5 = (a / 20.0f) * dale;
             d5 = dent_point(&dt, a, dale, n5);
+            const int32_t ox0 = contO->p[k].ox[l], oz0 = contO->p[k].oz[l];
             contO->p[k].oz[l] = jtrunc((float)contO->p[k].oz[l] + d5 * medium_sin(m, (float)i));
             contO->p[k].ox[l] = jtrunc((float)contO->p[k].ox[l] - d5 * medium_sin(m, (float)j));
+            dent_keep(contO, k, l, n, cd->clrad[mad->cn], ox0, oz0);
             if (b) {
               mad->hitmag = jtrunc((float)mad->hitmag + fabsf(n5));
               n2 = jtrunc((float)n2 + fabsf(n5));
@@ -577,8 +589,10 @@ static int32_t regx_by(Mad *mad, int32_t n, float n2, ContO *contO, int32_t atta
           const float dale = medium_random(m);
           a = (n2 / 20.0f) * dale;
           d = dent_point(&dt, n2, dale, a);
+          const int32_t ox0 = contO->p[i].ox[j], oz0 = contO->p[i].oz[j];
           contO->p[i].oz[j] = jtrunc((float)contO->p[i].oz[j] - (d * medium_sin(m, (float)contO->xz)) * medium_cos(m, (float)contO->zy));
           contO->p[i].ox[j] = jtrunc((float)contO->p[i].ox[j] + (d * medium_cos(m, (float)contO->xz)) * medium_cos(m, (float)contO->xy));
+          dent_keep(contO, i, j, n, cd->clrad[mad->cn], ox0, oz0);
           if (b) {
             mad->hitmag = jtrunc((float)mad->hitmag + fabsf(a));
             n3 = jtrunc((float)n3 + fabsf(a));
@@ -630,8 +644,10 @@ static int32_t regz_by(Mad *mad, int32_t n, float n2, ContO *contO, int32_t atta
           const float dale = medium_random(m);
           a = (n2 / 20.0f) * dale;
           d = dent_point(&dt, n2, dale, a);
+          const int32_t ox0 = contO->p[i].ox[j], oz0 = contO->p[i].oz[j];
           contO->p[i].oz[j] = jtrunc((float)contO->p[i].oz[j] + (d * medium_cos(m, (float)contO->xz)) * medium_cos(m, (float)contO->zy));
           contO->p[i].ox[j] = jtrunc((float)contO->p[i].ox[j] + (d * medium_sin(m, (float)contO->xz)) * medium_cos(m, (float)contO->xy));
+          dent_keep(contO, i, j, n, cd->clrad[mad->cn], ox0, oz0);
           if (b) {
             mad->hitmag = jtrunc((float)mad->hitmag + fabsf(a));
             n3 = jtrunc((float)n3 + fabsf(a));

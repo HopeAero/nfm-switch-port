@@ -1416,16 +1416,16 @@ static int32_t hits_after(int32_t nhits) {
 
 static void dent_scenario(void) {
   const bool ext = g_ext;
-  g_ext = false;
-  const int32_t nfm2 = hits_after(1000);
-  g_ext = true;
-  const int32_t extd = hits_after(1000);
+  for (int32_t e = 0; e < 2; e++) {
+    g_ext = e == 1;
+    const int32_t h500 = hits_after(500), h1000 = hits_after(1000);
+    printf("dent (%s): %d damage after 500 hits, %d after 1000\n", g_ext ? "Extended" : "NFM 2", h500, h1000);
+    // Without the guard (mad.c dent_keep) NFM 2 stopped at 2163 and Extended
+    // at ~361000: the dented points had left clrad. Now the last 500 hits
+    // count about as much as the first 500.
+    CHECK(h1000 - h500 > h500 / 2, "dent: a dented car keeps taking damage");
+  }
   g_ext = ext;
-  printf("dent: %d damage before the dents run out (NFM 2), %d (Extended)\n", nfm2, extd);
-  CHECK(nfm2 > 0, "dent: the hits count");
-  // The car has ~170 times the health its model's dents allow (1000000
-  // against healthreset 6000): Extended keeps counting about that far.
-  CHECK(extd > 100 * nfm2, "dent: Extended's dents follow the car's health, not its damage");
 }
 
 int main(void) {
