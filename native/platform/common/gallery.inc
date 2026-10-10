@@ -1,3 +1,4 @@
+#include <dirent.h>
 #include <stdarg.h>
 
 // The Gallery (main menu > Gallery): every car to turn around, read about,
@@ -6,6 +7,7 @@
 // game_run(), whose locals reach them through GalCtx.
 
 enum { GAL_TABS = 5, GAL_ACTIONS = 5, GAL_LOOKS = 5, GAL_LIST_ROWS = 6, GAL_MUSIC_ROWS = 14 };
+enum { GAL_HUB_ROWS = 5, GAL_HUB_Y = 66, GAL_HUB_STEP = 66 };
 static const char *const kGalTabs[GAL_TABS] = {"Info", "Stats", "Special", "Perks", "Facts"};
 static const char *const kGalActions[GAL_ACTIONS] = {"Hit", "Wreck", "Fix", "Look", "Zoom"};
 static const char *const kGalLooks[GAL_LOOKS] = {"Normal", "Shadow", "Beast", "Undead", "Special"};
@@ -477,6 +479,104 @@ static void gal_music_step(int32_t dir) {
   if (s >= 0 && s < gal.ntracks) gal.msel = s;
 }
 
+// ---- Photos and replays: the files in gallery/<what>/ ----------------------
+
+enum { GALF_MAX = 256, GALF_NAME = 64, GAL_PHOTO_W = 640, GAL_PHOTO_H = 360, GAL_FILE_ROWS = 8 };
+static struct {
+  char dir[560];
+  char names[GALF_MAX][GALF_NAME];
+  int32_t n, sel, top;
+  bool armed;   // the delete button pressed once
+  int32_t shown, tex;   // the photo on screen, and its texture
+  bool bad;
+  ReplayMeta meta[GALF_MAX];
+  bool meta_ok[GALF_MAX];
+} galf = {.shown = -1, .tex = -1};
+
+// The replay the Replays screen picked, for game.c to set up (STATE_REPLAY_VIEW).
+static char g_replay_open[700];
+
+static int galf_newest_first(const void *a, const void *b) { return strcmp((const char *)b, (const char *)a); }
+
+/** Lists gallery/<what>/'s files ending in `ext`, newest first (their names
+ * carry the date). */
+static void galf_open(const char *what, const char *ext) {
+  galf.n = 0;
+  galf.armed = false;
+  galf.shown = -1;
+  if (!gallery_dir(what, galf.dir, sizeof(galf.dir))) return;
+  char d[560];
+  snprintf(d, sizeof(d), "%s", galf.dir);
+  d[strlen(d) - 1] = '\0';   // opendir without the trailing slash
+  DIR *dir = opendir(d);
+  if (!dir) return;
+  const size_t el = strlen(ext);
+  struct dirent *e;
+  while ((e = readdir(dir)) && galf.n < GALF_MAX) {
+    const size_t len = strlen(e->d_name);
+    if (len > el && len < GALF_NAME && strcmp(e->d_name + len - el, ext) == 0)
+      snprintf(galf.names[galf.n++], GALF_NAME, "%s", e->d_name);
+  }
+  closedir(dir);
+  qsort(galf.names, (size_t)galf.n, GALF_NAME, galf_newest_first);
+  if (strcmp(ext, ".nfmr") == 0) {
+    for (int32_t i = 0; i < galf.n; i++) {
+      char path[700];
+      snprintf(path, sizeof(path), "%s%s", galf.dir, galf.names[i]);
+      galf.meta_ok[i] = replay_read_meta(path, &galf.meta[i]);
+    }
+  }
+  if (galf.sel >= galf.n) galf.sel = galf.n > 0 ? galf.n - 1 : 0;
+}
+
+/** The chosen photo, decoded and brought to 640x360 for the screen. */
+static void galf_show_photo(void) {
+  galf.shown = galf.sel;
+  galf.bad = true;
+  char path[700];
+  snprintf(path, sizeof(path), "%s%s", galf.dir, galf.names[galf.sel]);
+  FILE *f = fopen(path, "rb");
+  if (!f) return;
+  fseek(f, 0, SEEK_END);
+  const long len = ftell(f);
+  fseek(f, 0, SEEK_SET);
+  uint8_t *buf = len > 0 ? malloc((size_t)len) : NULL;
+  const bool read_ok = buf && fread(buf, 1, (size_t)len, f) == (size_t)len;
+  fclose(f);
+  PngImage img = {0};
+  const bool ok = read_ok && png_decode(buf, (size_t)len, &img);
+  free(buf);
+  if (!ok) return;
+  static uint8_t px[GAL_PHOTO_W * GAL_PHOTO_H * 4];
+  for (int32_t y = 0; y < GAL_PHOTO_H; y++) {
+    const uint8_t *row = img.rgba + (size_t)(y * img.height / GAL_PHOTO_H) * img.width * 4;
+    for (int32_t x = 0; x < GAL_PHOTO_W; x++)
+      memcpy(px + ((size_t)y * GAL_PHOTO_W + x) * 4, row + (size_t)(x * img.width / GAL_PHOTO_W) * 4, 4);
+  }
+  png_free(&img);
+  if (galf.tex < 0) galf.tex = gfx_gl_upload_texture(px, GAL_PHOTO_W, GAL_PHOTO_H);
+  else gfx_gl_update_texture(galf.tex, px, GAL_PHOTO_W, GAL_PHOTO_H);
+  galf.bad = false;
+}
+
+/** The view button twice: the chosen file goes. */
+static void galf_delete(const char *what, const char *ext) {
+  if (!galf.armed) {
+    galf.armed = true;
+    return;
+  }
+  char path[700];
+  snprintf(path, sizeof(path), "%s%s", galf.dir, galf.names[galf.sel]);
+  remove(path);
+  galf_open(what, ext);
+}
+
+static const char *galf_mode(const ReplayMeta *r) {
+  if (r->ext_career) return "RPG Mode";
+  if (r->ext_normal) return r->ptmatch > 0 ? "Tournament" : "Extended";
+  return r->gmode == 1 ? "NFM 1" : r->gmode == 2 ? "NFM 2" : "Free Play";
+}
+
 // ---- Screens ----------------------------------------------------------------
 
 /** NFM_SCREENSHOT_MENU=gallery|galcars|galcar|galmusic, headless: on frame 2
@@ -488,6 +588,19 @@ static GameState gallery_hook(GalCtx *c, const char *menu, int32_t frame, GameSt
   if ((e = getenv("NFM_GALLERY_FILTER"))) gal.filter = atoi(e) % GAL_FILTERS;
   gal_build_list();
   if (strcmp(menu, "galcars") == 0) return STATE_GALLERY_CARS;
+  if (strcmp(menu, "galphotos") == 0) {
+    galf_open("photos", ".png");
+    return STATE_GALLERY_PHOTOS;
+  }
+  if (strcmp(menu, "galreplays") == 0) {
+    galf_open("replays", ".nfmr");
+    return STATE_GALLERY_REPLAYS;
+  }
+  if (strcmp(menu, "galreplay") == 0 && (e = getenv("NFM_GALLERY_REPLAY"))) {
+    // NFM_GALLERY_REPLAY=<file>: straight into the viewer, NFM_REPLAY_CAM its camera.
+    snprintf(g_replay_open, sizeof(g_replay_open), "%s", e);
+    return STATE_REPLAY_VIEW;
+  }
   if (strcmp(menu, "galmusic") == 0) {
     gal_build_tracks();
     if (getenv("NFM_GALLERY_MUSICCHECK")) {
@@ -554,13 +667,13 @@ static GameState gallery_input(GameState state, GalCtx *c) {
 
   if (state == STATE_GALLERY) {
     bool go = GAL_EDGE(c, BTN_CONFIRM);
-    if (tapped && px > 120 && px < 680 && py > 90 && py < 90 + 3 * 70) {
-      const int32_t r = (py - 90) / 70;
+    if (tapped && px > 120 && px < 680 && py > GAL_HUB_Y && py < GAL_HUB_Y + GAL_HUB_ROWS * GAL_HUB_STEP) {
+      const int32_t r = (py - GAL_HUB_Y) / GAL_HUB_STEP;
       if (r == gal.hub) go = true;
       gal.hub = r;
     }
-    if (GAL_EDGE(c, BTN_DOWN)) gal.hub = (gal.hub + 1) % 3;
-    if (GAL_EDGE(c, BTN_UP)) gal.hub = (gal.hub + 2) % 3;
+    if (GAL_EDGE(c, BTN_DOWN)) gal.hub = (gal.hub + 1) % GAL_HUB_ROWS;
+    if (GAL_EDGE(c, BTN_UP)) gal.hub = (gal.hub + GAL_HUB_ROWS - 1) % GAL_HUB_ROWS;
     if (GAL_EDGE(c, BTN_CANCEL)) {
       gal_stop_music(c);
       return STATE_MAIN_MENU;
@@ -574,6 +687,14 @@ static GameState gallery_input(GameState state, GalCtx *c) {
         gal_build_tracks();
         if (gal.tracks[gal.msel].id == 0) gal_music_step(1);
         return STATE_GALLERY_MUSIC;
+      }
+      if (gal.hub == 2) {
+        galf_open("photos", ".png");
+        return STATE_GALLERY_PHOTOS;
+      }
+      if (gal.hub == 3) {
+        galf_open("replays", ".nfmr");
+        return STATE_GALLERY_REPLAYS;
       }
       gal_stop_music(c);
       return STATE_MAIN_MENU;
@@ -637,6 +758,35 @@ static GameState gallery_input(GameState state, GalCtx *c) {
     }
     if (GAL_EDGE(c, BTN_CONFIRM)) gal_act(c);
     if (GAL_EDGE(c, BTN_CANCEL)) return STATE_GALLERY_CARS;
+  } else if (state == STATE_GALLERY_PHOTOS) {
+    const int32_t was = galf.sel;
+    if ((GAL_EDGE(c, BTN_RIGHT) || (tapped && px > 560)) && galf.sel + 1 < galf.n) galf.sel++;
+    if ((GAL_EDGE(c, BTN_LEFT) || (tapped && px < 240)) && galf.sel > 0) galf.sel--;
+    if (galf.sel != was) galf.armed = false;
+    if (GAL_EDGE(c, BTN_VIEW) && galf.n > 0) galf_delete("photos", ".png");
+    if (GAL_EDGE(c, BTN_CANCEL)) return STATE_GALLERY;
+  } else if (state == STATE_GALLERY_REPLAYS) {
+    bool go = GAL_EDGE(c, BTN_CONFIRM);
+    const int32_t was = galf.sel;
+    if (tapped && px > 120 && px < 680 && py > 66 && py < 66 + GAL_FILE_ROWS * 44) {
+      const int32_t r = galf.top + (py - 66) / 44;
+      if (r < galf.n) {
+        if (r == galf.sel) go = true;
+        galf.sel = r;
+      }
+    }
+    if (GAL_EDGE(c, BTN_DOWN) && galf.sel + 1 < galf.n) galf.sel++;
+    if (GAL_EDGE(c, BTN_UP) && galf.sel > 0) galf.sel--;
+    if (galf.sel != was) galf.armed = false;
+    if (galf.sel < galf.top) galf.top = galf.sel;
+    if (galf.sel >= galf.top + GAL_FILE_ROWS) galf.top = galf.sel - GAL_FILE_ROWS + 1;
+    if (GAL_EDGE(c, BTN_VIEW) && galf.n > 0) galf_delete("replays", ".nfmr");
+    if (GAL_EDGE(c, BTN_CANCEL)) return STATE_GALLERY;
+    if (go && galf.n > 0 && galf.meta_ok[galf.sel]) {
+      gal_stop_music(c);
+      snprintf(g_replay_open, sizeof(g_replay_open), "%s%s", galf.dir, galf.names[galf.sel]);
+      return STATE_REPLAY_VIEW;
+    }
   } else if (state == STATE_GALLERY_MUSIC) {
     if (tapped && px > 120 && px < 680 && py > 66 && py < 66 + GAL_MUSIC_ROWS * 24) {
       const int32_t r = gal.mtop + (py - 66) / 24;
@@ -676,18 +826,20 @@ static void gallery_draw(GameState state, GalCtx *c) {
   char line[160];
   if (state == STATE_GALLERY) {
     gal_backdrop(g, "GALLERY");
-    static const char *const kRows[3][2] = {
+    static const char *const kRows[GAL_HUB_ROWS][2] = {
         {"Cars", "Every car: turn it, read about it, dent and wreck it."},
         {"Music", "Every stage's music, Extended's and the RPG Mode's too."},
+        {"Photos", "The photos taken in the photo mode (pause menu > Photo Mode)."},
+        {"Replays", "The replays saved from the Instant Replay and the finish."},
         {"Back", ""}};
-    for (int32_t i = 0; i < 3; i++) {
-      const int32_t y = 90 + i * 70;
-      gal_row(g, 120, y, 560, 58, i == gal.hub);
+    for (int32_t i = 0; i < GAL_HUB_ROWS; i++) {
+      const int32_t y = GAL_HUB_Y + i * GAL_HUB_STEP;
+      gal_row(g, 120, y, 560, GAL_HUB_STEP - 8, i == gal.hub);
       if (i == gal.hub) gfx_set_color(g, SET_YELLOW); else gfx_set_color(g, SET_INK);
       font_set(FONT_BOLD, 20);
-      font_draw(g, kRows[i][0], 154, y + (kRows[i][1][0] ? 26 : 36));
+      font_draw(g, kRows[i][0], 154, y + (kRows[i][1][0] ? 24 : 32));
       font_set(FONT_BOLD, 12);
-      font_draw(g, kRows[i][1], 154, y + 46);
+      font_draw(g, kRows[i][1], 154, y + 42);
     }
     snprintf(line, sizeof(line), "%s: Select    %s: Back", KEY_CONTINUE, KEY_BACK);
     gal_hint(g, line);
@@ -782,6 +934,68 @@ static void gallery_draw(GameState state, GalCtx *c) {
     gal_draw_panel(c, 454, 110, 312);
     snprintf(line, sizeof(line), "Left/Right: Turn    Up/Down + %s: Action    %s: Tab    %s: Back", KEY_CONTINUE,
              KEY_VIEW, KEY_BACK);
+    gal_hint(g, line);
+  } else if (state == STATE_GALLERY_PHOTOS) {
+    if (galf.n > 0) snprintf(line, sizeof(line), "%s  %d / %d", tr("PHOTOS"), (int)galf.sel + 1, (int)galf.n);
+    else snprintf(line, sizeof(line), "%s", tr("PHOTOS"));
+    gal_backdrop(g, line);
+    gfx_set_color(g, 17, 17, 17);
+    gfx_fill_rect(g, 77, 59, GAL_PHOTO_W + 6, GAL_PHOTO_H + 6);
+    if (galf.n == 0) {
+      gfx_set_color(g, 220, 220, 220);
+      font_set(FONT_BOLD, 14);
+      draw_centered(g, "No photos yet.", 400, 230);
+      font_set(FONT_BOLD, 12);
+      draw_centered(g, "Pause a race and choose Photo Mode, then press A.", 400, 254);
+    } else {
+      if (galf.shown != galf.sel) galf_show_photo();
+      if (!galf.bad && galf.tex >= 0) {
+        gfx_draw_image(g, galf.tex, 80, 62, GAL_PHOTO_W, GAL_PHOTO_H);
+      } else {
+        gfx_set_color(g, 220, 220, 220);
+        font_set(FONT_BOLD, 13);
+        draw_centered(g, "This photo could not be read.", 400, 240);
+      }
+      if (galf.sel > 0) draw_settings_arrow(g, 50, 242, false, true, true);
+      if (galf.sel + 1 < galf.n) draw_settings_arrow(g, 750, 242, true, true, true);
+    }
+    if (galf.armed) snprintf(line, sizeof(line), "%s %s", tr("Press again to delete"), galf.names[galf.sel]);
+    else snprintf(line, sizeof(line), "Left/Right: Browse    %s: Delete    %s: Back", KEY_VIEW, KEY_BACK);
+    gal_hint(g, line);
+  } else if (state == STATE_GALLERY_REPLAYS) {
+    gal_backdrop(g, "REPLAYS");
+    if (galf.n == 0) {
+      gfx_set_color(g, SET_INK);
+      font_set(FONT_BOLD, 14);
+      draw_centered(g, "No replays yet.", 400, 200);
+      font_set(FONT_BOLD, 12);
+      draw_centered(g, "In a race's Instant Replay or the finish's replay, press X to save it.", 400, 224);
+    }
+    for (int32_t i = 0; i < GAL_FILE_ROWS && galf.top + i < galf.n; i++) {
+      const int32_t r = galf.top + i, y = 66 + i * 44;
+      const bool sel = r == galf.sel;
+      gal_row(g, 120, y, 560, 40, sel);
+      if (sel) gfx_set_color(g, SET_YELLOW); else gfx_set_color(g, SET_INK);
+      const ReplayMeta *rm = &galf.meta[r];
+      font_set(FONT_BOLD, 14);
+      if (!galf.meta_ok[r]) {
+        font_draw(g, galf.names[r], 150, y + 18);
+        font_set(FONT_BOLD, 11);
+        font_draw(g, "This replay could not be read.", 150, y + 33);
+        continue;
+      }
+      font_draw(g, rm->stage_name[0] ? rm->stage_name : galf.names[r], 150, y + 18);
+      char date[32] = "";
+      const time_t at = (time_t)rm->saved_at;
+      const struct tm *t = localtime(&at);
+      if (t) strftime(date, sizeof(date), "%Y-%m-%d %H:%M", t);
+      font_set(FONT_BOLD, 11);
+      snprintf(line, sizeof(line), "%s  -  %s  -  %d %s  -  %s", tr(galf_mode(rm)), rm->car_name, (int)rm->nplayers,
+               tr("cars"), date);
+      font_draw(g, line, 150, y + 33);
+    }
+    if (galf.armed) snprintf(line, sizeof(line), "%s %s", tr("Press again to delete"), galf.names[galf.sel]);
+    else snprintf(line, sizeof(line), "%s: Watch    %s: Delete    %s: Back", KEY_CONTINUE, KEY_VIEW, KEY_BACK);
     gal_hint(g, line);
   } else if (state == STATE_GALLERY_MUSIC) {
     gal_backdrop(g, "GALLERY - MUSIC");

@@ -131,7 +131,8 @@ bool platform_poll(bool held[BTN_COUNT]) {
 }
 
 // The keyboard as a pad: WASD the left stick, IJKL the right one, Q/E the
-// shoulders, Z/C the triggers, Return A, Backspace B, X and Y themselves.
+// shoulders, Z/C the triggers, Return A, Backspace B, X and Y themselves,
+// P Plus and O Minus.
 bool platform_pad_axes(PadAxes *out) {
   const Uint8 *k = SDL_GetKeyboardState(NULL);
   out->lx = (float)(k[SDL_SCANCODE_D] - k[SDL_SCANCODE_A]);
@@ -142,7 +143,8 @@ bool platform_pad_axes(PadAxes *out) {
                  (k[SDL_SCANCODE_X] ? PAD_X : 0) | (k[SDL_SCANCODE_Y] ? PAD_Y : 0) | (k[SDL_SCANCODE_Q] ? PAD_L : 0) |
                  (k[SDL_SCANCODE_E] ? PAD_R : 0) | (k[SDL_SCANCODE_Z] ? PAD_ZL : 0) | (k[SDL_SCANCODE_C] ? PAD_ZR : 0) |
                  (k[SDL_SCANCODE_UP] ? PAD_UP : 0) | (k[SDL_SCANCODE_DOWN] ? PAD_DOWN : 0) |
-                 (k[SDL_SCANCODE_LEFT] ? PAD_LEFT : 0) | (k[SDL_SCANCODE_RIGHT] ? PAD_RIGHT : 0);
+                 (k[SDL_SCANCODE_LEFT] ? PAD_LEFT : 0) | (k[SDL_SCANCODE_RIGHT] ? PAD_RIGHT : 0) |
+                 (k[SDL_SCANCODE_P] ? PAD_PLUS : 0) | (k[SDL_SCANCODE_O] ? PAD_MINUS : 0);
   return true;
 }
 

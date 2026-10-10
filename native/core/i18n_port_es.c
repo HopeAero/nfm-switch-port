@@ -520,6 +520,30 @@ const I18nEntry I18N_PORT_ES[] = {
     {"Its body dents 4 times less than other cars'.", "Su carrocería se abolla 4 veces menos que la de los demás."},
     {"In Classic Mode it takes a quarter less damage, but hits on it count 1.27 times.",
      "En el modo clásico recibe un cuarto menos de daño, pero los golpes que le dan cuentan 1,27 veces."},
+    // ---- the photo mode, saved replays (photo.inc) and their Gallery screens ----
+    {"Photo Mode", "Modo foto"}, {"PHOTO MODE", "MODO FOTO"}, {"REPLAY", "REPETICIÓN"}, {"REPLAYS", "REPETICIONES"},
+    {"PHOTOS", "FOTOS"}, {"Photos", "Fotos"}, {"Replays", "Repeticiones"},
+    {"L stick: Move   R stick: Look   ZL/ZR: Down/Up   L/R: Zoom   X: Faster   D-pad: Cars   A: Photo   Y: Hide   B: Back",
+     "Stick izq.: Mover   Stick der.: Mirar   ZL/ZR: Bajar/Subir   L/R: Zoom   X: Rápido   Cruceta: Autos   A: Foto   Y: Ocultar   B: Volver"},
+    {"Y: Camera   D-pad: Cars   Sticks: Free camera   L/R: Zoom   Plus: Pause   A: Photo   Minus: Hide   B: Back",
+     "Y: Cámara   Cruceta: Autos   Sticks: Cámara libre   L/R: Zoom   Más: Pausa   A: Foto   Menos: Ocultar   B: Volver"},
+    {"Photo saved: ", "Foto guardada: "}, {"The photo could not be saved.", "No se pudo guardar la foto."},
+    {"Replay saved: ", "Repetición guardada: "}, {"The replay could not be saved.", "No se pudo guardar la repetición."},
+    {"This replay could not be played.", "No se pudo reproducir esta repetición."},
+    {"X: Save replay", "X: Guardar repetición"},
+    {"Chase camera", "Cámara de persecución"}, {"Orbit camera", "Cámara en órbita"}, {"Free camera", "Cámara libre"},
+    {"  (paused)", "  (en pausa)"},
+    {"The photos taken in the photo mode (pause menu > Photo Mode).", "Las fotos del modo foto (menú de pausa > Modo foto)."},
+    {"The replays saved from the Instant Replay and the finish.", "Las repeticiones guardadas desde la repetición instantánea y la meta."},
+    {"No photos yet.", "Todavía no hay fotos."},
+    {"Pause a race and choose Photo Mode, then press A.", "Pausa una carrera, elige Modo foto y presiona A."},
+    {"This photo could not be read.", "No se pudo leer esta foto."},
+    {"No replays yet.", "Todavía no hay repeticiones."},
+    {"In a race's Instant Replay or the finish's replay, press X to save it.",
+     "En la repetición instantánea de una carrera o en la de la meta, presiona X para guardarla."},
+    {"This replay could not be read.", "No se pudo leer esta repetición."},
+    {"Press again to delete", "Presiona otra vez para borrar"}, {"cars", "autos"},
+    {"Tournament", "Torneo"},
 };
 const int32_t I18N_PORT_ES_COUNT = (int32_t)(sizeof I18N_PORT_ES / sizeof I18N_PORT_ES[0]);
 
@@ -608,5 +632,8 @@ const I18nPattern I18N_PORT_ES_PATTERNS[] = {
     {"The most detailed model of all: " DIG " polygons.", "El modelo más detallado de todos: $1 polígonos."},
     {"The simplest model of all: " DIG " polygons.", "El modelo más simple de todos: $1 polígonos."},
     {"So big the camera pulls back " DIG " further for it.", "Tan grande que la cámara se aleja $1 más para él."},
+    // the photo mode's Gallery screens
+    {"Left/Right: Browse    " ANY ": Delete    " ANY ": Back", "Izq./Der.: Pasar    $t1: Borrar    $t2: Volver"},
+    {ANY ": Watch    " ANY ": Delete    " ANY ": Back", "$t1: Ver    $t2: Borrar    $t3: Volver"},
 };
 const int32_t I18N_PORT_ES_PATTERN_COUNT = (int32_t)(sizeof I18N_PORT_ES_PATTERNS / sizeof I18N_PORT_ES_PATTERNS[0]);

@@ -86,6 +86,7 @@
 #include "radical_mod.h"
 #include "car_facts.h"
 #include "png_write.h"
+#include "replay_file.h"
 #include <time.h>
 #include "bots.h"
 #include "nfm_limits.h"
@@ -489,10 +490,13 @@ typedef enum {
   STATE_GALLERY,         // this port's Gallery (gallery.inc): its menu,
   STATE_GALLERY_CARS,    //   the car list,
   STATE_GALLERY_CAR,     //   one car on the stand,
-  STATE_GALLERY_MUSIC,   //   and the music
+  STATE_GALLERY_MUSIC,   //   the music,
+  STATE_GALLERY_PHOTOS,  //   the photos
+  STATE_GALLERY_REPLAYS, //   and the saved replays
   STATE_PHOTO,           // this port's photo mode (photo.inc), from the pause menu
+  STATE_REPLAY_VIEW,     // a saved replay playing (gallery > Replays, photo.inc's viewer)
 } GameState;
-#define STATE_IS_GALLERY(s) ((s) >= STATE_GALLERY && (s) <= STATE_GALLERY_MUSIC)
+#define STATE_IS_GALLERY(s) ((s) >= STATE_GALLERY && (s) <= STATE_GALLERY_REPLAYS)
 
 // On-screen names for the physical controls, so the help text can say
 // what the player of THIS build actually has to press. Only the strings
@@ -6320,6 +6324,10 @@ int game_run(void) {
   // random "crash reel" flavors (67/69/30, :1397-1404); replay_flicker
   // (n11) debounces the n10==30 variant's random strobe (:1611-1618).
   int32_t replay_tick = 0;
+  // A saved replay waiting for its race to be set up (gallery > Replays).
+  bool replay_view_pending = false;
+  ReplayMeta replay_view_meta;
+  memset(&replay_view_meta, 0, sizeof(replay_view_meta));
   int32_t replay_cam = 0;
   int32_t replay_loops = 0;
   int32_t replay_variant = 0;
@@ -7372,6 +7380,68 @@ int game_run(void) {
         photo_leave(&m);
         state = STATE_PAUSED;
       }
+    } else if (state == STATE_PAUSE_REPLAY || state == STATE_REPLAY) {
+      // X (or the view button) saves what is playing: the Instant Replay's
+      // ring, or the finish's frozen copy of it.
+      PadAxes pa;
+      const uint32_t press = photo_pad(&pa);
+      if (photo.toast > 0) photo.toast--;
+      // NFM_REPLAY_SAVE=1: headless, saved a few frames before the screenshot.
+      const bool hook_save = screenshot_menu && getenv("NFM_REPLAY_SAVE") && frame == screenshot_frame - 4;
+      if ((press & PAD_X) || (KEY_EDGE(BTN_VIEW) && !(pa.buttons & PAD_X)) || hook_save) {
+        ReplayMeta rm;
+        memset(&rm, 0, sizeof(rm));
+        rm.gmode = gmode;
+        rm.ext_normal = ext_normal;
+        rm.ext_career = ext_career;
+        rm.career_bonus = g_career_bonus;
+        rm.career_mode = career_mode;
+        rm.ptmatch = ptmatch;
+        rm.stage_num = stage_num;
+        rm.nplayers = nplayers;
+        rm.car_index = car_index;
+        for (int32_t i = 0; i < nplayers; i++) {
+          rm.sc[i] = sc[i];
+          if (ext_career && i < CAREER_MAX_PLAYERS) {
+            rm.beast[i] = crace.beast[i];
+            rm.shadow[i] = crace.shadow[i];
+          }
+        }
+        snprintf(rm.stage_name, sizeof(rm.stage_name), "%s", stage_name_buf);
+        snprintf(rm.car_name, sizeof(rm.car_name), "%s", car_name(car_index));
+        rm.saved_at = (int64_t)time(NULL);
+        char path[700];
+        if (gallery_new_file("replays", "replay", "nfmr", path, sizeof(path)) &&
+            replay_save(path, &rm, &rpd, state == STATE_REPLAY)) {
+          const char *name = strrchr(path, '/');
+          photo_say("Replay saved: ", name ? name + 1 : path);
+        } else {
+          photo_say("The replay could not be saved.", NULL);
+        }
+      }
+    } else if (state == STATE_REPLAY_VIEW && !all_objs) {
+      // Picked in the Gallery: its race set up as it was, by the race's own
+      // setup (STATE_RACING below), then race_setup_done plays the ring.
+      if (replay_read_meta(g_replay_open, &replay_view_meta)) {
+        gmode = replay_view_meta.gmode;
+        ext_normal = replay_view_meta.ext_normal != 0;
+        ext_career = g_ext_career = replay_view_meta.ext_career != 0;
+        g_career_bonus = replay_view_meta.career_bonus;
+        career_mode = replay_view_meta.career_mode;
+        ptmatch = replay_view_meta.ptmatch;
+        stage_num = replay_view_meta.stage_num;
+        car_index = replay_view_meta.car_index;
+        replay_view_pending = true;
+        state = STATE_RACING;
+      } else {
+        state = STATE_GALLERY_REPLAYS;
+      }
+    } else if (state == STATE_REPLAY_VIEW) {
+      if (replay_view_input(&m, co, nplayers, held, previous_held)) {
+        audio_stop_music(&audio);
+        galf_open("replays", ".nfmr");
+        state = STATE_GALLERY_REPLAYS;
+      }
     }
 
     // The Performance Test: Free Play on a fixed stage and car, from a fixed
@@ -7439,7 +7509,7 @@ int game_run(void) {
     // Both qualifying states are reached only at boot, when this is
     // already NULL, or after a race is genuinely over.
     // Restart Race (the pause menu) frees it too, so the race is set up anew.
-    if (all_objs && (state == STATE_MAIN_MENU || state == STATE_GAMEMODE_MENU || restart_race)) {
+    if (all_objs && (state == STATE_MAIN_MENU || state == STATE_GAMEMODE_MENU || STATE_IS_GALLERY(state) || restart_race)) {
       restart_race = false;
       free(all_objs); all_objs = NULL;
       free(visible_idx); visible_idx = NULL;
@@ -7701,6 +7771,7 @@ int game_run(void) {
         nplayers = crace.nplayers;
         if (race_nplayers > 0) nplayers = crace.nplayers = race_nplayers;
       }
+      if (replay_view_pending) nplayers = replay_view_meta.nplayers;   // a saved replay's field
       // The starting grid, rows of three: Extended's (GameSparker.java:
       // 1555-1574), which for the first seven is exactly NFM 2's
       // inishcarselect() grid (xtGraphics.java:4847-4860): x 0/-350/350,
@@ -7796,6 +7867,17 @@ int game_run(void) {
         for (int32_t e = 0; e < CAREER_CARS; e++) gripreset[e] = cd.grip[ext_car_to_port(e)];
         career_airpgstats(&crace, &csave, gripreset);
         for (int32_t i = 0; i < nplayers; i++) sc[i] = ext_car_to_port(crace.sc[i]);
+      }
+      if (replay_view_pending) {
+        // A saved replay's race: its own cars, beasts and shadows.
+        for (int32_t i = 0; i < nplayers; i++) {
+          sc[i] = replay_view_meta.sc[i];
+          if (ext_career && i < CAREER_MAX_PLAYERS) {
+            crace.sc[i] = ext_car_of(sc[i]);
+            crace.beast[i] = replay_view_meta.beast[i] != 0;
+            crace.shadow[i] = replay_view_meta.shadow[i] != 0;
+          }
+        }
       }
       // A tournament match reached straight from a hook (NFM_PTMATCH).
       if (PT_ACTIVE && pt.match != ptmatch) {
@@ -8067,6 +8149,23 @@ int game_run(void) {
       accumulator_ms = 0.0;
     }
   race_setup_done:
+    if (replay_view_pending) {
+      // The saved replay's race is set up (or failed to be): its ring in.
+      replay_view_pending = false;
+      bool rv_ok = all_objs != NULL;
+      if (rv_ok) {
+        for (int32_t i = 0; i < nplayers; i++) cont_o_recopy(&rpd.car[0][i], &co[i], 0, 0, 0, 0);
+        rv_ok = replay_read(g_replay_open, &replay_view_meta, &rpd);
+      }
+      if (rv_ok) {
+        replay_view_start();
+        photo_to_car(&rpd.car[0][0]);   // the free camera starts behind the player
+        state = STATE_REPLAY_VIEW;
+      } else {
+        photo_say("This replay could not be played.", NULL);
+        state = STATE_GALLERY_REPLAYS;
+      }
+    }
 
     if (state == STATE_RACING) {
       // The Performance Test's car drives itself (control_preform below).
@@ -9018,7 +9117,8 @@ int game_run(void) {
                              render_state != STATE_PAUSED && render_state != STATE_PAUSE_REPLAY &&
                              render_state != STATE_CANTREPLY && render_state != STATE_BOOT_CLICK &&
                              render_state != STATE_SETTINGS && render_state != STATE_BENCH_RESULT &&
-                             !STATE_IS_GALLERY(render_state) && render_state != STATE_PHOTO;
+                             !STATE_IS_GALLERY(render_state) && render_state != STATE_PHOTO &&
+                             render_state != STATE_REPLAY_VIEW;
     const bool use_rt = motion_blur_ok &&
                         (render_state == STATE_RACING || render_state == STATE_REPLAY ||
                          render_state == STATE_PAUSE_REPLAY || render_state == STATE_CAR_SELECT ||
@@ -9070,7 +9170,8 @@ int game_run(void) {
     // the damage-bar blink) ran 3x fast -- "Checkpoint!" showed for 0.5s
     // instead of 1.6s. Presenting the last finished picture instead fixes
     // all of that and skips two thirds of the race's draw work.
-    const bool is_replay = render_state == STATE_REPLAY || render_state == STATE_PAUSE_REPLAY;
+    const bool is_replay = render_state == STATE_REPLAY || render_state == STATE_PAUSE_REPLAY ||
+                           (render_state == STATE_REPLAY_VIEW && all_objs);
     // (The boot prompt and intro too: their counters and blink advance per
     // draw, and the Java loop draws them at the same menu rate.)
     // (The Gallery's car too: its wreck burns per draw, as in a race.)
@@ -10035,6 +10136,7 @@ int game_run(void) {
           }
         }
       }
+      if (state == STATE_REPLAY) replay_save_hint(&g);
     } else if (state == STATE_PAUSE_REPLAY && !reuse_frame) {
       // PAUSE REPLAY -- fase -1, GameSparker.java:1258-1345. Unlike the
       // post-race highlight reel (fase -3), this replays the RAW 300-tick
@@ -10096,6 +10198,7 @@ int game_run(void) {
       // and the replayed cars drove straight out of shot -- the replay
       // looked like it did nothing.
       medium_around(&m, &co[0], false);
+      replay_save_hint(&g);
     } else if (state == STATE_PT_INFO || state == STATE_PT_SCORES) {
       // Extended's ptstart / scoreshow, as plain panels on the game's dark
       // blue: the match and its rules, then the points.
@@ -10177,9 +10280,53 @@ int game_run(void) {
       bench_result_draw(&g, &bench);
     } else if (STATE_IS_GALLERY(state)) {
       gallery_draw(state, &galctx);
+    } else if (state == STATE_REPLAY_VIEW && all_objs && !reuse_frame) {
+      // A saved replay: the Instant Replay's playback (below), round and
+      // round, with a choice of cameras and the photo mode's.
+      if (rview.tick == 0) {
+        for (int32_t i = 0; i < nplayers; i++) cont_o_recopy(&co[i], &rpd.car[0][i], 0, 0, 0, 0);
+      }
+      const int32_t vc = rview.car < nplayers ? rview.car : 0;
+      if (rview.cam == 0) medium_follow(&m, co[vc].x, co[vc].y, co[vc].z, co[vc].xz, 0);
+      else if (rview.cam == 1) medium_around(&m, &co[vc], false);
+      else photo_apply(&m);
+      if (rview.cam != 2) m.focus_point = (int32_t)photo.zoom;
+      draw_race_scene(&g, &m, all_objs, total_objs, visible_idx, rank, order);
+      photo_frame();
+      if (!photo.shoot && !photo.hide_ui) {
+        char rv_line[96];
+        snprintf(rv_line, sizeof(rv_line), "%s  -  %s  -  %d / 300%s", tr(kReplayCams[rview.cam]), car_name(sc[vc]),
+                 (int)rview.tick + 1, rview.paused ? tr("  (paused)") : "");
+        gfx_set_color(&g, 0, 0, 0);
+        gfx_fill_rect(&g, 0, 0, 800, 20);
+        gfx_set_color(&g, 255, 210, 0);
+        font_set(FONT_BOLD, 12);
+        draw_centered(&g, rv_line, 400, 15);
+      }
+      photo_draw_ui(&g, NULL, true);
+      if (!rview.paused) {
+        for (int32_t i = 0; i < nplayers; i++) {
+          cont_o_step_fix(&co[i]);
+          if (rpd.fix[i] == rview.tick) {
+            if (co[i].dist == 0) co[i].fcnt = 8;
+            else co[i].fix = true;
+          }
+          if (co[i].fcnt == 7 || co[i].fcnt == 8) {
+            cont_o_recopy(&co[i], RACE_MODEL(i, mad[i].cn), 0, 0, 0, 0);
+            RACE_LOOK(i);
+            rpd.cntdest[i] = 0;
+          }
+          record_play(&rpd, &co[i], &mad[i], i, rview.tick);
+        }
+        rview.tick = (rview.tick + 1) % 300;
+      }
+    } else if (state == STATE_REPLAY_VIEW) {
+      gfx_set_color(&g, 0, 0, 0);
+      gfx_fill_rect(&g, 0, 0, 800, 450);
     } else if (state == STATE_PHOTO) {
       photo_apply(&m);
       draw_race_scene(&g, &m, all_objs, total_objs, visible_idx, rank, order);
+      photo_frame();
       photo_draw_ui(&g, car_name(sc[photo.car]), false);
     } else if (state == STATE_PAUSED || state == STATE_CANTREPLY) {
       // PAUSE MENU -- fase -7, pausedgame() (xtGraphics.java:4695-4807),
@@ -11879,7 +12026,7 @@ int game_run(void) {
         fps_worst = 0; // spike window resets with the average it sits next to
       }
 
-      if (settings.show_fps == 1 && !photo.capture) {
+      if (settings.show_fps == 1 && !photo.shoot) {
         // The frame rate alone, top right, clear of the race HUD's panels.
         int32_t fps_dw, fps_dh;
         platform_display_size(&fps_dw, &fps_dh);
@@ -11894,7 +12041,7 @@ int game_run(void) {
         gfx_set_color(&g, 255, 255, 0);
         font_draw(&g, fps_txt, 800 - tw - 12, 442);
         gfx_submit_gl(&g);
-      } else if (settings.show_fps == 2 && !photo.capture) {
+      } else if (settings.show_fps == 2 && !photo.shoot) {
       // Same viewport the composite blit uses, so the overlay lands in
       // the same place whether or not the blur path ran this frame.
       int32_t fps_dw, fps_dh;
@@ -11927,8 +12074,9 @@ int game_run(void) {
       }
     }
 
-    // The photo mode's photo: this frame, drawn without its help.
-    if (render_state == STATE_PHOTO && photo.capture) photo_save_frame();
+    // The photo mode's photo (and the replay viewer's): this frame, drawn
+    // without its help.
+    if (photo.shoot) photo_save_frame();
 
     // The headless screenshot hook, after every overlay so the dump is what
     // the screen shows.
