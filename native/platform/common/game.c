@@ -174,6 +174,10 @@ static bool load_stage_objects(ContO **objects_ptr, int32_t *count_ptr, int32_t 
   }
   *objects_ptr = calloc(STAGE_OBJECT_CAPACITY, sizeof(ContO));
   check_points_init(cp);
+  // CheckPoints.stage is the stage being raced (the original's stage list
+  // writes it, GameSparker.loadstagePreview): init leaves a random one, which
+  // made the AI's per-stage rules and stage 10's no-arrow rule a dice roll.
+  cp->stage = stage_num;
   bool ok = game_sparker_loadstage(*objects_ptr, STAGE_OBJECT_CAPACITY, count_ptr,
                                     base_models, m, t, cp, stage_text, out_center_x, out_center_z);
   free(stage_text);
@@ -1251,7 +1255,9 @@ static void draw_checkpoint_arrow(Graphics2D *g, Medium *m, XtGraphicsStub *xt,
                   hud_tint(255.0, m->snap[2]));
     gfx_draw_polygon(g, sx, sy, 7);
     // :8673-8676 -- name the locked car, framed by a bracket pair: literally
-    // "[" + 32 spaces + "]" in the source.
+    // "[" + 32 spaces + "]" in the source. Arial bold 11 (xtGraphics sets it
+    // first); without its own font it took whatever the frame drew last.
+    font_set(FONT_BOLD, 11);
     hud_say_draw(g, m, 13, "[                                ]", 76, 67, 240, 0);
     if (target >= 0 && target < BOTS_MAX_PLAYERS && sc[target] >= 0 && sc[target] < 16) {
       hud_say_draw(g, m, 13, CAR_DISPLAY_NAMES[sc[target]], 0, 0, 0, 0);
@@ -1633,6 +1639,7 @@ static void stop_all_sfx_loops(Audio *audio, int32_t engine_channel[5], int32_t 
  * below carries the rest, under the wider `if (!this.holdit)` of :8009.
  */
 static void hud_wrongway_tick(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad *mad) {
+  font_set(FONT_BOLD, 11);   // the original's own font for every HUD message (Arial bold 11)
   if (xt->auscnt == 45 && mad->capcnt == 0) {
     if (mad->missedcp > 0) {
       if (mad->missedcp > 15 && mad->missedcp < 50) {
@@ -1666,6 +1673,9 @@ static void hud_wrongway_tick(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad 
  */
 static void hud_messages_tick(Graphics2D *g, Medium *m, XtGraphicsStub *xt, Mad *mad,
                               const CheckPoints *cp, int32_t nplayers, const int32_t *sc) {
+  // The original's font for every one of these lines (Arial bold 11). Set
+  // here: before, they took whatever the frame drew last.
+  font_set(FONT_BOLD, 11);
   // 1463-1465 -- looped resets the instant a fresh trick attempt starts
   // (mad->loop reaching 2, the "armed" state -- see mad.c's own loop
   // state machine), so the "Please read the Game Instructions!" escalated
@@ -5279,8 +5289,14 @@ int game_run(void) {
         VfsZip images_zip;
         if (vfs_read_zip("data/images.zip", &images_zip)) {
           const int32_t snap[3] = {m.snap[0], m.snap[1], m.snap[2]};
+          // The bars keep their own colours on a dark sky, so their fill
+          // reads against their frame; the plates behind their labels (the
+          // Java's boxes) do the rest.
+          const bool hud_dark = g_hud_dark;
+          g_hud_dark = false;
           hud_images.dmg = load_hud_gif(&images_zip, "damage.gif", snap, hud_images.dmg);
           hud_images.pwr = load_hud_gif(&images_zip, "power.gif", snap, hud_images.pwr);
+          g_hud_dark = hud_dark;
           hud_images.lap = load_hud_gif(&images_zip, "lap.gif", snap, hud_images.lap);
           hud_images.was = load_hud_gif(&images_zip, "wasted.gif", snap, hud_images.was);
           hud_images.pos = load_hud_gif(&images_zip, "position.gif", snap, hud_images.pos);
@@ -5592,7 +5608,17 @@ int game_run(void) {
           // turns every direction into a stunt until landing. Tell the
           // input layer, so on the Vita only CROSS + stick reach the car
           // then and the throttle/brake triggers cannot loop it.
-          if (!bench.active) input_set_stunting(&control[0], mad[0].loop == 2 || (control[0].handb && !mad[0].wtouch));
+          // drive()'s own arming test, all of it: a handbrake already held on
+          // the ground (`pushed`, a drift) arms nothing when the wheels skip
+          // off a bump -- without that term the throttle went dead mid-drift.
+          // Not on the landing tick (wheels down, loop 2 -> -1 inside drive()):
+          // there drive() latches pu/pd/pl/pr from the keys held, so they must
+          // be the driving ones -- with the stunt set a ZR held through the
+          // landing was read as "up" in the post-stunt tilt, flipping the car.
+          if (!bench.active)
+            input_set_stunting(&control[0], (mad[0].loop == 2 && !mad[0].wtouch) ||
+                                                (control[0].handb && !mad[0].wtouch && !mad[0].pushed &&
+                                                 mad[0].loop == 0));
           DIAG_PHASE("race tick: driving");
           for (int32_t i = 0; i < nplayers; i++) {
             g_diag.aux[0] = i;
@@ -6403,11 +6429,15 @@ int game_run(void) {
         // port already carried -- both are kept because the condition is
         // data-driven (a hand-written or later stage file could trip it),
         // not structurally impossible.
-        if (m.darksky && kJavaDarkSkyBoxes) {
-          float hsb_hud[3];
+        // The bars keep their own colours (not the dark-sky ink, which washed
+        // their frames out), so their plates are always drawn; the rest of
+        // the boxes stay off, the counters read their ink instead.
+        float hsb_hud[3];
+        int32_t hud_rgb = 0;
+        if (m.darksky) {
           rgb_to_hsb(m.csky[0], m.csky[1], m.csky[2], hsb_hud);
           hsb_hud[2] = 0.6f;
-          int32_t hud_rgb = hsb_to_rgb(hsb_hud[0], hsb_hud[1], hsb_hud[2]);
+          hud_rgb = hsb_to_rgb(hsb_hud[0], hsb_hud[1], hsb_hud[2]);
           gfx_set_color(&g, (hud_rgb >> 16) & 0xff, (hud_rgb >> 8) & 0xff, hud_rgb & 0xff);
           gfx_fill_rect(&g, 602, 9, 54, 14);   // :7977 -- behind dmg
           gfx_draw_line(&g, 601, 10, 601, 21); // :7978
@@ -6415,6 +6445,8 @@ int game_run(void) {
           gfx_fill_rect(&g, 607, 29, 49, 14);  // :7980 -- behind pwr
           gfx_draw_line(&g, 606, 30, 606, 41); // :7981
           gfx_draw_line(&g, 605, 32, 605, 39); // :7982
+        }
+        if (m.darksky && kJavaDarkSkyBoxes) {
           gfx_fill_rect(&g, 18, 6, 155, 14);   // :7983 -- behind lap + was
           gfx_draw_line(&g, 17, 7, 17, 18);    // :7984
           gfx_draw_line(&g, 16, 9, 16, 16);    // :7985

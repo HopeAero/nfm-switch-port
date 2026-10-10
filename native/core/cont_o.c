@@ -1332,8 +1332,10 @@ static void cont_o_d_inner(ContO *co, struct Graphics2D *g) {
       (n4 > co->disp || m->trk != 0) &&
       (!co->decor || (m->resdown != 2 && m->trk != 1))) {
     g->objDrawn++;
-    const GfxMark shadow_mark = gfx_mark(g);
-    if (co->shadow) {
+    // Settings > Shadows off skips the work, not just the drawing: shadows
+    // are a fifth of a car's draw, and nothing else reads them (no randoms,
+    // medium_addsp feeds only plane_s).
+    if (co->shadow && cont_o_shadows) {
       if (!m->crs) {
         if (n3 < 2000) {
           bool b = false;
@@ -1382,7 +1384,6 @@ static void cont_o_d_inner(ContO *co, struct Graphics2D *g) {
         }
       }
     }
-    if (!cont_o_shadows) gfx_rewind(g, shadow_mark);   // Settings > Shadows off
 
     int32_t n8_center = m->cy + n8; // JS: n8 = this.m.cy + trunc(...)
     if (cont_o_ys(co, n8_center + co->maxR, n3) > m->ih && cont_o_ys(co, n8_center - co->maxR, n3) < m->h) {
