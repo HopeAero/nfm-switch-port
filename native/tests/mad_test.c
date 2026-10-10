@@ -1358,10 +1358,9 @@ static void drive_wall_scenario(int32_t nticks, const char *label) {
   trackers_free_sect(&t);
 }
 
-// High Rider (18000 health, its model dents to 12000) hammered in one spot
-// until the dented points leave clrad and the hits stop counting. NFM 2
-// dented by the damage itself and stopped at 2163; with the dent following
-// the car's health it goes 18000 / 12000 times as far (mad.c Dent).
+// High Rider (18000 health) hammered in one spot. NFM 2 dented its points
+// out of clrad and stopped taking damage at 2163; Extended's dent alone at
+// 3513. With the guard (mad.c dent_keep) it is wrecked.
 static void dent_scenario(void) {
   nfm_set_seed(77);
   Medium m; medium_init(&m);
@@ -1387,9 +1386,9 @@ static void dent_scenario(void) {
   XtGraphicsStub xt; xt_graphics_stub_init(&xt); xt.im = 0;
   Mad mad; mad_init(&mad, &cd, &m, &rpd, &xt, 1);
   mad.cn = 8;   // High Rider
-  for (int32_t k = 0; k < 2000; k++) mad_regx(&mad, 0, 2000.0f, &contO);
-  printf("dent: %d damage before the dents run out (NFM 2's own: 2163)\n", mad.hitmag);
-  CHECK(mad.hitmag > 2163 * 3 / 2, "dent: the dent follows the car's health, not its damage");
+  for (int32_t k = 0; k < 2000 && mad.hitmag < 18000; k++) mad_regx(&mad, 0, 2000.0f, &contO);
+  printf("dent: %d damage (18000 wrecks it)\n", mad.hitmag);
+  CHECK(mad.hitmag >= 18000, "dent: a dented car keeps taking damage until it is wrecked");
   cont_o_free(&contO);
   cont_o_free(&base);
   vfs_free_zip(&zip);

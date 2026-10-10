@@ -50,7 +50,7 @@ dkp_track_assets(nfm_romfs FILES ${NFM_ROMFS_FILES})
 nx_generate_nacp(nfm_switch.nacp
   NAME "Need for Madness"
   AUTHOR "Radicalplay (port: community)"
-  VERSION "1.2.2")
+  VERSION "1.2.3")
 
 nx_create_nro(nfm_switch
   NACP nfm_switch.nacp
