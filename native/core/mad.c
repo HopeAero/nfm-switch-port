@@ -489,7 +489,7 @@ static int32_t regy_by(Mad *mad, int32_t n, float a, ContO *contO, int32_t attac
       xt_graphics_stub_crash(mad->xt, a, n4 * n3);
     }
     if (n4 * n3 == 0 || mad->mtouch) {
-      Dent dt;
+      Dent dt = {0};
       dent_init(mad, &dt);
       for (int32_t k = 0; k < contO->npl; k++) {
         float n5 = 0.0f, d5 = 0.0f;
@@ -583,7 +583,7 @@ static int32_t regx_by(Mad *mad, int32_t n, float n2, ContO *contO, int32_t atta
     if (n2 < -100.0f) n2 = n2 + 100.0f;
     mad->shakedam = jtrunc((fabsf(n2) + (float)mad->shakedam) / 2.0f);
     if (mad->im == mad->xt->im || mad->colidim) xt_graphics_stub_crash(mad->xt, n2, 0);
-    Dent dt;
+    Dent dt = {0};
     dent_init(mad, &dt);
     for (int32_t i = 0; i < contO->npl; i++) {
       float a = 0.0f, d = 0.0f;
@@ -638,7 +638,7 @@ static int32_t regz_by(Mad *mad, int32_t n, float n2, ContO *contO, int32_t atta
     if (n2 < -100.0f) n2 = n2 + 100.0f;
     mad->shakedam = jtrunc((fabsf(n2) + (float)mad->shakedam) / 2.0f);
     if (mad->im == mad->xt->im || mad->colidim) xt_graphics_stub_crash(mad->xt, n2, 0);
-    Dent dt;
+    Dent dt = {0};
     dent_init(mad, &dt);
     for (int32_t i = 0; i < contO->npl; i++) {
       float a = 0.0f, d = 0.0f;

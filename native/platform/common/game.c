@@ -84,6 +84,7 @@
 #include "audio.h"
 #include "wav_decode.h"
 #include "radical_mod.h"
+#include "car_facts.h"
 #include "bots.h"
 #include "nfm_limits.h"
 #include "specials.h"
@@ -483,7 +484,12 @@ typedef enum {
   STATE_BENCH_RESULT,    // this port's Performance Test summary (Settings > Performance Test)
   STATE_PT_INFO,         // Extended's ptstart (fase 49): the Premier Tournament's next match and its rules
   STATE_PT_SCORES,       // Extended's scoreshow (fase 51): points after a match, the champion after five
+  STATE_GALLERY,         // this port's Gallery (gallery.inc): its menu,
+  STATE_GALLERY_CARS,    //   the car list,
+  STATE_GALLERY_CAR,     //   one car on the stand,
+  STATE_GALLERY_MUSIC,   //   and the music
 } GameState;
+#define STATE_IS_GALLERY(s) ((s) >= STATE_GALLERY && (s) <= STATE_GALLERY_MUSIC)
 
 // On-screen names for the physical controls, so the help text can say
 // what the player of THIS build actually has to press. Only the strings
@@ -1390,6 +1396,11 @@ static void career_ogg_free(void) {
   }
 }
 
+// The Gallery's extra track ids, past the races' (gallery.inc).
+#define GAL_TRACK_BOSS 300      // the Titan fight
+#define GAL_TRACK_MENU 301      // Extended's menu, cars, stages
+#define GAL_TRACK_CLASSIC 311   // Extended's Classic Mode stages 1-17
+
 // ModuleLoader.loadMod() reads the zip's FIRST entry, whatever its name.
 static bool load_music_track(int32_t id, RadicalTrack *out) {
   // {vol, rate, bpm}, loadstrack()'s constructor arguments, index = id.
@@ -1402,6 +1413,44 @@ static bool load_music_track(int32_t id, RadicalTrack *out) {
       {220, 8000, 125}, {261, 8000, 125}, {276, 8800, 145}, {182, 8000, 125}, {220, 8000, 125},
       {200, 8000, 125}, {350, 7900, 125}, {310, 8000, 125}, {400, 7600, 125}};
   memset(out, 0, sizeof(*out));
+  if (id >= GAL_TRACK_BOSS) {
+    // The Gallery's own: the Titan fight (an Ogg pair), Extended's menu,
+    // cars and stages modules (XT 15724, 15877, 1341) and its Classic
+    // Mode's stage 1-17 modules (XT 2587-2636).
+    career_ogg_free();
+    char path[96];
+    if (id == GAL_TRACK_BOSS) {
+      for (int32_t p = 0; p < 2; p++) {
+        snprintf(path, sizeof(path), "ext/data/Files/careermusic/bossbattle%c.ogg", p ? 'b' : 'a');
+        g_career_ogg[p] = vfs_read_bytes(path, &g_career_ogg_len[p]);
+      }
+      return g_career_ogg[1] != NULL;
+    }
+    static const int16_t kClassic[17][2] = {{130, 8000}, {260, 7200}, {270, 8000}, {190, 8000}, {162, 7800},
+                                            {220, 7600}, {300, 7500}, {200, 7900}, {200, 7900}, {232, 7300},
+                                            {370, 7900}, {290, 7900}, {222, 7600}, {230, 8000}, {220, 8000},
+                                            {261, 8000}, {320, 7600}};
+    ExtMusic mu;
+    if (id >= GAL_TRACK_CLASSIC && id < GAL_TRACK_CLASSIC + 17) {
+      const int32_t k = id - GAL_TRACK_CLASSIC;
+      snprintf(path, sizeof(path), "ext/data/Files/classicmusic/stage%d.radq", (int)k + 1);
+      mu.amp = kClassic[k][0];
+      mu.rate = kClassic[k][1];
+      mu.tempo = 125;
+    } else if (id >= GAL_TRACK_MENU && id < GAL_TRACK_MENU + 3) {
+      static const char *const kMenu[3] = {"menu", "cars", "stages"};
+      mu = ext_menu_music(kMenu[id - GAL_TRACK_MENU]);
+      snprintf(path, sizeof(path), "ext/data/Files/music/%s.radq", mu.file);
+    } else {
+      return false;
+    }
+    VfsZip zip;
+    if (!vfs_read_zip(path, &zip)) return false;
+    bool ok = zip.count > 0 &&
+              radical_render_stage(zip.entries[0].data, (size_t)zip.entries[0].len, mu.amp, mu.rate, mu.tempo, out);
+    vfs_free_zip(&zip);
+    return ok;
+  }
   if (id > 250) {
     // The bonus stages (XT 2728-2755, 2988-2994): modules b1-b3, b4 an Ogg pair.
     career_ogg_free();
@@ -2871,8 +2920,10 @@ static void draw_car_thumb(Graphics2D *g, Medium *m, ContO *car, int32_t sx, int
  * its points in, numbered, each bar's colour stepping every 100 (green,
  * red, teal, ...), top speed in MPH. Laid out for this screen: two columns
  * of four rows from y0, under the stat panel. */
-static void draw_ext_stat_bars(Graphics2D *g, const CarDefine *cd, int32_t cn, const int32_t sp[CS_N], int32_t y0) {
-  float e[7];
+/** The seven numbers draw_ext_stat_bars shows (1.0 a full bar): overall,
+ * top speed, acceleration, control, stunting, strength, defence; returns
+ * the top speed with the points in (MPH is half of it). */
+static float ext_stat_values(const CarDefine *cd, int32_t cn, const int32_t sp[CS_N], float e[7]) {
   const float sw2 = (float)cd->swits[cn][2] + (float)sp[CS_TS];
   e[1] = (sw2 - 220.0f) / 90.0f;
   const float a0 = cd->acelf[cn][0] + (float)sp[CS_ACC] * 0.1f;
@@ -2884,6 +2935,12 @@ static void draw_ext_stat_bars(Graphics2D *g, const CarDefine *cd, int32_t cn, c
   e[5] = (cd->moment[cn] + (float)sp[CS_STR] * 0.025f) / 2.1f;
   e[6] = cd->outdam[cn] + (float)sp[CS_END] * 0.01f;
   e[0] = (e[1] + e[2] + e[3] + e[4] + e[5] + e[6]) / 6.0f;
+  return sw2;
+}
+
+static void draw_ext_stat_bars(Graphics2D *g, const CarDefine *cd, int32_t cn, const int32_t sp[CS_N], int32_t y0) {
+  float e[7];
+  const float sw2 = ext_stat_values(cd, cn, sp, e);
   static const char *const kLabels[7] = {"OVERALL:", "TOP SPEED:", "ACCELERATION:", "CONTROL:",
                                          "STUNTING:", "STRENGTH:", "DEFENCE:"};
   static const uint8_t kCol[8][3] = {{0, 130, 0},   {130, 0, 0},  {0, 95, 95},   {130, 0, 130},
@@ -3162,10 +3219,14 @@ static void draw_menu_option_rect(Graphics2D *g, int32_t x, int32_t y, int32_t w
   gfx_draw_rect(g, x, y, w, h);
 }
 
+// The main menu's rows: Play Game, Instructions, Credits, Settings, Gallery.
+#define MAIN_MENU_ROWS 5
+#define MAIN_MENU_ROW_Y(i) (258 + 27 * (i))
+
 static void draw_main_menu(Graphics2D *g,
                             HudImg bgmain, HudImg logomadbg, HudImg logomadnes,
                             HudImg dude, HudImg logocars, HudImg opback, HudImg opti,
-                            HudImg byrd, HudImg nfmcoms, HudImg opsettings,
+                            HudImg byrd, HudImg nfmcoms, HudImg opsettings, HudImg opgallery,
                             int32_t *bgmy_ptr, int32_t *flkat_ptr,
                             int32_t *gxdu_ptr, int32_t *gydu_ptr, int32_t *movly_ptr,
                             int32_t opselect, bool *aflk_ptr) {
@@ -3187,19 +3248,22 @@ static void draw_main_menu(Graphics2D *g,
   // because the labels themselves have different lengths).
   struct MenuOpt { int32_t x, y, w; int32_t r_aflk, g_aflk, b_aflk; int32_t r_solid, g_solid, b_solid; };
   // A fourth row, this port's Settings, takes the slot the original's own
-  // fourth row used (y=351), which the brown pill already makes room for.
-  const struct MenuOpt opts[4] = {
-    { 343, 261, 110, 200, 200,   0, 255, 128, 0 },  // Play Game (Java opselect=0)
-    { 301, 291, 196, 200, 128,   0, 255, 128, 0 },  // Game Instructions (Java opselect=2, moved from y=321)
-    { 357, 321,  85, 200,   0,   0, 255, 128, 0 },  // Credits (Java opselect=3, moved from y=351)
-    { 353, 351,  93, 200, 200,   0, 255, 128, 0 },  // Settings (this port's)
+  // fourth row used, and a fifth, the Gallery, fits in the brown pill with
+  // the rows 27 px apart instead of 30 (MAIN_MENU_ROW_Y).
+  const struct MenuOpt opts[MAIN_MENU_ROWS] = {
+    { 343, MAIN_MENU_ROW_Y(0), 110, 200, 200,   0, 255, 128, 0 },  // Play Game (Java opselect=0)
+    { 301, MAIN_MENU_ROW_Y(1), 196, 200, 128,   0, 255, 128, 0 },  // Game Instructions (Java opselect=2)
+    { 357, MAIN_MENU_ROW_Y(2),  85, 200,   0,   0, 255, 128, 0 },  // Credits (Java opselect=3)
+    { 353, MAIN_MENU_ROW_Y(3),  93, 200, 200,   0, 255, 128, 0 },  // Settings (this port's)
+    { 351, MAIN_MENU_ROW_Y(4),  97, 200, 200,   0, 255, 128, 0 },  // Gallery (this port's)
   };
 
   // In Spanish the rows are their own labels (g_es_opti_rows), centred, and
   // each rect is as wide as its label plus the originals' margin.
   const bool es = i18n_lang() == I18N_LANG_ES && g_es_opti_rows[0].tex >= 0;
-  const HudImg es_rows[4] = {g_es_opti_rows[0], g_es_opti_rows[1], g_es_opti_rows[2], opsettings};
-  for (int32_t i = 0; i < 4; i++) {
+  const HudImg es_rows[MAIN_MENU_ROWS] = {g_es_opti_rows[0], g_es_opti_rows[1], g_es_opti_rows[2], opsettings,
+                                          opgallery};
+  for (int32_t i = 0; i < MAIN_MENU_ROWS; i++) {
     const struct MenuOpt *o = &opts[i];
     int32_t x = o->x, w = o->w;
     if (es && es_rows[i].tex >= 0) {
@@ -3220,21 +3284,24 @@ static void draw_main_menu(Graphics2D *g,
   //   row 3 (Credits):      src_y 90..105 -> dst (294, 325) height 15 (partial: image is only 105 tall)
   // Skip row 1 (Multiplayer, src_y 30..60) entirely.
   if (es) {
-    for (int32_t i = 0; i < 3; i++) {
+    for (int32_t i = 0; i < MAIN_MENU_ROWS; i++) {
       const HudImg r = es_rows[i];
       // Bottom-aligned to the 15 px row: an accent makes a label taller.
-      if (r.tex >= 0) gfx_draw_image(g, r.tex, 400 - r.w / 2, 265 + 30 * i + 15 - r.h, r.w, r.h);
+      if (r.tex >= 0) gfx_draw_image(g, r.tex, 400 - r.w / 2, opts[i].y + 4 + 15 - r.h, r.w, r.h);
     }
   } else if (opti.tex >= 0) {
-    gfx_draw_image_sub(g, opti.tex, 294, 265, opti.w, 30,
+    gfx_draw_image_sub(g, opti.tex, 294, opts[0].y + 4, opti.w, 30,
                         0, 0, opti.w, 30, opti.w, opti.h);
-    gfx_draw_image_sub(g, opti.tex, 294, 295, opti.w, 30,
+    gfx_draw_image_sub(g, opti.tex, 294, opts[1].y + 4, opti.w, 30,
                         0, 60, opti.w, 30, opti.w, opti.h);
-    gfx_draw_image_sub(g, opti.tex, 294, 325, opti.w, 15,
+    gfx_draw_image_sub(g, opti.tex, 294, opts[2].y + 4, opti.w, 15,
                         0, 90, opti.w, 15, opti.w, opti.h);
   }
-  if (opsettings.tex >= 0) {
-    gfx_draw_image(g, opsettings.tex, 400 - opsettings.w / 2, 355, opsettings.w, opsettings.h);
+  if (!es && opsettings.tex >= 0) {
+    gfx_draw_image(g, opsettings.tex, 400 - opsettings.w / 2, opts[3].y + 4, opsettings.w, opsettings.h);
+  }
+  if (!es && opgallery.tex >= 0) {
+    gfx_draw_image(g, opgallery.tex, 400 - opgallery.w / 2, opts[4].y + 4, opgallery.w, opgallery.h);
   }
 
   // 9. byrd at (72, 410). Java 4493.
@@ -5103,6 +5170,8 @@ static void draw_ext_board(Graphics2D *g, const Medium *m, const CheckPoints *cp
   }
 }
 
+#include "gallery.inc"
+
 int game_run(void) {
   // See platform_asset_prefix()'s own doc comment (platform.h) -- "" on
   // desktop (repo-root-relative paths, matching AGENTS.md's convention
@@ -5388,6 +5457,7 @@ int game_run(void) {
   HudImg menu_careerlabel = {-1, 0, 0};                     // data/port/career_label.png -- the RPG Mode row
   HudImg menu_opti2 = {-1, 0, 0};                           // options2.png -- gamemode submenu 4-option label block
   HudImg menu_opsettings = {-1, 0, 0};                      // data/port/opsettings.png -- this port's Settings row
+  HudImg menu_opgallery = {-1, 0, 0};                       // data/port/opgallery.png -- and its Gallery row
   HudImg menu_byrd = {-1, 0, 0};                            // byrd.png -- byline
   HudImg menu_nfmcoms_asset = {-1, 0, 0};                   // nfmcoms.png -- www.NFM.com footer
   HudImg menu_back = {-1, 0, 0}, menu_next = {-1, 0, 0};
@@ -5522,6 +5592,7 @@ int game_run(void) {
       // This port's fourth main-menu row. Not an original asset: options.png's
       // style redrawn (tools/gen_menu_label.py), a loose file beside data/vita/.
       menu_opsettings = load_menu_png_file("data/port/opsettings.png");
+      menu_opgallery = load_menu_png_file("data/port/opgallery.png");
       menu_byrd = load_menu_png(&images_zip, "byrd.png");
       menu_nfmcoms_asset = load_menu_png(&images_zip, "nfmcoms.png");
       menu_back = load_menu_gif(&images_zip, "back.gif");
@@ -5548,6 +5619,7 @@ int game_run(void) {
       lang_img_add(&menu_paused, "paused");
       lang_img_add(&menu_opwr, "power");
       lang_img_add(&menu_opsettings, "opsettings");
+      lang_img_add(&menu_opgallery, "opgallery");
       lang_img_add(&menu_careerlabel, "career_label");
       lang_img_add(&menu_extlabel, "tournament_label");
       lang_img_add(&menu_stunts, "stunts");   // tools/bake_inst_es.py
@@ -5744,6 +5816,7 @@ int game_run(void) {
   else if (screenshot_menu && strcmp(screenshot_menu, "holdcard") == 0) state = STATE_RACING;
   else if (screenshot_menu && strcmp(screenshot_menu, "boot") == 0) state = STATE_BOOT_CLICK;
   else if (screenshot_menu && strcmp(screenshot_menu, "rad") == 0) state = STATE_BOOT_RAD;
+  else if (screenshot_menu && strncmp(screenshot_menu, "gal", 3) == 0) state = STATE_GALLERY;   // gallery_hook
   // A real start goes through the original's boot sequence: loading()
   // (drawn while the assets loaded, above), then fase 111's clicknow()
   // prompt and fase 9's Radicalplay intro, then the main menu
@@ -6368,6 +6441,9 @@ int game_run(void) {
   uint64_t prof_frame_start = 0, prof_render_start = 0, prof_submit_start = 0, prof_swap_start = 0;
   uint64_t prof_sum[4] = {0, 0, 0, 0};
   int32_t prof_avg_tenths[4] = {0, 0, 0, 0}; // last window's per-frame mean, 0.1ms units
+  // What the Gallery (gallery.inc) reaches of this function's state.
+  GalCtx galctx = {&g, &m, &cd, &rpd, &audio, &interface_music, &stage_music_loaded_for,
+                   base_models, ext_models, new_models, NULL, previous_held};
   while (running) {
     prof_frame_start = platform_ticks_us();
     lang_imgs_sync();
@@ -6423,9 +6499,9 @@ int game_run(void) {
           HIT(NULL, 0, BTN_CONFIRM);   // a click anywhere
         } else if (state == STATE_MAIN_MENU) {
           // draw_main_menu's rows.
-          static const int32_t kRows[4][3] = {{343, 261, 110}, {301, 291, 196}, {357, 321, 85}, {353, 351, 93}};
-          for (int32_t i = 0; i < 4; i++)
-            if (OVERON(kRows[i][0], kRows[i][1], kRows[i][2], 22)) HIT(&mainmenu_opselect, i, BTN_CONFIRM);
+          static const int32_t kRows[MAIN_MENU_ROWS][2] = {{343, 110}, {301, 196}, {357, 85}, {353, 93}, {351, 97}};
+          for (int32_t i = 0; i < MAIN_MENU_ROWS; i++)
+            if (OVERON(kRows[i][0], MAIN_MENU_ROW_Y(i), kRows[i][1], 22)) HIT(&mainmenu_opselect, i, BTN_CONFIRM);
         } else if (state == STATE_GAMEMODE_MENU) {
           // draw_gamemode_menu's rows.
           static const int32_t kRows[5][3] = {
@@ -6496,6 +6572,7 @@ int game_run(void) {
     const bool focus_pause = platform_take_focus_lost();
 #define KEY_EDGE(b) (held[(b)] && !previous_held[(b)])
 
+    if (STATE_IS_GALLERY(state)) state = gallery_hook(&galctx, screenshot_menu, frame, state);
     if (state == STATE_BOOT_CLICK) {
       // fase 111 (GameSparker.java:263-279): a click -- here the confirm
       // button -- ends the prompt; so do 800 iterations (the draw counts).
@@ -6519,8 +6596,8 @@ int game_run(void) {
         state = STATE_SETTINGS;
       }
       // A fourth, Settings, opens the same screen the pause menu does.
-      if (KEY_EDGE(BTN_DOWN)) mainmenu_opselect = (mainmenu_opselect + 1) % 4;
-      if (KEY_EDGE(BTN_UP)) mainmenu_opselect = (mainmenu_opselect + 3) % 4;
+      if (KEY_EDGE(BTN_DOWN)) mainmenu_opselect = (mainmenu_opselect + 1) % MAIN_MENU_ROWS;
+      if (KEY_EDGE(BTN_UP)) mainmenu_opselect = (mainmenu_opselect + MAIN_MENU_ROWS - 1) % MAIN_MENU_ROWS;
       if (KEY_EDGE(BTN_CONFIRM)) {
         // Java's fase transitions from maini() -- see xtGraphics.java:4449.
         // Play Game -> fase 102 (gamemode submenu).
@@ -6571,6 +6648,10 @@ int game_run(void) {
             settings_ui = (SettingsUi){.page = SET_MAIN};
             settings_return = STATE_MAIN_MENU;
             state = STATE_SETTINGS;
+            break;
+          case 4:
+            gallery_open();
+            state = STATE_GALLERY;
             break;
         }
         // :4489 -- maini's ENTER handler ends by zeroing the shared
@@ -7259,6 +7340,9 @@ int game_run(void) {
       }
     } else if (state == STATE_BENCH_RESULT) {
       if (KEY_EDGE(BTN_CONFIRM) || KEY_EDGE(BTN_CANCEL)) state = STATE_MAIN_MENU;
+    } else if (STATE_IS_GALLERY(state)) {
+      galctx.held = held;
+      state = gallery_input(state, &galctx);
     }
 
     // The Performance Test: Free Play on a fixed stage and car, from a fixed
@@ -8904,7 +8988,8 @@ int game_run(void) {
     const bool letterboxed = render_state != STATE_RACING && render_state != STATE_REPLAY &&
                              render_state != STATE_PAUSED && render_state != STATE_PAUSE_REPLAY &&
                              render_state != STATE_CANTREPLY && render_state != STATE_BOOT_CLICK &&
-                             render_state != STATE_SETTINGS && render_state != STATE_BENCH_RESULT;
+                             render_state != STATE_SETTINGS && render_state != STATE_BENCH_RESULT &&
+                             !STATE_IS_GALLERY(render_state);
     const bool use_rt = motion_blur_ok &&
                         (render_state == STATE_RACING || render_state == STATE_REPLAY ||
                          render_state == STATE_PAUSE_REPLAY || render_state == STATE_CAR_SELECT ||
@@ -8959,9 +9044,10 @@ int game_run(void) {
     const bool is_replay = render_state == STATE_REPLAY || render_state == STATE_PAUSE_REPLAY;
     // (The boot prompt and intro too: their counters and blink advance per
     // draw, and the Java loop draws them at the same menu rate.)
+    // (The Gallery's car too: its wreck burns per draw, as in a race.)
     const bool is_paced_menu = render_state == STATE_CAR_SELECT || render_state == STATE_STAGE_SELECT ||
                                render_state == STATE_BOOT_CLICK || render_state == STATE_BOOT_RAD ||
-                               render_state == STATE_STAGE_INTRO;
+                               render_state == STATE_STAGE_INTRO || STATE_IS_GALLERY(render_state);
     bool paced_ticked = false;
     if (is_replay || is_paced_menu) {
       const double step_ms = is_replay ? TICK_MS : 40.0;
@@ -10060,6 +10146,8 @@ int game_run(void) {
       }
     } else if (state == STATE_BENCH_RESULT) {
       bench_result_draw(&g, &bench);
+    } else if (STATE_IS_GALLERY(state)) {
+      gallery_draw(state, &galctx);
     } else if (state == STATE_PAUSED || state == STATE_CANTREPLY) {
       // PAUSE MENU -- fase -7, pausedgame() (xtGraphics.java:4695-4807),
       // and the fase -8 banner that sits on top of it.
@@ -10211,7 +10299,7 @@ int game_run(void) {
       draw_main_menu(&g,
                       menu_bgmain, menu_logomadbg, menu_logomadnes,
                       menu_dude[0], menu_logocars, menu_opback, menu_opti,
-                      menu_byrd, menu_nfmcoms_asset, menu_opsettings,
+                      menu_byrd, menu_nfmcoms_asset, menu_opsettings, menu_opgallery,
                       mainbg_bgmy, &mainmenu_flkat,
                       &mainmenu_gxdu, &mainmenu_gydu, &mainmenu_movly,
                       mainmenu_opselect, &mainmenu_aflk);
