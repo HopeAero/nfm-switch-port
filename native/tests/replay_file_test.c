@@ -48,13 +48,43 @@ int main(void) {
   a.car[0][1].p[0].ox[2] = 4242;   // a dent
   a.car[0][1].p[0].c[1] = 33;
 
-  CHECK(replay_save(path, &meta, &a, false), "replay_save writes");
+  // A stage piece the script moves and lights on tick 3 of 5, after 295 still ones.
+  ObjLook now[2];
+  ContO piece;
+  memset(&piece, 0, sizeof(piece));
+  now[0] = look_of(&piece, 0), now[1] = look_of(&piece, 0);
+  LookRing la;
+  memset(&la, 0, sizeof(la));
+  looks_reset(&la, now, 2);
+  for (int32_t t = 0; t < 300; t++) {
+    if (t == 297) {
+      piece.y = -500, piece.glowlines = true, piece.glowc[0] = 255;
+      now[1] = look_of(&piece, 40);
+    }
+    looks_rec(&la, now, t == 299 ? 90 : 0);
+  }
+  CHECK(la.n == 1 && la.idx[0] == 1, "only the changed object is kept");
+  CHECK(looks_at(&la, 0, 296)->y == 0 && looks_at(&la, 0, 297)->y == -500, "its past is how it started");
+  CHECK(replay_save(path, &meta, &a, false, &la), "replay_save writes");
   ReplayMeta m2;
   CHECK(replay_read_meta(path, &m2) && m2.stage_num == 7 && m2.sc[1] == 5 && m2.beast[2] == 1 &&
             strcmp(m2.stage_name, "Van's Revenge") == 0,
         "the header reads back");
   for (int32_t i = 0; i < 3; i++) one_face(&b.car[0][i], 0);   // the race set up again: fresh models
-  CHECK(replay_read(path, &m2, &b), "replay_read reads");
+  LookRing lb;
+  memset(&lb, 0, sizeof(lb));
+  looks_reset(&lb, now, 2);   // the race set up again: its objects
+  CHECK(replay_read(path, &m2, &b, &lb), "replay_read reads");
+  CHECK(lb.n == 1 && lb.idx[0] == 1 && looks_at(&lb, 0, 299)->y == -500 && looks_at(&lb, 0, 299)->fade == 40 &&
+            (looks_at(&lb, 0, 299)->flags & LOOK_GLOW) && looks_at(&lb, 0, 10)->y == 0 &&
+            looks_outline(&lb, 299) == 90 && looks_outline(&lb, 298) == 0,
+        "the stage script's looks read back in order");
+  ContO back;
+  memset(&back, 0, sizeof(back));
+  look_apply(&back, looks_at(&lb, 0, 299), true);
+  CHECK(back.y == -500 && back.fade == 40 && back.glowlines && back.glowc[0] == 255, "a look goes back onto its object");
+  looks_free(&la);
+  looks_free(&lb);
   CHECK(b.x[150][2] == 1502 && b.wzy[299][1] == -299 && b.checkpoint[299] == 4 && b.dest[1] == 120,
         "the poses read back");
   CHECK(b.sspark[2][3][4] == 77 && b.rcz[1][199] == 1.5f && b.magx[2][3][6] == 999 && b.mtouch[0][6],

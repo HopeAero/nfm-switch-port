@@ -277,6 +277,7 @@ void record_cotchinow(Record *r, int32_t wasted) {
   memcpy(r->hmagz, r->magz, sizeof(r->hmagz));
   memcpy(r->hmtouch, r->mtouch, sizeof(r->hmtouch));
   r->hcaught = true;
+  r->hcount++;
 }
 
 // Shared by record_regy/regx/regz: recolor a damaged plane's HSB from its

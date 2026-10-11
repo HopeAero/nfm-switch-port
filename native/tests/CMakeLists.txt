@@ -244,6 +244,7 @@ add_executable(replay_file_test
   replay_file_test.c
   ../core/replay_file.c
 )
+target_link_libraries(replay_file_test ZLIB::ZLIB)
 
 add_executable(car_facts_test
   car_facts_test.c

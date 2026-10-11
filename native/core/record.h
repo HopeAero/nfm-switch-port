@@ -27,6 +27,7 @@ struct Mad;
 typedef struct Record {
   int32_t caught;
   bool hcaught;
+  int32_t hcount;   // cotchinow calls, for a saved replay's highlight looks (game.c)
   bool prepit;
   ContO ocar[NFM_MAX_CARS];      // Record.java:103 -- fed by GameSparker's own stuck-car
                        // respawn (:1261), not this port's scope (see mad.h's

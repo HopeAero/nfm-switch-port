@@ -245,7 +245,8 @@ static void photo_save_frame(void) {
 // ---- The saved-replay viewer (gallery > Replays) ----------------------------
 
 typedef struct {
-  int32_t tick;   // the ring's tick on screen, 0-299, round and round
+  int32_t tick;   // the ring's next tick, 0-299, round and round
+  int32_t shown;  // the tick on screen (-1: none yet)
   int32_t cam;    // 0 chase, 1 orbit, 2 free
   int32_t car;
   bool paused;
@@ -255,6 +256,7 @@ static const char *const kReplayCams[3] = {"Chase camera", "Orbit camera", "Free
 
 static void replay_view_start(void) {
   rview = (ReplayView){0};
+  rview.shown = -1;
   const char *e = getenv("NFM_REPLAY_CAM");   // headless: the camera to start on
   if (e) rview.cam = atoi(e) % 3;
   photo.hide_ui = false;

@@ -2548,6 +2548,42 @@ static void smooth_restore(const SmoothSnap *s, ContO *co, int32_t n, Medium *m)
  * pause menu itself sits on -- and the ranking loop is fiddly enough that
  * three hand-copies would be three chances to diverge.
  */
+// A saved replay's stage script part (replay_file.h): every object's look as
+// the race draws it -- the career's hiding and portal fades, its car flames.
+// Cars leave their pose out: the replay ring has it.
+static ObjLook *race_looks_now(ContO **objs, int32_t n, int32_t nplayers, const CareerStage *cs, bool career) {
+  static ObjLook *buf;
+  static int32_t cap;
+  if (n > cap) {
+    ObjLook *nb = realloc(buf, sizeof(ObjLook) * (size_t)n);
+    if (!nb) return NULL;
+    buf = nb;
+    cap = n;
+  }
+  const bool script = career && cs->started;
+  for (int32_t i = 0; i < n; i++) {
+    const ContO *o = objs[i];
+    int32_t fade = o->fade;
+    if (script && i < nplayers) {
+      if (cs->norender[i]) fade = 255;
+      else if (cs->tele_fading[i] && 255 - cs->telefade[i] > fade) fade = 255 - cs->telefade[i];
+    } else if (script && cs->piece_norender && i - nplayers < cs->npieces && cs->piece_norender[i - nplayers]) {
+      fade = 255;
+    }
+    buf[i] = look_of(o, fade);
+    if (i < nplayers) {
+      buf[i].x = buf[i].y = buf[i].z = 0;
+      buf[i].xz = buf[i].xy = buf[i].zy = 0;
+      buf[i].flags &= (uint8_t)~(LOOK_FLAME | LOOK_FIRE);
+      if (script && cs->flame_custom[i]) {
+        buf[i].flags |= LOOK_FLAME;
+        for (int32_t q = 0; q < 3; q++) buf[i].flame[q] = (uint8_t)cs->flame_rgb[i][q];
+      }
+    }
+  }
+  return buf;
+}
+
 static void draw_race_scene(Graphics2D *g, Medium *m, ContO **all_objs, int32_t total_objs,
                             int32_t *visible_idx, int32_t *rank, int32_t *order) {
   nfm_set_draw_phase(true);
@@ -6326,6 +6362,11 @@ int game_run(void) {
   int32_t replay_tick = 0;
   // A saved replay waiting for its race to be set up (gallery > Replays).
   bool replay_view_pending = false;
+  // The stage script's part of the replay ring (replay_file.h): recorded in
+  // the career's races, played back by the viewer. rlooks_hseen: rpd.hcount
+  // when the highlight was last copied.
+  static ReplayLooks rlooks;
+  int32_t rlooks_hseen = 0;
   ReplayMeta replay_view_meta;
   memset(&replay_view_meta, 0, sizeof(replay_view_meta));
   int32_t replay_cam = 0;
@@ -7389,6 +7430,7 @@ int game_run(void) {
       // NFM_REPLAY_SAVE=1: headless, saved a few frames before the screenshot.
       const bool hook_save = screenshot_menu && getenv("NFM_REPLAY_SAVE") && frame == screenshot_frame - 4;
       if ((press & PAD_X) || (KEY_EDGE(BTN_VIEW) && !(pa.buttons & PAD_X)) || hook_save) {
+        if (hook_save) fprintf(stderr, "replay looks: %d kept of %d\n", (int)rlooks.live.n, (int)rlooks.live.nobj);
         ReplayMeta rm;
         memset(&rm, 0, sizeof(rm));
         rm.gmode = gmode;
@@ -7412,7 +7454,7 @@ int game_run(void) {
         rm.saved_at = (int64_t)time(NULL);
         char path[700];
         if (gallery_new_file("replays", "replay", "nfmr", path, sizeof(path)) &&
-            replay_save(path, &rm, &rpd, state == STATE_REPLAY)) {
+            replay_save(path, &rm, &rpd, state == STATE_REPLAY, state == STATE_REPLAY ? &rlooks.high : &rlooks.live)) {
           const char *name = strrchr(path, '/');
           photo_say("Replay saved: ", name ? name + 1 : path);
         } else {
@@ -8143,6 +8185,12 @@ int game_run(void) {
       smooth_dist = malloc(sizeof(int32_t) * (size_t)total_objs);
       smooth_ready = false;
       smooth_captured = false;
+      {
+        ObjLook *now = race_looks_now(all_objs, total_objs, nplayers, &cstage, ext_career);
+        looks_reset(&rlooks.live, now, now ? total_objs : 0);
+        looks_free(&rlooks.high);
+        rlooks_hseen = rpd.hcount;
+      }
       race_confirm_latch = false;
 
       last_ticks_ms = platform_ticks_ms();
@@ -8155,7 +8203,7 @@ int game_run(void) {
       bool rv_ok = all_objs != NULL;
       if (rv_ok) {
         for (int32_t i = 0; i < nplayers; i++) cont_o_recopy(&rpd.car[0][i], &co[i], 0, 0, 0, 0);
-        rv_ok = replay_read(g_replay_open, &replay_view_meta, &rpd);
+        rv_ok = replay_read(g_replay_open, &replay_view_meta, &rpd, &rlooks.live);
       }
       if (rv_ok) {
         replay_view_start();
@@ -8343,6 +8391,16 @@ int game_run(void) {
             record_rec(&rpd, &co[i], i, mad[i].squash, mad[i].lastcolido, mad[i].cntdest, 0);
           }
           check_points_checkstat(&cp, mad_ptrs, co_ptrs, &rpd, nplayers, 0, 0);
+          if (ext_career) {
+            // What the stage script does beside the cars, for a saved replay.
+            ObjLook *now = race_looks_now(all_objs, total_objs, nplayers, &cstage, true);
+            const int32_t po = cstage.started && stage_num == 7 && cstage.polyoutline > 20 ? cstage.polyoutline : 0;
+            if (now) looks_rec(&rlooks.live, now, (uint8_t)(po > 255 ? 255 : po));
+            if (rpd.hcount != rlooks_hseen) {   // the highlight froze: its looks too
+              rlooks_hseen = rpd.hcount;
+              looks_copy(&rlooks.high, &rlooks.live);
+            }
+          }
           // The career's count (CheckPoints 149-155): stage 11's undead wrecks count as wasted.
           if (ext_career) cp.wasted = career_stage_wasted(&cstage, mad, nplayers);
           for (int32_t i = 0; i < nplayers; i++) cont_o_step_fix(&co[i]);
@@ -9213,7 +9271,7 @@ int game_run(void) {
     const bool smooth_on = use_rt && render_state == STATE_RACING && smooth_ready;
     const bool smooth_between = smooth_on && !race_ticked; // a frame between two ticks
     const bool reuse_frame = use_rt && paced_state && !advanced && !smooth_on &&
-                             picture_state == (int32_t)render_state;
+                             render_state != STATE_REPLAY_VIEW && picture_state == (int32_t)render_state;
     if (reuse_frame) {
       // Nothing to draw; the composite presents the last picture.
     } else if (use_rt) {
@@ -10282,32 +10340,20 @@ int game_run(void) {
       gallery_draw(state, &galctx);
     } else if (state == STATE_REPLAY_VIEW && all_objs && !reuse_frame) {
       // A saved replay: the Instant Replay's playback (below), round and
-      // round, with a choice of cameras and the photo mode's.
-      if (rview.tick == 0) {
-        for (int32_t i = 0; i < nplayers; i++) cont_o_recopy(&co[i], &rpd.car[0][i], 0, 0, 0, 0);
-      }
+      // round, with a choice of cameras and the photo mode's. The ring steps
+      // on the replay's ticks; every display frame between draws the cars
+      // and the camera blended between the last two (smooth_apply), and a
+      // free camera moves at the display's rate.
+      static SmoothSnap rv_prev, rv_curr;
       const int32_t vc = rview.car < nplayers ? rview.car : 0;
-      if (rview.cam == 0) medium_follow(&m, co[vc].x, co[vc].y, co[vc].z, co[vc].xz, 0);
-      else if (rview.cam == 1) medium_around(&m, &co[vc], false);
-      else photo_apply(&m);
-      if (rview.cam != 2) m.focus_point = (int32_t)photo.zoom;
-      draw_race_scene(&g, &m, all_objs, total_objs, visible_idx, rank, order);
-      photo_frame();
-      if (!photo.shoot && !photo.hide_ui) {
-        char rv_line[96];
-        snprintf(rv_line, sizeof(rv_line), "%s  -  %s  -  %d / 300%s", tr(kReplayCams[rview.cam]), car_name(sc[vc]),
-                 (int)rview.tick + 1, rview.paused ? tr("  (paused)") : "");
-        gfx_set_color(&g, 0, 0, 0);
-        gfx_fill_rect(&g, 0, 0, 800, 20);
-        gfx_set_color(&g, 255, 210, 0);
-        font_set(FONT_BOLD, 12);
-        draw_centered(&g, rv_line, 400, 15);
-      }
-      photo_draw_ui(&g, NULL, true);
-      if (!rview.paused) {
+      if (rview.shown < 0 || (advanced && !rview.paused)) {
+        const int32_t t = rview.tick;
+        if (t == 0) {
+          for (int32_t i = 0; i < nplayers; i++) cont_o_recopy(&co[i], &rpd.car[0][i], 0, 0, 0, 0);
+        }
         for (int32_t i = 0; i < nplayers; i++) {
           cont_o_step_fix(&co[i]);
-          if (rpd.fix[i] == rview.tick) {
+          if (rpd.fix[i] == t) {
             if (co[i].dist == 0) co[i].fcnt = 8;
             else co[i].fix = true;
           }
@@ -10316,10 +10362,48 @@ int game_run(void) {
             RACE_LOOK(i);
             rpd.cntdest[i] = 0;
           }
-          record_play(&rpd, &co[i], &mad[i], i, rview.tick);
+          record_play(&rpd, &co[i], &mad[i], i, t);
         }
-        rview.tick = (rview.tick + 1) % 300;
+        // The stage script's part: its pieces where they were, cars' looks.
+        for (int32_t k = 0; k < rlooks.live.n; k++) {
+          const int32_t o = rlooks.live.idx[k];
+          if (o < total_objs) look_apply(all_objs[o], looks_at(&rlooks.live, k, t), o >= nplayers);
+        }
+        const uint8_t po = looks_outline(&rlooks.live, t);
+        m.polyoutline_on = po > 0;
+        m.polyoutline[0] = m.polyoutline[2] = 0;
+        m.polyoutline[1] = po;
+        if (rview.cam == 0) medium_follow(&m, co[vc].x, co[vc].y, co[vc].z, co[vc].xz, 0);
+        else if (rview.cam == 1) medium_around(&m, &co[vc], false);
+        const bool jump = rview.shown < 0 || t == 0;   // no blend across the loop
+        smooth_capture(&rv_curr, co, nplayers, &m);
+        if (jump) rv_prev = rv_curr;
+        rview.shown = t;
+        rview.tick = (t + 1) % 300;
+      } else if (advanced) {
+        rv_prev = rv_curr;   // paused: hold still
       }
+      const double rv_t = rview.paused ? 1.0 : paced_acc_ms / TICK_MS;
+      smooth_apply(&rv_prev, &rv_curr, (float)(rv_t < 1.0 ? rv_t : 1.0), co, nplayers, &m);
+      if (rview.cam == 2) {
+        photo_apply(&m);
+        m.fxz = m.fzy = 0.0f;
+      }
+      if (rview.cam != 2) m.focus_point = (int32_t)photo.zoom;
+      draw_race_scene(&g, &m, all_objs, total_objs, visible_idx, rank, order);
+      smooth_restore(&rv_curr, co, nplayers, &m);
+      photo_frame();
+      if (!photo.shoot && !photo.hide_ui) {
+        char rv_line[96];
+        snprintf(rv_line, sizeof(rv_line), "%s  -  %s  -  %d / 300%s", tr(kReplayCams[rview.cam]), car_name(sc[vc]),
+                 (int)rview.shown + 1, rview.paused ? tr("  (paused)") : "");
+        gfx_set_color(&g, 0, 0, 0);
+        gfx_fill_rect(&g, 0, 0, 800, 20);
+        gfx_set_color(&g, 255, 210, 0);
+        font_set(FONT_BOLD, 12);
+        draw_centered(&g, rv_line, 400, 15);
+      }
+      photo_draw_ui(&g, NULL, true);
     } else if (state == STATE_REPLAY_VIEW) {
       gfx_set_color(&g, 0, 0, 0);
       gfx_fill_rect(&g, 0, 0, 800, 450);
